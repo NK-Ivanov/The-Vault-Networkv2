@@ -21,7 +21,22 @@ const ForBusinesses = () => {
   const [loading, setLoading] = useState(false);
   const [hasAccount, setHasAccount] = useState(false);
   const [automations, setAutomations] = useState<any[]>([]);
-  const referralCode = searchParams.get("ref");
+  
+  // Get referral code from URL or localStorage
+  const urlReferralCode = searchParams.get("ref");
+  const storedReferralCode = localStorage.getItem("referral_code");
+  const referralCode = urlReferralCode || storedReferralCode;
+
+  // Save referral code to localStorage when it's in URL, or restore it in URL if only in localStorage
+  useEffect(() => {
+    if (urlReferralCode) {
+      // Save URL referral code to localStorage
+      localStorage.setItem("referral_code", urlReferralCode);
+    } else if (storedReferralCode && !urlReferralCode) {
+      // Restore referral code from localStorage to URL if not already in URL
+      navigate(`/for-businesses?ref=${storedReferralCode}`, { replace: true });
+    }
+  }, [urlReferralCode, storedReferralCode, navigate]);
 
   const [businessName, setBusinessName] = useState("");
   const [contactName, setContactName] = useState("");
@@ -81,6 +96,10 @@ const ForBusinesses = () => {
         description: "Please log in to create a business account.",
         variant: "destructive",
       });
+      // Preserve referral code when redirecting to login
+      if (referralCode) {
+        localStorage.setItem("referral_code", referralCode);
+      }
       navigate("/login");
       return;
     }
@@ -132,6 +151,11 @@ const ForBusinesses = () => {
         title: "Account Created!",
         description: "Welcome to Vault Network. Explore our automations.",
       });
+
+      // Clear referral code from localStorage after successful signup
+      if (referralCode) {
+        localStorage.removeItem("referral_code");
+      }
 
       navigate("/client-dashboard");
     } catch (error: any) {

@@ -29,6 +29,17 @@ interface ClientData {
   total_spent: number;
 }
 
+interface AutomationData {
+  id: string;
+  name: string;
+  description: string;
+  category: string;
+  setup_price: number;
+  monthly_price: number;
+  image_url: string | null;
+  features: string[] | null;
+}
+
 const PartnerDashboard = () => {
   const { user, loading: authLoading } = useAuth();
   const navigate = useNavigate();
@@ -36,6 +47,10 @@ const PartnerDashboard = () => {
   const [loading, setLoading] = useState(true);
   const [sellerData, setSellerData] = useState<SellerData | null>(null);
   const [clients, setClients] = useState<ClientData[]>([]);
+  const [availableAutomations, setAvailableAutomations] = useState<AutomationData[]>([]);
+  const [selectedClient, setSelectedClient] = useState<string>("");
+  const [selectedAutomation, setSelectedAutomation] = useState<string>("");
+  const [assigning, setAssigning] = useState(false);
   const [copied, setCopied] = useState(false);
 
   useEffect(() => {
@@ -79,6 +94,40 @@ const PartnerDashboard = () => {
 
       if (clientsError) throw clientsError;
       setClients(clientsData || []);
+
+      // Fetch automations available to this seller
+      const { data: automationsData, error: automationsError } = await supabase
+        .from("seller_automations")
+        .select(`
+          automation_id,
+          automations (
+            id,
+            name,
+            description,
+            category,
+            setup_price,
+            monthly_price,
+            image_url,
+            features
+          )
+        `)
+        .eq("seller_id", seller.id);
+
+      if (automationsError) throw automationsError;
+      
+      // Transform the data
+      const transformedAutomations = (automationsData || []).map((sa: any) => ({
+        id: sa.automations.id,
+        name: sa.automations.name,
+        description: sa.automations.description,
+        category: sa.automations.category,
+        setup_price: sa.automations.setup_price,
+        monthly_price: sa.automations.monthly_price,
+        image_url: sa.automations.image_url,
+        features: sa.automations.features,
+      }));
+      
+      setAvailableAutomations(transformedAutomations);
     } catch (error: any) {
       toast({
         title: "Error loading dashboard",
@@ -99,6 +148,62 @@ const PartnerDashboard = () => {
       description: "Share this link with potential clients",
     });
     setTimeout(() => setCopied(false), 2000);
+  };
+
+  const handleAssignAutomation = async () => {
+    if (!selectedClient || !selectedAutomation) {
+      toast({
+        title: "Selection required",
+        description: "Please select both a client and an automation",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setAssigning(true);
+    try {
+      // Check if already assigned
+      const { data: existing } = await supabase
+        .from("client_automations")
+        .select("id")
+        .eq("client_id", selectedClient)
+        .eq("automation_id", selectedAutomation)
+        .maybeSingle();
+
+      if (existing) {
+        toast({
+          title: "Already assigned",
+          description: "This automation is already assigned to this client",
+          variant: "destructive",
+        });
+        return;
+      }
+
+      const { error } = await supabase.from("client_automations").insert({
+        client_id: selectedClient,
+        automation_id: selectedAutomation,
+        seller_id: sellerData?.id,
+        status: "active",
+      });
+
+      if (error) throw error;
+
+      toast({
+        title: "Automation Assigned!",
+        description: "The automation has been assigned to the client",
+      });
+
+      setSelectedClient("");
+      setSelectedAutomation("");
+    } catch (error: any) {
+      toast({
+        title: "Assignment failed",
+        description: error.message,
+        variant: "destructive",
+      });
+    } finally {
+      setAssigning(false);
+    }
   };
 
   if (authLoading || loading) {
@@ -220,6 +325,94 @@ const PartnerDashboard = () => {
               </CardContent>
             </Card>
           </div>
+
+          {/* Assign Automation Section */}
+          {availableAutomations.length > 0 && clients.length > 0 && (
+            <Card className="mb-8 bg-card border-border">
+              <CardHeader>
+                <CardTitle className="text-primary">Assign Automation to Client</CardTitle>
+                <CardDescription>Select a client and automation to assign</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                  <div className="space-y-2">
+                    <label className="text-sm font-medium text-foreground">Select Client</label>
+                    <select
+                      value={selectedClient}
+                      onChange={(e) => setSelectedClient(e.target.value)}
+                      className="w-full p-2 bg-input border border-border rounded-md text-foreground"
+                    >
+                      <option value="">Choose a client...</option>
+                      {clients.filter(c => c.status === "active").map((client) => (
+                        <option key={client.id} value={client.id}>
+                          {client.business_name} - {client.contact_name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-sm font-medium text-foreground">Select Automation</label>
+                    <select
+                      value={selectedAutomation}
+                      onChange={(e) => setSelectedAutomation(e.target.value)}
+                      className="w-full p-2 bg-input border border-border rounded-md text-foreground"
+                    >
+                      <option value="">Choose an automation...</option>
+                      {availableAutomations.map((automation) => (
+                        <option key={automation.id} value={automation.id}>
+                          {automation.name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+                <Button
+                  onClick={handleAssignAutomation}
+                  disabled={assigning || !selectedClient || !selectedAutomation}
+                  className="w-full"
+                >
+                  {assigning ? "Assigning..." : "Assign Automation"}
+                </Button>
+              </CardContent>
+            </Card>
+          )}
+
+          {/* Available Automations Section */}
+          {availableAutomations.length > 0 && (
+            <Card className="mb-8 bg-card border-border">
+              <CardHeader>
+                <CardTitle className="text-primary">Available Automations</CardTitle>
+                <CardDescription>Automations you can assign to clients</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                  {availableAutomations.map((automation) => (
+                    <Card key={automation.id} className="bg-muted/20 border-border">
+                      <CardHeader>
+                        <CardTitle className="text-lg text-foreground">{automation.name}</CardTitle>
+                        <CardDescription className="line-clamp-2">{automation.description}</CardDescription>
+                        {automation.category && (
+                          <Badge variant="secondary" className="mt-2">{automation.category}</Badge>
+                        )}
+                      </CardHeader>
+                      <CardContent>
+                        <div className="space-y-2">
+                          <div className="flex justify-between items-center">
+                            <span className="text-sm text-muted-foreground">Setup:</span>
+                            <span className="font-bold text-foreground">${automation.setup_price}</span>
+                          </div>
+                          <div className="flex justify-between items-center">
+                            <span className="text-sm text-muted-foreground">Monthly:</span>
+                            <span className="font-bold text-primary">${automation.monthly_price}/mo</span>
+                          </div>
+                        </div>
+                      </CardContent>
+                    </Card>
+                  ))}
+                </div>
+              </CardContent>
+            </Card>
+          )}
 
           <Card className="bg-card border-border">
             <CardHeader>

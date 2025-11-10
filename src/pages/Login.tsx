@@ -78,6 +78,9 @@ const Login = () => {
         description: "You've successfully logged in.",
       });
 
+      // Check for referral code in localStorage
+      const referralCode = localStorage.getItem("referral_code");
+      
       // Redirect based on role priority: admin > seller > client
       if (userRoles.includes("admin")) {
         navigate("/admin-dashboard");
@@ -86,8 +89,12 @@ const Login = () => {
       } else if (userRoles.includes("client")) {
         navigate("/client-dashboard");
       } else {
-        // No role assigned yet, stay on home page
-        navigate("/");
+        // No role assigned yet - redirect to for-businesses if referral code exists
+        if (referralCode) {
+          navigate(`/for-businesses?ref=${referralCode}`);
+        } else {
+          navigate("/");
+        }
       }
     } catch (error: any) {
       toast({
@@ -218,6 +225,9 @@ const Login = () => {
           description: "Welcome! You've been automatically logged in.",
         });
 
+        // Check for referral code in localStorage
+        const referralCode = localStorage.getItem("referral_code");
+        
         // Redirect based on role priority: admin > seller > client
         if (userRoles.includes("admin")) {
           navigate("/admin-dashboard");
@@ -226,8 +236,12 @@ const Login = () => {
         } else if (userRoles.includes("client")) {
           navigate("/client-dashboard");
         } else {
-          // No role assigned yet, go to home
-          navigate("/");
+          // No role assigned yet - redirect to for-businesses if referral code exists
+          if (referralCode) {
+            navigate(`/for-businesses?ref=${referralCode}`);
+          } else {
+            navigate("/");
+          }
         }
       } else {
         // Email confirmation required

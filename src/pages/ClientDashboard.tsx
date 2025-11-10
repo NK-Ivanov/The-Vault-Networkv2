@@ -36,6 +36,19 @@ interface EnquiryData {
   created_at: string;
 }
 
+interface AutomationData {
+  id: string;
+  name: string;
+  description: string;
+  category: string;
+  setup_price: number;
+  monthly_price: number;
+  image_url: string | null;
+  features: string[] | null;
+  assigned_at: string;
+  status: string;
+}
+
 const ClientDashboard = () => {
   const { user, loading: authLoading } = useAuth();
   const navigate = useNavigate();
@@ -44,6 +57,7 @@ const ClientDashboard = () => {
   const [clientData, setClientData] = useState<ClientData | null>(null);
   const [transactions, setTransactions] = useState<TransactionData[]>([]);
   const [enquiries, setEnquiries] = useState<EnquiryData[]>([]);
+  const [automations, setAutomations] = useState<AutomationData[]>([]);
 
   const [enquiryMessage, setEnquiryMessage] = useState("");
   const [submitting, setSubmitting] = useState(false);
@@ -99,6 +113,44 @@ const ClientDashboard = () => {
 
       if (enquiriesError) throw enquiriesError;
       setEnquiries(enquiriesData || []);
+
+      // Fetch assigned automations
+      const { data: automationsData, error: automationsError } = await supabase
+        .from("client_automations")
+        .select(`
+          *,
+          automations (
+            id,
+            name,
+            description,
+            category,
+            setup_price,
+            monthly_price,
+            image_url,
+            features
+          )
+        `)
+        .eq("client_id", client.id)
+        .eq("status", "active")
+        .order("assigned_at", { ascending: false });
+
+      if (automationsError) throw automationsError;
+      
+      // Transform the data to flatten the automation details
+      const transformedAutomations = (automationsData || []).map((ca: any) => ({
+        id: ca.automations.id,
+        name: ca.automations.name,
+        description: ca.automations.description,
+        category: ca.automations.category,
+        setup_price: ca.automations.setup_price,
+        monthly_price: ca.automations.monthly_price,
+        image_url: ca.automations.image_url,
+        features: ca.automations.features,
+        assigned_at: ca.assigned_at,
+        status: ca.status,
+      }));
+      
+      setAutomations(transformedAutomations);
     } catch (error: any) {
       toast({
         title: "Error loading dashboard",
@@ -206,6 +258,69 @@ const ClientDashboard = () => {
               </CardContent>
             </Card>
           </div>
+
+          {/* Assigned Automations Section */}
+          <Card className="mb-12 bg-card border-border">
+            <CardHeader>
+              <CardTitle className="text-primary">Your Assigned Automations</CardTitle>
+              <CardDescription>Automations assigned to you by your partner</CardDescription>
+            </CardHeader>
+            <CardContent>
+              {automations.length === 0 ? (
+                <div className="text-center py-8">
+                  <p className="text-muted-foreground">No automations assigned yet</p>
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                  {automations.map((automation) => (
+                    <Card key={automation.id} className="bg-muted/20 border-border">
+                      {automation.image_url && (
+                        <div className="h-48 overflow-hidden rounded-t-lg">
+                          <img
+                            src={automation.image_url}
+                            alt={automation.name}
+                            className="w-full h-full object-cover"
+                          />
+                        </div>
+                      )}
+                      <CardHeader>
+                        <CardTitle className="text-lg text-foreground">{automation.name}</CardTitle>
+                        <CardDescription className="line-clamp-2">{automation.description}</CardDescription>
+                        {automation.category && (
+                          <Badge variant="secondary" className="mt-2">{automation.category}</Badge>
+                        )}
+                      </CardHeader>
+                      <CardContent>
+                        <div className="space-y-2">
+                          <div className="flex justify-between items-center">
+                            <span className="text-sm text-muted-foreground">Setup Fee:</span>
+                            <span className="font-bold text-foreground">${automation.setup_price}</span>
+                          </div>
+                          <div className="flex justify-between items-center">
+                            <span className="text-sm text-muted-foreground">Monthly:</span>
+                            <span className="font-bold text-primary">${automation.monthly_price}/mo</span>
+                          </div>
+                        </div>
+                        {automation.features && Array.isArray(automation.features) && (
+                          <div className="mt-4">
+                            <p className="text-sm font-medium text-foreground mb-2">Features:</p>
+                            <ul className="text-sm text-muted-foreground space-y-1">
+                              {automation.features.slice(0, 3).map((feature: string, idx: number) => (
+                                <li key={idx}>• {feature}</li>
+                              ))}
+                            </ul>
+                          </div>
+                        )}
+                        <p className="text-xs text-muted-foreground mt-4">
+                          Assigned: {new Date(automation.assigned_at).toLocaleDateString()}
+                        </p>
+                      </CardContent>
+                    </Card>
+                  ))}
+                </div>
+              )}
+            </CardContent>
+          </Card>
 
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-12">
             <Card className="bg-card border-border">
