@@ -105,6 +105,17 @@ const Login = () => {
     setLoading(true);
 
     try {
+      // Validate inputs
+      if (!signupEmail || !signupPassword || !signupFullName) {
+        throw new Error("Please fill in all fields");
+      }
+
+      if (signupPassword.length < 6) {
+        throw new Error("Password must be at least 6 characters");
+      }
+
+      console.log("Attempting signup for:", signupEmail);
+
       const { data, error } = await supabase.auth.signUp({
         email: signupEmail,
         password: signupPassword,
@@ -116,7 +127,37 @@ const Login = () => {
         },
       });
 
-      if (error) throw error;
+      if (error) {
+        console.error("Signup error:", error);
+        throw error;
+      }
+
+      console.log("Signup response:", { user: data.user, session: data.session });
+
+      // Check if user was created
+      if (!data.user) {
+        throw new Error("Failed to create user account. Please try again.");
+      }
+
+      // Verify profile was created (trigger should handle this)
+      if (data.user) {
+        // Wait a moment for the trigger to execute
+        await new Promise(resolve => setTimeout(resolve, 500));
+        
+        const { data: profile, error: profileError } = await supabase
+          .from("profiles")
+          .select("*")
+          .eq("id", data.user.id)
+          .maybeSingle();
+
+        if (profileError) {
+          console.error("Error checking profile:", profileError);
+        } else if (!profile) {
+          console.warn("Profile not created automatically, this may be normal if email confirmation is required");
+        } else {
+          console.log("Profile created successfully:", profile);
+        }
+      }
 
       // If user is automatically logged in (email confirmation disabled)
       if (data.user && data.session) {
@@ -149,16 +190,26 @@ const Login = () => {
         toast({
           title: "Account created!",
           description: "Please check your email to confirm your account, then log in.",
+          duration: 5000,
         });
 
-        // Switch to login tab
-        setLoginEmail(signupEmail);
+        // Clear form
+        setSignupEmail("");
+        setSignupPassword("");
+        setSignupFullName("");
+
+        // Switch to login tab after a delay
+        setTimeout(() => {
+          setLoginEmail(signupEmail);
+        }, 1000);
       }
     } catch (error: any) {
+      console.error("Signup failed:", error);
       toast({
         title: "Signup failed",
-        description: error.message,
+        description: error.message || "An error occurred during signup. Please try again.",
         variant: "destructive",
+        duration: 5000,
       });
     } finally {
       setLoading(false);
