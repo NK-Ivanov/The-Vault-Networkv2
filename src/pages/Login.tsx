@@ -114,7 +114,29 @@ const Login = () => {
         throw new Error("Password must be at least 6 characters");
       }
 
-      console.log("Attempting signup for:", signupEmail);
+      // Debug: Show which Supabase instance we're connecting to
+      const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+      const supabaseKeyPrefix = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY?.substring(0, 20) + "...";
+      console.log("🔗 Connecting to Supabase:", {
+        url: supabaseUrl,
+        keyPrefix: supabaseKeyPrefix,
+        origin: window.location.origin
+      });
+
+      // Test database connection by checking if we can query a table
+      console.log("🔍 Testing database connection...");
+      const { error: testError } = await supabase
+        .from("profiles")
+        .select("id")
+        .limit(1);
+
+      if (testError && testError.code !== "PGRST116" && testError.code !== "42P01") {
+        console.error("❌ Database connection test failed:", testError);
+        throw new Error(`Database connection issue: ${testError.message}. Please verify your Supabase URL and key are correct.`);
+      }
+      console.log("✅ Database connection verified");
+
+      console.log("📝 Attempting signup for:", signupEmail);
 
       const { data, error } = await supabase.auth.signUp({
         email: signupEmail,
@@ -128,21 +150,28 @@ const Login = () => {
       });
 
       if (error) {
-        console.error("Signup error:", error);
+        console.error("❌ Signup error:", error);
         throw error;
       }
 
-      console.log("Signup response:", { user: data.user, session: data.session });
+      console.log("📦 Signup response:", { 
+        user: data.user ? { id: data.user.id, email: data.user.email } : null, 
+        session: data.session ? "Session created" : "No session (email confirmation required)",
+        emailConfirmed: data.user?.email_confirmed_at ? "Yes" : "No"
+      });
 
       // Check if user was created
       if (!data.user) {
         throw new Error("Failed to create user account. Please try again.");
       }
 
+      console.log("👤 User created with ID:", data.user.id);
+
       // Verify profile was created (trigger should handle this)
       if (data.user) {
         // Wait a moment for the trigger to execute
-        await new Promise(resolve => setTimeout(resolve, 500));
+        console.log("⏳ Waiting for database trigger to create profile...");
+        await new Promise(resolve => setTimeout(resolve, 1000));
         
         const { data: profile, error: profileError } = await supabase
           .from("profiles")
@@ -151,11 +180,26 @@ const Login = () => {
           .maybeSingle();
 
         if (profileError) {
-          console.error("Error checking profile:", profileError);
+          console.error("❌ Error checking profile:", profileError);
+          console.error("Profile error details:", {
+            code: profileError.code,
+            message: profileError.message,
+            details: profileError.details,
+            hint: profileError.hint
+          });
         } else if (!profile) {
-          console.warn("Profile not created automatically, this may be normal if email confirmation is required");
+          console.warn("⚠️ Profile not created automatically");
+          console.warn("This may be normal if email confirmation is required, OR the database trigger may not be set up correctly.");
+          console.warn("Please check:");
+          console.warn("1. Supabase Dashboard → Database → Triggers → 'on_auth_user_created' exists");
+          console.warn("2. The trigger function 'handle_new_user()' exists and is working");
+          console.warn("3. Email confirmation settings in Authentication → Settings");
         } else {
-          console.log("Profile created successfully:", profile);
+          console.log("✅ Profile created successfully:", {
+            id: profile.id,
+            email: profile.email,
+            full_name: profile.full_name
+          });
         }
       }
 
