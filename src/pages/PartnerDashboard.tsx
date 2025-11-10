@@ -6,6 +6,7 @@ import { useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/integrations/supabase/client";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { DollarSign, Users, TrendingUp, Package, Copy, Check } from "lucide-react";
@@ -52,6 +53,9 @@ const PartnerDashboard = () => {
   const [selectedAutomation, setSelectedAutomation] = useState<string>("");
   const [assigning, setAssigning] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [editingReferralCode, setEditingReferralCode] = useState(false);
+  const [newReferralCode, setNewReferralCode] = useState("");
+  const [updatingReferralCode, setUpdatingReferralCode] = useState(false);
 
   useEffect(() => {
     if (!authLoading && !user) {
@@ -128,6 +132,11 @@ const PartnerDashboard = () => {
       }));
       
       setAvailableAutomations(transformedAutomations);
+      
+      // Set initial referral code for editing
+      if (seller.referral_code) {
+        setNewReferralCode(seller.referral_code);
+      }
     } catch (error: any) {
       toast({
         title: "Error loading dashboard",
@@ -136,6 +145,58 @@ const PartnerDashboard = () => {
       });
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleUpdateReferralCode = async () => {
+    if (!newReferralCode.trim()) {
+      toast({
+        title: "Referral code required",
+        description: "Please enter a referral code",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    // Validate format (alphanumeric, dashes, underscores only)
+    if (!/^[A-Za-z0-9_-]+$/.test(newReferralCode.trim())) {
+      toast({
+        title: "Invalid format",
+        description: "Referral code can only contain letters, numbers, dashes, and underscores",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setUpdatingReferralCode(true);
+    try {
+      const { error } = await supabase
+        .from("sellers")
+        .update({ referral_code: newReferralCode.trim().toUpperCase() })
+        .eq("id", sellerData?.id);
+
+      if (error) {
+        if (error.message.includes("unique") || error.message.includes("already exists")) {
+          throw new Error("This referral code is already taken. Please choose another one.");
+        }
+        throw error;
+      }
+
+      toast({
+        title: "Referral Code Updated!",
+        description: "Your referral code has been updated successfully.",
+      });
+
+      setEditingReferralCode(false);
+      fetchSellerData();
+    } catch (error: any) {
+      toast({
+        title: "Update failed",
+        description: error.message,
+        variant: "destructive",
+      });
+    } finally {
+      setUpdatingReferralCode(false);
     }
   };
 
@@ -262,17 +323,64 @@ const PartnerDashboard = () => {
               <CardDescription>Share this link with potential clients to earn commission</CardDescription>
             </CardHeader>
             <CardContent>
-              <div className="flex gap-4 items-center">
+              <div className="flex gap-4 items-center mb-4">
                 <div className="flex-1 p-3 bg-background rounded-lg border border-border font-mono text-sm overflow-x-auto">
-                  {window.location.origin}/for-businesses?ref={sellerData?.referral_code}
+                  {window.location.origin}/for-businesses?ref={sellerData?.referral_code || "YOUR-CODE"}
                 </div>
                 <Button onClick={copyReferralLink} variant="outline" size="icon">
                   {copied ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
                 </Button>
               </div>
-              <p className="text-sm text-muted-foreground mt-4">
-                Your referral code: <span className="font-bold text-primary">{sellerData?.referral_code}</span>
-              </p>
+              
+              {!editingReferralCode ? (
+                <div className="flex items-center justify-between">
+                  <p className="text-sm text-muted-foreground">
+                    Your referral code: <span className="font-bold text-primary">{sellerData?.referral_code || "Not set"}</span>
+                  </p>
+                  <Button 
+                    onClick={() => {
+                      setEditingReferralCode(true);
+                      setNewReferralCode(sellerData?.referral_code || "");
+                    }}
+                    variant="outline"
+                    size="sm"
+                  >
+                    Edit Code
+                  </Button>
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  <div className="flex gap-2">
+                    <Input
+                      value={newReferralCode}
+                      onChange={(e) => setNewReferralCode(e.target.value.toUpperCase())}
+                      placeholder="Enter your referral code"
+                      className="font-mono"
+                      maxLength={50}
+                    />
+                    <Button 
+                      onClick={handleUpdateReferralCode}
+                      disabled={updatingReferralCode}
+                      size="sm"
+                    >
+                      {updatingReferralCode ? "Saving..." : "Save"}
+                    </Button>
+                    <Button 
+                      onClick={() => {
+                        setEditingReferralCode(false);
+                        setNewReferralCode(sellerData?.referral_code || "");
+                      }}
+                      variant="outline"
+                      size="sm"
+                    >
+                      Cancel
+                    </Button>
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    Referral codes must be unique. Use letters, numbers, dashes, and underscores only.
+                  </p>
+                </div>
+              )}
             </CardContent>
           </Card>
 

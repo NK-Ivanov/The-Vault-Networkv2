@@ -14,7 +14,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
-import { CheckCircle, XCircle, Users, DollarSign, Package, Plus, Eye, Settings } from "lucide-react";
+import { CheckCircle, XCircle, Users, DollarSign, Package, Plus, Eye, Settings, Edit } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 
 interface SellerData {
@@ -62,6 +62,7 @@ interface SellerProfileData extends SellerData {
   website: string | null;
   about: string | null;
   clients: ClientData[];
+  commission_rate: number;
 }
 
 const AdminDashboard = () => {
@@ -78,6 +79,8 @@ const AdminDashboard = () => {
   const [showSellerDetails, setShowSellerDetails] = useState(false);
   const [showAddAutomation, setShowAddAutomation] = useState(false);
   const [showAssignAutomation, setShowAssignAutomation] = useState(false);
+  const [showEditAutomation, setShowEditAutomation] = useState(false);
+  const [editingAutomation, setEditingAutomation] = useState<AutomationData | null>(null);
   const [selectedSellerForAssignment, setSelectedSellerForAssignment] = useState<string>("");
   const [selectedAutomationForAssignment, setSelectedAutomationForAssignment] = useState<string>("");
   
@@ -90,6 +93,7 @@ const AdminDashboard = () => {
     monthly_price: "",
     image_url: "",
     features: "",
+    default_commission_rate: "",
   });
   
   const [stats, setStats] = useState({
@@ -315,6 +319,7 @@ const AdminDashboard = () => {
         monthly_price: parseFloat(newAutomation.monthly_price) || 0,
         image_url: newAutomation.image_url || null,
         features: featuresArray.length > 0 ? featuresArray : null,
+        default_commission_rate: parseFloat(newAutomation.default_commission_rate) || 20.00,
         is_active: true,
       });
 
@@ -333,12 +338,98 @@ const AdminDashboard = () => {
         monthly_price: "",
         image_url: "",
         features: "",
+        default_commission_rate: "",
       });
       setShowAddAutomation(false);
       fetchAdminData();
     } catch (error: any) {
       toast({
         title: "Failed to add automation",
+        description: error.message,
+        variant: "destructive",
+      });
+    }
+  };
+
+  const handleEditAutomation = (automation: AutomationData) => {
+    setEditingAutomation(automation);
+    setNewAutomation({
+      name: automation.name,
+      description: automation.description || "",
+      category: automation.category || "",
+      setup_price: automation.setup_price.toString(),
+      monthly_price: automation.monthly_price.toString(),
+      image_url: automation.image_url || "",
+      features: automation.features ? (Array.isArray(automation.features) ? automation.features.join(", ") : "") : "",
+      default_commission_rate: (automation as any).default_commission_rate?.toString() || "20.00",
+    });
+    setShowEditAutomation(true);
+  };
+
+  const handleUpdateAutomation = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingAutomation) return;
+
+    try {
+      const featuresArray = newAutomation.features
+        .split(",")
+        .map(f => f.trim())
+        .filter(f => f.length > 0);
+
+      const { error } = await supabase
+        .from("automations")
+        .update({
+          name: newAutomation.name,
+          description: newAutomation.description,
+          category: newAutomation.category || null,
+          setup_price: parseFloat(newAutomation.setup_price) || 0,
+          monthly_price: parseFloat(newAutomation.monthly_price) || 0,
+          image_url: newAutomation.image_url || null,
+          features: featuresArray.length > 0 ? featuresArray : null,
+          default_commission_rate: parseFloat(newAutomation.default_commission_rate) || 20.00,
+        })
+        .eq("id", editingAutomation.id);
+
+      if (error) throw error;
+
+      toast({
+        title: "Automation Updated!",
+        description: "Automation has been updated successfully.",
+      });
+
+      setShowEditAutomation(false);
+      setEditingAutomation(null);
+      fetchAdminData();
+    } catch (error: any) {
+      toast({
+        title: "Failed to update automation",
+        description: error.message,
+        variant: "destructive",
+      });
+    }
+  };
+
+  const handleUpdateSellerCommission = async (sellerId: string, commissionRate: number) => {
+    try {
+      const { error } = await supabase
+        .from("sellers")
+        .update({ commission_rate: commissionRate })
+        .eq("id", sellerId);
+
+      if (error) throw error;
+
+      toast({
+        title: "Commission Rate Updated!",
+        description: "Seller commission rate has been updated.",
+      });
+
+      if (selectedSeller) {
+        setSelectedSeller({ ...selectedSeller, commission_rate: commissionRate });
+      }
+      fetchAdminData();
+    } catch (error: any) {
+      toast({
+        title: "Update failed",
         description: error.message,
         variant: "destructive",
       });
@@ -557,11 +648,129 @@ const AdminDashboard = () => {
                       rows={3}
                     />
                   </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="default_commission_rate">Default Commission Rate (%) *</Label>
+                    <Input
+                      id="default_commission_rate"
+                      type="number"
+                      step="0.01"
+                      min="0"
+                      max="100"
+                      value={newAutomation.default_commission_rate}
+                      onChange={(e) => setNewAutomation({ ...newAutomation, default_commission_rate: e.target.value })}
+                      placeholder="20.00"
+                      required
+                    />
+                  </div>
                   <div className="flex justify-end gap-2">
                     <Button type="button" variant="outline" onClick={() => setShowAddAutomation(false)}>
                       Cancel
                     </Button>
                     <Button type="submit">Add Automation</Button>
+                  </div>
+                </form>
+              </DialogContent>
+            </Dialog>
+
+            {/* Edit Automation Dialog */}
+            <Dialog open={showEditAutomation} onOpenChange={setShowEditAutomation}>
+              <DialogContent className="max-w-2xl">
+                <DialogHeader>
+                  <DialogTitle>Edit Automation</DialogTitle>
+                  <DialogDescription>Update automation details</DialogDescription>
+                </DialogHeader>
+                <form onSubmit={handleUpdateAutomation} className="space-y-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="edit-name">Name *</Label>
+                    <Input
+                      id="edit-name"
+                      value={newAutomation.name}
+                      onChange={(e) => setNewAutomation({ ...newAutomation, name: e.target.value })}
+                      required
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="edit-description">Description</Label>
+                    <Textarea
+                      id="edit-description"
+                      value={newAutomation.description}
+                      onChange={(e) => setNewAutomation({ ...newAutomation, description: e.target.value })}
+                      rows={3}
+                    />
+                  </div>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                      <Label htmlFor="edit-category">Category</Label>
+                      <Input
+                        id="edit-category"
+                        value={newAutomation.category}
+                        onChange={(e) => setNewAutomation({ ...newAutomation, category: e.target.value })}
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="edit-image_url">Image URL</Label>
+                      <Input
+                        id="edit-image_url"
+                        value={newAutomation.image_url}
+                        onChange={(e) => setNewAutomation({ ...newAutomation, image_url: e.target.value })}
+                      />
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                      <Label htmlFor="edit-setup_price">Setup Price *</Label>
+                      <Input
+                        id="edit-setup_price"
+                        type="number"
+                        step="0.01"
+                        value={newAutomation.setup_price}
+                        onChange={(e) => setNewAutomation({ ...newAutomation, setup_price: e.target.value })}
+                        required
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="edit-monthly_price">Monthly Price *</Label>
+                      <Input
+                        id="edit-monthly_price"
+                        type="number"
+                        step="0.01"
+                        value={newAutomation.monthly_price}
+                        onChange={(e) => setNewAutomation({ ...newAutomation, monthly_price: e.target.value })}
+                        required
+                      />
+                    </div>
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="edit-features">Features (comma-separated)</Label>
+                    <Textarea
+                      id="edit-features"
+                      value={newAutomation.features}
+                      onChange={(e) => setNewAutomation({ ...newAutomation, features: e.target.value })}
+                      placeholder="Feature 1, Feature 2, Feature 3"
+                      rows={3}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="edit-default_commission_rate">Default Commission Rate (%) *</Label>
+                    <Input
+                      id="edit-default_commission_rate"
+                      type="number"
+                      step="0.01"
+                      min="0"
+                      max="100"
+                      value={newAutomation.default_commission_rate}
+                      onChange={(e) => setNewAutomation({ ...newAutomation, default_commission_rate: e.target.value })}
+                      required
+                    />
+                  </div>
+                  <div className="flex justify-end gap-2">
+                    <Button type="button" variant="outline" onClick={() => {
+                      setShowEditAutomation(false);
+                      setEditingAutomation(null);
+                    }}>
+                      Cancel
+                    </Button>
+                    <Button type="submit">Update Automation</Button>
                   </div>
                 </form>
               </DialogContent>
@@ -755,7 +964,20 @@ const AdminDashboard = () => {
                                   <span className="text-sm text-muted-foreground">Monthly:</span>
                                   <span className="font-bold text-primary">${automation.monthly_price}/mo</span>
                                 </div>
+                                <div className="flex justify-between items-center">
+                                  <span className="text-sm text-muted-foreground">Default Commission:</span>
+                                  <span className="font-bold text-primary">{(automation as any).default_commission_rate || 20}%</span>
+                                </div>
                               </div>
+                              <Button
+                                onClick={() => handleEditAutomation(automation)}
+                                variant="outline"
+                                size="sm"
+                                className="w-full mt-4"
+                              >
+                                <Edit className="w-4 h-4 mr-2" />
+                                Edit Automation
+                              </Button>
                             </CardContent>
                           </Card>
                         ))}
@@ -856,7 +1078,24 @@ const AdminDashboard = () => {
                 </div>
                 <div>
                   <Label className="text-sm text-muted-foreground">Commission Rate</Label>
-                  <p className="font-medium">{selectedSeller.commission_rate}%</p>
+                  <div className="flex items-center gap-2">
+                    <Input
+                      type="number"
+                      step="0.01"
+                      min="0"
+                      max="100"
+                      value={selectedSeller.commission_rate}
+                      onChange={(e) => {
+                        const newRate = parseFloat(e.target.value) || 0;
+                        setSelectedSeller({ ...selectedSeller, commission_rate: newRate });
+                      }}
+                      onBlur={() => {
+                        handleUpdateSellerCommission(selectedSeller.id, selectedSeller.commission_rate);
+                      }}
+                      className="w-24"
+                    />
+                    <span className="text-sm">%</span>
+                  </div>
                 </div>
                 {selectedSeller.website && (
                   <div>

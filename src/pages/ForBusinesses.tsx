@@ -152,10 +152,8 @@ const ForBusinesses = () => {
         description: "Welcome to Vault Network. Explore our automations.",
       });
 
-      // Clear referral code from localStorage after successful signup
-      if (referralCode) {
-        localStorage.removeItem("referral_code");
-      }
+      // Don't clear referral code - keep it for future reference
+      // The seller_id is now locked in the database
 
       navigate("/client-dashboard");
     } catch (error: any) {
