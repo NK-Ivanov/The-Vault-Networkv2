@@ -1,0 +1,72 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Definition of the design system. All colors, gradients, fonts, etc should be defined here. 
+All colors MUST be HSL.
+*/
+
+@layer base {
+  :root {
+    /* Vault Network Brand Colors */
+    --background: 0 0% 5%;
+    --foreground: 0 0% 96%;
+    
+    --vault-gold: 45 100% 70%;
+    --vault-gold-glow: 45 100% 60%;
+    --vault-black: 0 0% 8%;
+    --vault-charcoal: 0 0% 12%;
+    --vault-blue: 207 100% 56%;
+    
+    --card: 0 0% 8%;
+    --card-foreground: 0 0% 96%;
+
+    --popover: 0 0% 8%;
+    --popover-foreground: 0 0% 96%;
+
+    --primary: 45 100% 70%;
+    --primary-foreground: 0 0% 8%;
+
+    --secondary: 0 0% 15%;
+    --secondary-foreground: 0 0% 96%;
+
+    --muted: 0 0% 20%;
+    --muted-foreground: 0 0% 65%;
+
+    --accent: 207 100% 56%;
+    --accent-foreground: 0 0% 96%;
+
+    --destructive: 0 84.2% 60.2%;
+    --destructive-foreground: 0 0% 96%;
+
+    --border: 0 0% 20%;
+    --input: 0 0% 15%;
+    --ring: 45 100% 70%;
+
+    --radius: 0.5rem;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-background text-foreground;
+  }
+  
+  /* Gold glow utility */
+  .gold-glow {
+    text-shadow: 0 0 20px hsl(var(--vault-gold-glow) / 0.5);
+  }
+  
+  .gold-border-glow {
+    box-shadow: 0 0 20px hsl(var(--vault-gold-glow) / 0.3);
+  }
+  
+  /* Smooth animations */
+  .transition-smooth {
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  }
+}

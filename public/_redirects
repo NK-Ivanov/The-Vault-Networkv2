@@ -1,0 +1,7 @@
+# Netlify Redirects File
+# This ensures all routes work with React Router (client-side routing)
+# All routes redirect to index.html with a 200 status (not 301/302)
+# This allows React Router to handle the routing on the client side
+
+/*    /index.html   200
+
