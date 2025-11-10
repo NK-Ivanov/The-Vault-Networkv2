@@ -136,6 +136,8 @@ const Partners = () => {
       <section className="relative py-20 px-6 overflow-hidden">
         <div className="absolute inset-0 bg-gradient-to-b from-background via-muted/20 to-background"></div>
         <div className="absolute top-1/4 left-1/4 w-96 h-96 bg-primary/10 blur-[120px] rounded-full"></div>
+        {/* Gold divider */}
+        <div className="absolute top-0 left-0 right-0 h-px bg-gradient-to-r from-transparent via-primary to-transparent"></div>
         
         <div className="relative z-10 container mx-auto pt-20">
           <div className="text-center mb-16">

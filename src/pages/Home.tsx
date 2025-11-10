@@ -63,8 +63,8 @@ const Home = () => {
       <section className="py-20 px-6 relative overflow-hidden">
         {/* Gradient transition from hero */}
         <div className="absolute inset-0 bg-gradient-to-b from-vault-black via-vault-charcoal/50 to-vault-charcoal"></div>
-        {/* Subtle divider line */}
-        <div className="absolute top-0 left-0 right-0 h-px bg-gradient-to-r from-transparent via-primary/20 to-transparent"></div>
+        {/* Gold divider line */}
+        <div className="absolute top-0 left-0 right-0 h-px bg-gradient-to-r from-transparent via-primary to-transparent"></div>
         <div className="container mx-auto relative z-10">
           <h2 className="text-4xl md:text-5xl font-display font-bold text-center mb-16 text-primary gold-glow">
             Who It's For
@@ -129,8 +129,8 @@ const Home = () => {
       <section className="py-20 px-6 relative overflow-hidden">
         {/* Smooth gradient transition */}
         <div className="absolute inset-0 bg-gradient-to-b from-vault-charcoal via-vault-charcoal/80 to-vault-black"></div>
-        {/* Subtle divider */}
-        <div className="absolute top-0 left-0 right-0 h-px bg-gradient-to-r from-transparent via-primary/10 to-transparent"></div>
+        {/* Gold divider */}
+        <div className="absolute top-0 left-0 right-0 h-px bg-gradient-to-r from-transparent via-primary to-transparent"></div>
         <div className="container mx-auto max-w-4xl text-center relative z-10">
           <h2 className="text-3xl md:text-4xl font-display font-bold mb-8 text-primary gold-glow">
             Our Mission
@@ -145,8 +145,8 @@ const Home = () => {
       <section className="py-20 px-6 relative overflow-hidden">
         {/* Smooth gradient transition */}
         <div className="absolute inset-0 bg-gradient-to-b from-vault-charcoal via-vault-black/90 to-vault-black"></div>
-        {/* Subtle divider */}
-        <div className="absolute top-0 left-0 right-0 h-px bg-gradient-to-r from-transparent via-primary/10 to-transparent"></div>
+        {/* Gold divider */}
+        <div className="absolute top-0 left-0 right-0 h-px bg-gradient-to-r from-transparent via-primary to-transparent"></div>
         <div className="container mx-auto max-w-6xl relative z-10">
           <h2 className="text-4xl md:text-5xl font-display font-bold text-center mb-16 text-primary gold-glow">
             Why Choose The Vault Network?
@@ -232,8 +232,8 @@ const Home = () => {
       <section className="py-20 px-6 relative overflow-hidden">
         {/* Smooth gradient transition */}
         <div className="absolute inset-0 bg-gradient-to-b from-vault-black via-vault-charcoal/50 to-vault-charcoal"></div>
-        {/* Subtle divider */}
-        <div className="absolute top-0 left-0 right-0 h-px bg-gradient-to-r from-transparent via-primary/10 to-transparent"></div>
+        {/* Gold divider */}
+        <div className="absolute top-0 left-0 right-0 h-px bg-gradient-to-r from-transparent via-primary to-transparent"></div>
         <div className="container mx-auto max-w-6xl relative z-10">
           <h2 className="text-4xl md:text-5xl font-display font-bold text-center mb-4 text-primary gold-glow">
             Success Stories
@@ -295,8 +295,8 @@ const Home = () => {
       <section className="py-20 px-6 relative overflow-hidden">
         {/* Smooth gradient transition */}
         <div className="absolute inset-0 bg-gradient-to-b from-vault-charcoal via-vault-charcoal/80 to-vault-black"></div>
-        {/* Subtle divider */}
-        <div className="absolute top-0 left-0 right-0 h-px bg-gradient-to-r from-transparent via-primary/10 to-transparent"></div>
+        {/* Gold divider */}
+        <div className="absolute top-0 left-0 right-0 h-px bg-gradient-to-r from-transparent via-primary to-transparent"></div>
         <div className="container mx-auto max-w-4xl relative z-10">
           <h2 className="text-4xl md:text-5xl font-display font-bold text-center mb-16 text-primary gold-glow">
             How It Works
@@ -358,8 +358,8 @@ const Home = () => {
       <section className="py-20 px-6 relative overflow-hidden">
         {/* Smooth gradient transition */}
         <div className="absolute inset-0 bg-gradient-to-b from-vault-black via-vault-charcoal/50 to-vault-charcoal"></div>
-        {/* Subtle divider */}
-        <div className="absolute top-0 left-0 right-0 h-px bg-gradient-to-r from-transparent via-primary/10 to-transparent"></div>
+        {/* Gold divider */}
+        <div className="absolute top-0 left-0 right-0 h-px bg-gradient-to-r from-transparent via-primary to-transparent"></div>
         <div className="container mx-auto relative z-10">
           <div className="grid grid-cols-1 md:grid-cols-3 gap-8 max-w-4xl mx-auto text-center">
             <div>
@@ -392,8 +392,8 @@ const Home = () => {
       <section className="py-20 px-6 relative overflow-hidden">
         {/* Smooth gradient transition */}
         <div className="absolute inset-0 bg-gradient-to-b from-vault-charcoal via-vault-black/90 to-vault-black"></div>
-        {/* Subtle divider */}
-        <div className="absolute top-0 left-0 right-0 h-px bg-gradient-to-r from-transparent via-primary/10 to-transparent"></div>
+        {/* Gold divider */}
+        <div className="absolute top-0 left-0 right-0 h-px bg-gradient-to-r from-transparent via-primary to-transparent"></div>
         <div className="container mx-auto max-w-4xl text-center relative z-10">
           <h2 className="text-4xl md:text-5xl font-display font-bold mb-6 text-primary gold-glow">
             Ready to Automate Your Future?
