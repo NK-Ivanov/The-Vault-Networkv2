@@ -1,12 +1,21 @@
-import { Link, useLocation } from "react-router-dom";
+import { Link, useLocation, useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import vaultLogo from "@/assets/vault-logo.png";
+import { useAuth } from "@/hooks/useAuth";
+import { LogOut } from "lucide-react";
 
 const Navigation = () => {
   const location = useLocation();
+  const navigate = useNavigate();
+  const { user, signOut } = useAuth();
   
   const isActive = (path: string) => {
     return location.pathname === path;
+  };
+
+  const handleLogout = async () => {
+    await signOut();
+    navigate("/");
   };
 
   return (
@@ -79,13 +88,24 @@ const Navigation = () => {
               </Button>
             </Link>
 
-            <Link to="/login">
+            {user ? (
               <Button 
-                className="bg-primary hover:bg-primary/90 text-primary-foreground font-semibold gold-border-glow transition-smooth ml-2"
+                onClick={handleLogout}
+                variant="outline"
+                className="border-primary/50 text-foreground hover:bg-primary/10 font-semibold gold-border-glow transition-smooth ml-2"
               >
-                Login
+                <LogOut className="w-4 h-4 mr-2" />
+                Logout
               </Button>
-            </Link>
+            ) : (
+              <Link to="/login">
+                <Button 
+                  className="bg-primary hover:bg-primary/90 text-primary-foreground font-semibold gold-border-glow transition-smooth ml-2"
+                >
+                  Login
+                </Button>
+              </Link>
+            )}
           </div>
         </div>
       </div>
