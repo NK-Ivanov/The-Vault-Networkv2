@@ -30,8 +30,55 @@ export const handler = async (event: any) => {
       statusCode: 405,
       headers: {
         'Access-Control-Allow-Origin': '*',
+        'Content-Type': 'application/json',
       },
       body: JSON.stringify({ error: 'Method not allowed' }),
+    };
+  }
+
+  // Validate environment variables
+  if (!process.env.STRIPE_SECRET_KEY) {
+    console.error('Missing STRIPE_SECRET_KEY environment variable');
+    return {
+      statusCode: 500,
+      headers: {
+        'Access-Control-Allow-Origin': '*',
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        error: 'Server configuration error',
+        message: 'STRIPE_SECRET_KEY is not set',
+      }),
+    };
+  }
+
+  if (!process.env.SUPABASE_URL && !process.env.VITE_SUPABASE_URL) {
+    console.error('Missing SUPABASE_URL environment variable');
+    return {
+      statusCode: 500,
+      headers: {
+        'Access-Control-Allow-Origin': '*',
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        error: 'Server configuration error',
+        message: 'SUPABASE_URL is not set',
+      }),
+    };
+  }
+
+  if (!process.env.SUPABASE_SERVICE_ROLE_KEY) {
+    console.error('Missing SUPABASE_SERVICE_ROLE_KEY environment variable');
+    return {
+      statusCode: 500,
+      headers: {
+        'Access-Control-Allow-Origin': '*',
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        error: 'Server configuration error',
+        message: 'SUPABASE_SERVICE_ROLE_KEY is not set',
+      }),
     };
   }
 
