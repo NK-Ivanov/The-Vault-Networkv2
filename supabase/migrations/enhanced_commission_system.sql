@@ -56,18 +56,18 @@ BEGIN
   END IF;
 
   -- Check if seller has a custom commission rate (overrides all automation defaults)
-  SELECT commission_rate INTO v_seller_rate
-  FROM public.sellers
-  WHERE id = p_seller_id;
+  SELECT s.commission_rate INTO v_seller_rate
+  FROM public.sellers s
+  WHERE s.id = p_seller_id;
 
   -- If seller has custom rate, use it (NULL means use automation default)
   IF v_seller_rate IS NOT NULL THEN
     v_final_rate := v_seller_rate;
   ELSE
     -- Get automation's default commission rate
-    SELECT COALESCE(default_commission_rate, 20.00) INTO v_automation_rate
-    FROM public.automations
-    WHERE id = p_automation_id;
+    SELECT COALESCE(a.default_commission_rate, 20.00) INTO v_automation_rate
+    FROM public.automations a
+    WHERE a.id = p_automation_id;
     
     v_final_rate := v_automation_rate;
   END IF;
@@ -90,14 +90,19 @@ LANGUAGE plpgsql
 SECURITY DEFINER
 SET search_path = public
 AS $$
+DECLARE
+  v_seller_earnings DECIMAL(10,2);
 BEGIN
   -- Only update if transaction is completed and has seller_id
   IF NEW.status = 'completed' AND NEW.seller_id IS NOT NULL THEN
+    -- Determine seller earnings (prefer seller_earnings, fallback to commission)
+    v_seller_earnings := COALESCE(NEW.seller_earnings, NEW.commission, 0);
+    
     -- Update seller's total_sales and total_commission
     UPDATE public.sellers
     SET 
-      total_sales = COALESCE(total_sales, 0) + NEW.amount,
-      total_commission = COALESCE(total_commission, 0) + COALESCE(NEW.seller_earnings, NEW.commission, 0),
+      total_sales = COALESCE(total_sales, 0) + COALESCE(NEW.amount, 0),
+      total_commission = COALESCE(total_commission, 0) + v_seller_earnings,
       updated_at = NOW()
     WHERE id = NEW.seller_id;
   END IF;

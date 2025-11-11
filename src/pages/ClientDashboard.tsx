@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import Navigation from "@/components/Navigation";
 import Footer from "@/components/Footer";
@@ -10,9 +10,13 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
-import { DollarSign, Package, FileText, Send, CreditCard, CheckCircle, XCircle, UserCheck, Sparkles, ArrowRight, Clock, Users } from "lucide-react";
+import { DollarSign, Package, FileText, Send, CreditCard, CheckCircle, XCircle, UserCheck, Sparkles, ArrowRight, Clock, Users, MessageSquare, Plus } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { callNetlifyFunction } from "@/lib/netlify-functions";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import { formatDistanceToNow } from "date-fns";
 
 interface ClientData {
   id: string;
@@ -40,11 +44,35 @@ interface TransactionData {
   created_at: string;
 }
 
-interface EnquiryData {
+interface TicketData {
+  id: string;
+  title: string;
+  description: string;
+  status: string;
+  priority: string;
+  needs_vault_help: boolean;
+  created_at: string;
+  updated_at: string;
+  client: {
+    id: string;
+    business_name: string;
+    user_id: string;
+  } | null;
+  seller: {
+    id: string;
+    business_name: string;
+    user_id: string;
+  } | null;
+}
+
+interface TicketMessageData {
   id: string;
   message: string;
-  status: string;
+  user_id: string;
   created_at: string;
+  is_internal: boolean;
+  senderName?: string;
+  senderType?: "admin" | "client" | "seller" | "unknown";
 }
 
 interface AutomationData {
@@ -73,12 +101,22 @@ const ClientDashboard = () => {
   const [clientData, setClientData] = useState<ClientData | null>(null);
   const [partnerData, setPartnerData] = useState<PartnerData | null>(null);
   const [transactions, setTransactions] = useState<TransactionData[]>([]);
-  const [enquiries, setEnquiries] = useState<EnquiryData[]>([]);
+  const [tickets, setTickets] = useState<TicketData[]>([]);
   const [automations, setAutomations] = useState<AutomationData[]>([]);
 
-  const [enquiryMessage, setEnquiryMessage] = useState("");
+  const [newTicketTitle, setNewTicketTitle] = useState("");
+  const [newTicketDescription, setNewTicketDescription] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [checkingOut, setCheckingOut] = useState<string | null>(null);
+  
+  // Ticket chat state
+  const [selectedTicket, setSelectedTicket] = useState<TicketData | null>(null);
+  const [ticketMessages, setTicketMessages] = useState<TicketMessageData[]>([]);
+  const ticketMessagesEndRef = useRef<HTMLDivElement>(null);
+  const [newMessage, setNewMessage] = useState("");
+  const [sendingMessage, setSendingMessage] = useState(false);
+  const [showTicketDialog, setShowTicketDialog] = useState(false);
+  const [ticketChannel, setTicketChannel] = useState<any>(null);
 
   useEffect(() => {
     if (!authLoading && !user) {
@@ -178,14 +216,27 @@ const ClientDashboard = () => {
       if (transactionsError) throw transactionsError;
       setTransactions(transactionsData || []);
 
-      const { data: enquiriesData, error: enquiriesError } = await supabase
-        .from("enquiries")
-        .select("*")
+      // Fetch tickets with seller info
+      const { data: ticketsData, error: ticketsError } = await supabase
+        .from("tickets")
+        .select(`
+          *,
+          client:clients!tickets_client_id_fkey (
+            id,
+            business_name,
+            user_id
+          ),
+          seller:sellers!tickets_seller_id_fkey (
+            id,
+            business_name,
+            user_id
+          )
+        `)
         .eq("client_id", client.id)
         .order("created_at", { ascending: false });
 
-      if (enquiriesError) throw enquiriesError;
-      setEnquiries(enquiriesData || []);
+      if (ticketsError) throw ticketsError;
+      setTickets(ticketsData || []);
 
       // Fetch assigned automations
       const { data: automationsData, error: automationsError } = await supabase
@@ -287,32 +338,52 @@ const ClientDashboard = () => {
     }
   };
 
-  const handleSubmitEnquiry = async (e: React.FormEvent) => {
+  const handleCreateTicket = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!newTicketTitle.trim() || !newTicketDescription.trim()) {
+      toast({
+        title: "Missing Information",
+        description: "Please provide both a title and description for your ticket.",
+        variant: "destructive",
+      });
+      return;
+    }
+
     setSubmitting(true);
 
     try {
-      const { error } = await supabase.from("enquiries").insert({
+      const { data: ticket, error } = await supabase.from("tickets").insert({
         client_id: clientData?.id,
-        business_name: clientData?.business_name || "",
-        contact_name: clientData?.contact_name || "",
-        email: user?.email || "",
-        message: enquiryMessage,
-        status: "new",
-      });
+        seller_id: clientData?.seller_id,
+        title: newTicketTitle.trim(),
+        description: newTicketDescription.trim(),
+        status: "open",
+        priority: "normal",
+        created_by: user?.id,
+      }).select().single();
 
       if (error) throw error;
 
+      // Add initial message
+      if (ticket) {
+        await supabase.from("ticket_messages").insert({
+          ticket_id: ticket.id,
+          user_id: user?.id,
+          message: newTicketDescription.trim(),
+        });
+      }
+
       toast({
-        title: "Enquiry Submitted!",
-        description: "We'll get back to you soon.",
+        title: "Ticket Created!",
+        description: "Your support ticket has been created. Your partner will respond soon.",
       });
 
-      setEnquiryMessage("");
+      setNewTicketTitle("");
+      setNewTicketDescription("");
       fetchClientData();
     } catch (error: any) {
       toast({
-        title: "Failed to submit enquiry",
+        title: "Failed to create ticket",
         description: error.message,
         variant: "destructive",
       });
@@ -320,6 +391,184 @@ const ClientDashboard = () => {
       setSubmitting(false);
     }
   };
+
+  // Helper function to identify message sender
+  const identifyMessageSender = async (messages: any[], ticket: TicketData) => {
+    const userIds = [...new Set(messages?.map(m => m.user_id).filter(Boolean) || [])];
+    if (userIds.length === 0) return messages.map(m => ({ ...m, senderName: "Unknown", senderType: "unknown" }));
+    
+    // Fetch user roles to identify admins
+    const { data: userRoles } = await supabase
+      .from("user_roles")
+      .select("user_id, role")
+      .in("user_id", userIds);
+    
+    const adminUserIds = new Set(
+      userRoles?.filter(ur => ur.role === "admin").map(ur => ur.user_id) || []
+    );
+    
+    // Process of elimination: if not client or seller, must be admin
+    const clientUserId = ticket.client?.user_id;
+    const sellerUserId = ticket.seller?.user_id;
+    
+    return messages.map(msg => {
+      let senderName = "Unknown";
+      let senderType: "admin" | "client" | "seller" | "unknown" = "unknown";
+      
+      // Check if admin (by role or process of elimination)
+      if (adminUserIds.has(msg.user_id) || (msg.user_id !== clientUserId && msg.user_id !== sellerUserId && msg.user_id)) {
+        senderName = "The Vault Network";
+        senderType = "admin";
+      } else if (msg.user_id === clientUserId) {
+        senderName = ticket.client?.business_name || "Client";
+        senderType = "client";
+      } else if (msg.user_id === sellerUserId) {
+        senderName = ticket.seller?.business_name || "Partner";
+        senderType = "seller";
+      }
+      
+      return { ...msg, senderName, senderType };
+    });
+  };
+
+  const openTicketChat = async (ticket: TicketData) => {
+    setSelectedTicket(ticket);
+    setShowTicketDialog(true);
+    
+    // Fetch messages for this ticket
+    try {
+      const { data: messages, error } = await supabase
+        .from("ticket_messages")
+        .select("*")
+        .eq("ticket_id", ticket.id)
+        .eq("is_internal", false) // Don't show internal notes to clients
+        .order("created_at", { ascending: true });
+
+      if (error) throw error;
+      
+      // Enrich messages with sender info
+      const enrichedMessages = await identifyMessageSender(messages || [], ticket);
+      setTicketMessages(enrichedMessages);
+      
+      // Set up real-time subscription for new messages
+      const channel = supabase
+        .channel(`ticket_messages_${ticket.id}`)
+        .on(
+          'postgres_changes',
+          {
+            event: 'INSERT',
+            schema: 'public',
+            table: 'ticket_messages',
+            filter: `ticket_id=eq.${ticket.id}`,
+          },
+          async () => {
+            // Fetch updated messages
+            const { data: updatedMessages } = await supabase
+              .from("ticket_messages")
+              .select("*")
+              .eq("ticket_id", ticket.id)
+              .eq("is_internal", false)
+              .order("created_at", { ascending: true });
+            
+            if (updatedMessages) {
+              const reEnriched = await identifyMessageSender(updatedMessages, ticket);
+              setTicketMessages(reEnriched);
+              setTimeout(() => {
+                ticketMessagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+              }, 100);
+            }
+          }
+        )
+        .subscribe();
+      
+      setTicketChannel(channel);
+    } catch (error: any) {
+      toast({
+        title: "Error loading messages",
+        description: error.message,
+        variant: "destructive",
+      });
+    }
+  };
+
+  const sendTicketMessage = async () => {
+    if (!newMessage.trim() || !selectedTicket) return;
+
+    setSendingMessage(true);
+    try {
+      const { error } = await supabase.from("ticket_messages").insert({
+        ticket_id: selectedTicket.id,
+        user_id: user?.id,
+        message: newMessage.trim(),
+      });
+
+      if (error) throw error;
+
+      setNewMessage("");
+      // Refresh messages using helper function
+      const { data: messages } = await supabase
+        .from("ticket_messages")
+        .select("*")
+        .eq("ticket_id", selectedTicket.id)
+        .eq("is_internal", false)
+        .order("created_at", { ascending: true });
+
+      if (messages) {
+        const enriched = await identifyMessageSender(messages, selectedTicket);
+        setTicketMessages(enriched);
+        setTimeout(() => {
+          ticketMessagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+        }, 100);
+      }
+      
+      // Refresh ticket list
+      fetchClientData();
+    } catch (error: any) {
+      toast({
+        title: "Failed to send message",
+        description: error.message,
+        variant: "destructive",
+      });
+    } finally {
+      setSendingMessage(false);
+    }
+  };
+
+  // Handle notification events (after functions are defined)
+  useEffect(() => {
+    // Handle opening ticket from notification
+    const handleOpenTicket = (event: CustomEvent) => {
+      const ticketId = event.detail.ticketId;
+      const ticket = tickets.find(t => t.id === ticketId);
+      if (ticket) {
+        openTicketChat(ticket);
+      }
+    };
+    
+    window.addEventListener('openTicket', handleOpenTicket as EventListener);
+    
+    return () => {
+      window.removeEventListener('openTicket', handleOpenTicket as EventListener);
+    };
+  }, [tickets]);
+
+  // Cleanup ticket channel subscription when dialog closes
+  useEffect(() => {
+    return () => {
+      if (ticketChannel) {
+        supabase.removeChannel(ticketChannel);
+        setTicketChannel(null);
+      }
+    };
+  }, [ticketChannel]);
+
+  // Cleanup subscription when dialog closes
+  useEffect(() => {
+    if (!showTicketDialog && ticketChannel) {
+      supabase.removeChannel(ticketChannel);
+      setTicketChannel(null);
+    }
+  }, [showTicketDialog, ticketChannel]);
 
   if (authLoading || loading) {
     return (
@@ -553,12 +802,12 @@ const ClientDashboard = () => {
 
             <Card className="bg-card border-border">
               <CardHeader className="flex flex-row items-center justify-between pb-2">
-                <CardTitle className="text-sm font-medium text-muted-foreground">Open Enquiries</CardTitle>
+                <CardTitle className="text-sm font-medium text-muted-foreground">Open Tickets</CardTitle>
                 <FileText className="h-4 w-4 text-primary" />
               </CardHeader>
               <CardContent>
                 <div className="text-2xl font-bold text-foreground">
-                  {enquiries.filter(e => e.status === "new" || e.status === "contacted").length}
+                  {tickets.filter(t => t.status === "open" || t.status === "waiting_for_seller" || t.status === "in_progress").length}
                 </div>
               </CardContent>
             </Card>
@@ -725,46 +974,88 @@ const ClientDashboard = () => {
                     <p className="text-muted-foreground">No transactions yet</p>
                   </div>
                 ) : (
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead>Type</TableHead>
-                        <TableHead>Status</TableHead>
-                        <TableHead className="text-right">Amount</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {transactions.map((transaction) => (
-                        <TableRow key={transaction.id}>
-                          <TableCell className="capitalize">{transaction.transaction_type}</TableCell>
-                          <TableCell>
-                            <Badge variant={transaction.status === "completed" ? "default" : "secondary"}>
-                              {transaction.status}
-                            </Badge>
-                          </TableCell>
-                          <TableCell className="text-right">${transaction.amount.toFixed(2)}</TableCell>
-                        </TableRow>
+                  <>
+                    {/* Mobile Card Layout */}
+                    <div className="md:hidden space-y-3">
+                      {transactions
+                        .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
+                        .map((transaction) => (
+                        <Card key={transaction.id} className="bg-muted/20 border-border p-3">
+                          <div className="flex items-center justify-between">
+                            <div className="flex-1 min-w-0">
+                              <div className="font-medium text-sm capitalize">{transaction.transaction_type}</div>
+                              <div className="text-xs text-muted-foreground mt-1">
+                                {new Date(transaction.created_at).toLocaleDateString()}
+                              </div>
+                            </div>
+                            <div className="flex flex-col items-end gap-2 ml-3">
+                              <div className="font-bold text-primary">${transaction.amount.toFixed(2)}</div>
+                              <Badge variant={transaction.status === "completed" ? "default" : "secondary"} className="text-xs">
+                                {transaction.status}
+                              </Badge>
+                            </div>
+                          </div>
+                        </Card>
                       ))}
-                    </TableBody>
-                  </Table>
+                    </div>
+                    
+                    {/* Desktop Table Layout */}
+                    <div className="hidden md:block">
+                      <Table>
+                        <TableHeader>
+                          <TableRow>
+                            <TableHead>Type</TableHead>
+                            <TableHead>Status</TableHead>
+                            <TableHead className="text-right">Amount</TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {transactions
+                            .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
+                            .map((transaction) => (
+                            <TableRow key={transaction.id}>
+                              <TableCell className="capitalize">{transaction.transaction_type}</TableCell>
+                              <TableCell>
+                                <Badge variant={transaction.status === "completed" ? "default" : "secondary"}>
+                                  {transaction.status}
+                                </Badge>
+                              </TableCell>
+                              <TableCell className="text-right">${transaction.amount.toFixed(2)}</TableCell>
+                            </TableRow>
+                          ))}
+                        </TableBody>
+                      </Table>
+                    </div>
+                  </>
                 )}
               </CardContent>
             </Card>
 
             <Card className="bg-card border-border">
               <CardHeader>
-                <CardTitle className="text-primary">Submit Enquiry</CardTitle>
-                <CardDescription>Have questions? Send us a message</CardDescription>
+                <CardTitle className="text-primary">Create Support Ticket</CardTitle>
+                <CardDescription>Have questions or need help? Submit a support ticket and we'll get back to you</CardDescription>
               </CardHeader>
               <CardContent>
-                <form onSubmit={handleSubmitEnquiry} className="space-y-4">
+                <form onSubmit={handleCreateTicket} className="space-y-4">
                   <div className="space-y-2">
-                    <Label htmlFor="enquiry-message">Your Message *</Label>
+                    <Label htmlFor="ticket-title">Ticket Title *</Label>
+                    <Input
+                      id="ticket-title"
+                      placeholder="Brief summary of your issue..."
+                      value={newTicketTitle}
+                      onChange={(e) => setNewTicketTitle(e.target.value)}
+                      required
+                      className="bg-input border-border"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="ticket-description">Description *</Label>
                     <Textarea
-                      id="enquiry-message"
-                      placeholder="What can we help you with?"
-                      value={enquiryMessage}
-                      onChange={(e) => setEnquiryMessage(e.target.value)}
+                      id="ticket-description"
+                      placeholder="Describe your issue or question in detail..."
+                      value={newTicketDescription}
+                      onChange={(e) => setNewTicketDescription(e.target.value)}
                       required
                       rows={6}
                       className="bg-input border-border"
@@ -776,7 +1067,7 @@ const ClientDashboard = () => {
                     disabled={submitting}
                   >
                     <Send className="w-4 h-4 mr-2" />
-                    {submitting ? "Sending..." : "Submit Enquiry"}
+                    {submitting ? "Creating..." : "Create Ticket"}
                   </Button>
                 </form>
               </CardContent>
@@ -785,36 +1076,168 @@ const ClientDashboard = () => {
 
           <Card className="bg-card border-border">
             <CardHeader>
-              <CardTitle className="text-primary">Your Enquiries</CardTitle>
-              <CardDescription>Track your messages and requests</CardDescription>
+              <CardTitle className="text-primary">Your Support Tickets</CardTitle>
+              <CardDescription>View and manage your support tickets</CardDescription>
             </CardHeader>
             <CardContent>
-              {enquiries.length === 0 ? (
+              {tickets.length === 0 ? (
                 <div className="text-center py-8">
-                  <p className="text-muted-foreground">No enquiries yet</p>
+                  <p className="text-muted-foreground mb-2">No support tickets yet</p>
+                  <p className="text-xs text-muted-foreground">Create a ticket above to get help</p>
                 </div>
               ) : (
-                <div className="space-y-4">
-                  {enquiries.map((enquiry) => (
-                    <div key={enquiry.id} className="p-4 border border-border rounded-lg">
-                      <div className="flex justify-between items-start mb-2">
-                        <Badge variant={
-                          enquiry.status === "new" ? "default" :
-                          enquiry.status === "contacted" ? "secondary" : "outline"
-                        }>
-                          {enquiry.status}
-                        </Badge>
-                        <span className="text-sm text-muted-foreground">
-                          {new Date(enquiry.created_at).toLocaleDateString()}
-                        </span>
-                      </div>
-                      <p className="text-foreground">{enquiry.message}</p>
-                    </div>
+                <div className="space-y-3 sm:space-y-4">
+                  {tickets
+                    .sort((a, b) => {
+                      // Sort by status priority first, then by date
+                      const statusPriority: Record<string, number> = {
+                        'open': 1,
+                        'waiting_for_seller': 2,
+                        'in_progress': 3,
+                        'waiting_for_client': 4,
+                        'needs_vault_help': 5,
+                        'resolved': 6,
+                        'closed': 7
+                      };
+                      const statusDiff = (statusPriority[a.status] || 99) - (statusPriority[b.status] || 99);
+                      if (statusDiff !== 0) return statusDiff;
+                      return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
+                    })
+                    .map((ticket) => (
+                    <Card key={ticket.id} className={`bg-muted/20 border-border ${
+                      ticket.status === "open" || ticket.status === "waiting_for_seller" ? "border-primary/50" : ""
+                    }`}>
+                      <CardHeader className="p-3 sm:p-4">
+                        <div className="space-y-2">
+                          <div className="flex flex-wrap items-start gap-2">
+                            <CardTitle className="text-base sm:text-lg flex-1 min-w-0 break-words">{ticket.title}</CardTitle>
+                            <div className="flex flex-wrap gap-2 shrink-0">
+                              <Badge variant={
+                                ticket.status === "open" || ticket.status === "waiting_for_seller" ? "default" :
+                                ticket.status === "in_progress" || ticket.status === "waiting_for_client" ? "secondary" :
+                                ticket.status === "resolved" ? "default" : "outline"
+                              } className="text-xs">
+                                {ticket.status === "open" ? "Open" :
+                                 ticket.status === "waiting_for_seller" ? "Waiting for Partner" :
+                                 ticket.status === "waiting_for_client" ? "Waiting for You" :
+                                 ticket.status === "in_progress" ? "In Progress" :
+                                 ticket.status === "needs_vault_help" ? "Needs Vault Help" :
+                                 ticket.status === "resolved" ? "Resolved" : "Closed"}
+                              </Badge>
+                              {ticket.needs_vault_help && (
+                                <Badge variant="outline" className="bg-primary/10 text-primary border-primary/20 text-xs">
+                                  Vault Help
+                                </Badge>
+                              )}
+                            </div>
+                          </div>
+                          <div className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-3 text-xs sm:text-sm text-muted-foreground">
+                            <span>{ticket.seller ? `Partner: ${ticket.seller.business_name}` : "The Vault Network"}</span>
+                            <span className="hidden sm:inline">•</span>
+                            <span>Created {formatDistanceToNow(new Date(ticket.created_at), { addSuffix: true })}</span>
+                          </div>
+                        </div>
+                      </CardHeader>
+                      <CardContent className="p-3 sm:p-4 pt-0">
+                        <p className="text-sm sm:text-base text-foreground mb-3 sm:mb-4 whitespace-pre-wrap break-words">{ticket.description}</p>
+                        <Button
+                          onClick={() => openTicketChat(ticket)}
+                          variant="outline"
+                          className="w-full"
+                          size="sm"
+                        >
+                          <MessageSquare className="w-4 h-4 mr-2" />
+                          View Conversation
+                        </Button>
+                      </CardContent>
+                    </Card>
                   ))}
                 </div>
               )}
             </CardContent>
           </Card>
+
+          {/* Ticket Chat Dialog */}
+          <Dialog open={showTicketDialog} onOpenChange={setShowTicketDialog}>
+            <DialogContent className="max-w-3xl max-h-[80vh] flex flex-col">
+              <DialogHeader>
+                <DialogTitle>{selectedTicket?.title || "Ticket Details"}</DialogTitle>
+                <DialogDescription>
+                  Ticket Details
+                </DialogDescription>
+                <div className="flex flex-wrap gap-2 mt-2">
+                  {selectedTicket?.client && (
+                    <Badge variant="outline" className="bg-primary/10 text-primary border-primary/20">
+                      Client: {selectedTicket.client.business_name}
+                    </Badge>
+                  )}
+                  {selectedTicket?.seller && (
+                    <Badge variant="outline" className="bg-secondary/10 text-secondary-foreground border-secondary/20">
+                      Partner: {selectedTicket.seller.business_name}
+                    </Badge>
+                  )}
+                  {/* The Vault Network is always part of ticket chats */}
+                  <Badge variant="outline" className="bg-yellow-500/20 text-yellow-600 dark:text-yellow-400 border-yellow-500/30 shadow-[0_0_10px_rgba(234,179,8,0.5)]">
+                    The Vault Network
+                  </Badge>
+                </div>
+              </DialogHeader>
+              <ScrollArea className="flex-1 min-h-[400px] max-h-[500px] pr-4">
+                <div className="space-y-4">
+                  {ticketMessages.map((msg) => {
+                    const isAdmin = msg.senderType === "admin";
+                    const isClient = msg.senderType === "client";
+                    const isSeller = msg.senderType === "seller";
+                    
+                    return (
+                      <div
+                        key={msg.id}
+                        className={`flex ${isClient ? 'justify-end' : 'justify-start'}`}
+                      >
+                        <div
+                          className={`max-w-[80%] rounded-lg p-3 bg-muted text-foreground`}
+                        >
+                          <p className={`text-xs font-semibold mb-1 ${
+                            isAdmin ? 'text-yellow-600 dark:text-yellow-400 opacity-100 drop-shadow-[0_0_4px_rgba(234,179,8,0.6)]' : 
+                            isClient ? 'text-sky-400 dark:text-sky-300 opacity-100' :
+                            'text-green-600 dark:text-green-400 opacity-100'
+                          }`}>
+                            {msg.senderName || "Unknown"}
+                          </p>
+                          <p className="text-sm whitespace-pre-wrap">{msg.message}</p>
+                          <p className={`text-xs mt-1 text-muted-foreground`}>
+                            {formatDistanceToNow(new Date(msg.created_at), { addSuffix: true })}
+                          </p>
+                        </div>
+                      </div>
+                    );
+                  })}
+                  <div ref={ticketMessagesEndRef} />
+                </div>
+              </ScrollArea>
+              <div className="flex gap-2 pt-4 border-t">
+                <Input
+                  placeholder="Type your message..."
+                  value={newMessage}
+                  onChange={(e) => setNewMessage(e.target.value)}
+                  onKeyPress={(e) => {
+                    if (e.key === 'Enter' && !e.shiftKey) {
+                      e.preventDefault();
+                      sendTicketMessage();
+                    }
+                  }}
+                  className="flex-1"
+                />
+                <Button
+                  onClick={sendTicketMessage}
+                  disabled={!newMessage.trim() || sendingMessage}
+                >
+                  <Send className="w-4 h-4 mr-2" />
+                  {sendingMessage ? "Sending..." : "Send"}
+                </Button>
+              </div>
+            </DialogContent>
+          </Dialog>
         </div>
       </section>
 

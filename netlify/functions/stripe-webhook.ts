@@ -129,9 +129,21 @@ export const handler = async (event: any) => {
 
           if (setupCommError) {
             console.error('Error calculating setup commission:', setupCommError);
+            console.error('Details:', { seller_id: clientAutomation.seller_id, automation_id: automationId, amount: automation.data.setup_price });
+          }
+
+          if (!setupCommission || setupCommission.length === 0) {
+            console.error('No commission result returned for setup fee', { seller_id: clientAutomation.seller_id, automation_id: automationId });
           }
 
           const setupComm = setupCommission?.[0] || { commission_rate: 0, seller_earnings: 0, vault_share: automation.data.setup_price };
+          
+          console.log('Setup commission calculated:', {
+            rate: setupComm.commission_rate,
+            seller_earnings: setupComm.seller_earnings,
+            vault_share: setupComm.vault_share,
+            amount: automation.data.setup_price
+          });
 
           // Create setup fee transaction
           await supabase.from('transactions').insert({
@@ -157,9 +169,21 @@ export const handler = async (event: any) => {
 
           if (monthlyCommError) {
             console.error('Error calculating monthly commission:', monthlyCommError);
+            console.error('Details:', { seller_id: clientAutomation.seller_id, automation_id: automationId, amount: automation.data.monthly_price });
+          }
+
+          if (!monthlyCommission || monthlyCommission.length === 0) {
+            console.error('No commission result returned for monthly fee', { seller_id: clientAutomation.seller_id, automation_id: automationId });
           }
 
           const monthlyComm = monthlyCommission?.[0] || { commission_rate: 0, seller_earnings: 0, vault_share: automation.data.monthly_price };
+          
+          console.log('Monthly commission calculated:', {
+            rate: monthlyComm.commission_rate,
+            seller_earnings: monthlyComm.seller_earnings,
+            vault_share: monthlyComm.vault_share,
+            amount: automation.data.monthly_price
+          });
 
           // Create first month transaction
           await supabase.from('transactions').insert({
@@ -231,9 +255,21 @@ export const handler = async (event: any) => {
 
           if (monthlyCommError) {
             console.error('Error calculating monthly commission:', monthlyCommError);
+            console.error('Details:', { seller_id: clientAutomation.seller_id, automation_id: clientAutomation.automation_id, amount: automation.data.monthly_price });
+          }
+
+          if (!monthlyCommission || monthlyCommission.length === 0) {
+            console.error('No commission result returned for recurring monthly fee', { seller_id: clientAutomation.seller_id, automation_id: clientAutomation.automation_id });
           }
 
           const monthlyComm = monthlyCommission?.[0] || { commission_rate: 0, seller_earnings: 0, vault_share: automation.data.monthly_price };
+          
+          console.log('Recurring monthly commission calculated:', {
+            rate: monthlyComm.commission_rate,
+            seller_earnings: monthlyComm.seller_earnings,
+            vault_share: monthlyComm.vault_share,
+            amount: automation.data.monthly_price
+          });
 
           await supabase.from('transactions').insert({
             client_id: clientAutomation.client_id,
