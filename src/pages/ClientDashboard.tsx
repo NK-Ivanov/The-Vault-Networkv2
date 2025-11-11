@@ -1,5 +1,5 @@
 import { useEffect, useState, useRef } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import Navigation from "@/components/Navigation";
 import Footer from "@/components/Footer";
 import { useAuth } from "@/hooks/useAuth";
@@ -10,7 +10,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
-import { DollarSign, Package, FileText, Send, CreditCard, CheckCircle, XCircle, UserCheck, Sparkles, ArrowRight, Clock, Users, MessageSquare, Plus } from "lucide-react";
+import { DollarSign, Package, FileText, Send, CreditCard, CheckCircle, XCircle, UserCheck, Sparkles, ArrowRight, Clock, Users, MessageSquare, Plus, Trophy } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { callNetlifyFunction } from "@/lib/netlify-functions";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -96,6 +96,7 @@ interface AutomationData {
 const ClientDashboard = () => {
   const { user, loading: authLoading } = useAuth();
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
   const { toast } = useToast();
   const [loading, setLoading] = useState(true);
   const [clientData, setClientData] = useState<ClientData | null>(null);
@@ -117,6 +118,10 @@ const ClientDashboard = () => {
   const [sendingMessage, setSendingMessage] = useState(false);
   const [showTicketDialog, setShowTicketDialog] = useState(false);
   const [ticketChannel, setTicketChannel] = useState<any>(null);
+  
+  // Order confirmation state
+  const [showOrderConfirmation, setShowOrderConfirmation] = useState(false);
+  const [orderDetails, setOrderDetails] = useState<{ automationName?: string; amount?: number } | null>(null);
 
   useEffect(() => {
     if (!authLoading && !user) {
@@ -129,6 +134,52 @@ const ClientDashboard = () => {
       fetchClientData();
     }
   }, [user]);
+
+  // Check for successful payment redirect
+  useEffect(() => {
+    const sessionId = searchParams.get('session_id');
+    if (sessionId && user && clientData) {
+      // Fetch order details from the most recent transaction
+      const fetchOrderDetails = async () => {
+        try {
+          // Get the most recent completed transaction
+          const { data: recentTransaction, error } = await supabase
+            .from('transactions')
+            .select(`
+              *,
+              automation:automations!transactions_automation_id_fkey (
+                name
+              )
+            `)
+            .eq('client_id', clientData.id)
+            .eq('status', 'completed')
+            .order('created_at', { ascending: false })
+            .limit(1)
+            .maybeSingle();
+
+          if (error) throw error;
+
+          if (recentTransaction) {
+            setOrderDetails({
+              automationName: recentTransaction.automation?.name || 'Automation',
+              amount: recentTransaction.amount,
+            });
+            setShowOrderConfirmation(true);
+            // Remove session_id from URL
+            searchParams.delete('session_id');
+            setSearchParams(searchParams, { replace: true });
+          }
+        } catch (error: any) {
+          console.error('Error fetching order details:', error);
+        }
+      };
+
+      // Small delay to ensure transactions are updated
+      setTimeout(() => {
+        fetchOrderDetails();
+      }, 1000);
+    }
+  }, [searchParams, user, clientData]);
 
   const fetchClientData = async () => {
     try {
@@ -1240,6 +1291,59 @@ const ClientDashboard = () => {
           </Dialog>
         </div>
       </section>
+
+      {/* Order Confirmation Dialog */}
+      <Dialog open={showOrderConfirmation} onOpenChange={setShowOrderConfirmation}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <div className="flex items-center justify-center mb-4">
+              <div className="rounded-full bg-green-100 dark:bg-green-900/20 p-3">
+                <CheckCircle className="w-12 h-12 text-green-600 dark:text-green-400" />
+              </div>
+            </div>
+            <DialogTitle className="text-center text-2xl">Order Confirmed!</DialogTitle>
+            <DialogDescription className="text-center">
+              Your payment was successful. Thank you for your purchase!
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            {orderDetails && (
+              <>
+                <div className="bg-muted/50 rounded-lg p-4 space-y-2">
+                  <div className="flex justify-between items-center">
+                    <span className="text-sm text-muted-foreground">Automation:</span>
+                    <span className="font-semibold">{orderDetails.automationName}</span>
+                  </div>
+                  {orderDetails.amount && (
+                    <div className="flex justify-between items-center">
+                      <span className="text-sm text-muted-foreground">Amount Paid:</span>
+                      <span className="font-bold text-primary text-lg">${orderDetails.amount.toFixed(2)}</span>
+                    </div>
+                  )}
+                </div>
+                <div className="bg-blue-50 dark:bg-blue-900/20 rounded-lg p-4 border border-blue-200 dark:border-blue-800">
+                  <p className="text-sm text-blue-900 dark:text-blue-200">
+                    <strong>What's Next?</strong>
+                  </p>
+                  <p className="text-sm text-blue-800 dark:text-blue-300 mt-1">
+                    Your partner will be notified and will begin setting up your automation. You'll receive updates on the setup status.
+                  </p>
+                </div>
+              </>
+            )}
+            <Button
+              onClick={() => {
+                setShowOrderConfirmation(false);
+                // Refresh data to show updated automations
+                fetchClientData();
+              }}
+              className="w-full"
+            >
+              Continue to Dashboard
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
 
       <Footer />
     </div>

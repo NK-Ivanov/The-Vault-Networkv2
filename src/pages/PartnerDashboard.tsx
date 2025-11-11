@@ -11,7 +11,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { DollarSign, Users, TrendingUp, Package, Copy, Check, CheckCircle, XCircle, MessageSquare, AlertCircle, HelpCircle, Send, RefreshCw, LayoutDashboard, Building2, Boxes, CreditCard, Ticket, Mail } from "lucide-react";
+import { DollarSign, Users, TrendingUp, Package, Copy, Check, CheckCircle, XCircle, MessageSquare, AlertCircle, HelpCircle, Send, RefreshCw, LayoutDashboard, Building2, Boxes, CreditCard, Ticket, Mail, Trophy } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -131,6 +131,14 @@ interface SellerMessageData {
   }>;
 }
 
+interface LeaderboardEntry {
+  rank: number;
+  business_name: string;
+  total_sales: number;
+  total_commission: number;
+  isCurrentUser: boolean;
+}
+
 const PartnerDashboard = () => {
   const { user, loading: authLoading } = useAuth();
   const navigate = useNavigate();
@@ -171,6 +179,10 @@ const PartnerDashboard = () => {
   const [sendingSellerReply, setSendingSellerReply] = useState(false);
   const [showSellerMessageDialog, setShowSellerMessageDialog] = useState(false);
   const [submittingSellerMessage, setSubmittingSellerMessage] = useState(false);
+  
+  // Leaderboard state
+  const [leaderboard, setLeaderboard] = useState<LeaderboardEntry[]>([]);
+  const [loadingLeaderboard, setLoadingLeaderboard] = useState(false);
 
   useEffect(() => {
     if (!authLoading && !user) {
@@ -373,6 +385,9 @@ const PartnerDashboard = () => {
       if (seller.referral_code) {
         setNewReferralCode(seller.referral_code);
       }
+      
+      // Fetch leaderboard
+      fetchLeaderboard(seller.id);
     } catch (error: any) {
       toast({
         title: "Error loading dashboard",
@@ -445,6 +460,37 @@ const PartnerDashboard = () => {
       description: "Share this link with potential clients",
     });
     setTimeout(() => setCopied(false), 2000);
+  };
+
+  const fetchLeaderboard = async (currentSellerId: string) => {
+    setLoadingLeaderboard(true);
+    try {
+      // Fetch top sellers by total_sales (excluding "The Vault Network")
+      const { data: sellers, error } = await supabase
+        .from("sellers")
+        .select("id, business_name, total_sales, total_commission")
+        .neq("business_name", "The Vault Network")
+        .order("total_sales", { ascending: false })
+        .limit(10);
+
+      if (error) throw error;
+
+      // Transform to leaderboard entries with ranks
+      const entries: LeaderboardEntry[] = (sellers || []).map((seller, index) => ({
+        rank: index + 1,
+        business_name: seller.business_name,
+        total_sales: seller.total_sales || 0,
+        total_commission: seller.total_commission || 0,
+        isCurrentUser: seller.id === currentSellerId,
+      }));
+
+      setLeaderboard(entries);
+    } catch (error: any) {
+      console.error("Error fetching leaderboard:", error);
+      // Don't show error toast - leaderboard is not critical
+    } finally {
+      setLoadingLeaderboard(false);
+    }
   };
 
   const handleAssignAutomation = async () => {
@@ -1080,6 +1126,78 @@ const PartnerDashboard = () => {
                           </div>
                         </div>
                       </div>
+                    </CardContent>
+                  </Card>
+
+                  {/* Partner Leaderboard */}
+                  <Card className="bg-card border-border mt-4 sm:mt-6">
+                    <CardHeader>
+                      <div className="flex items-center gap-2">
+                        <Trophy className="w-5 h-5 text-primary" />
+                        <CardTitle className="text-base sm:text-lg text-primary">Top Partners Leaderboard</CardTitle>
+                      </div>
+                      <CardDescription className="text-xs sm:text-sm">See how you rank among top-performing partners</CardDescription>
+                    </CardHeader>
+                    <CardContent>
+                      {loadingLeaderboard ? (
+                        <div className="text-center py-8 text-muted-foreground">
+                          Loading leaderboard...
+                        </div>
+                      ) : leaderboard.length === 0 ? (
+                        <div className="text-center py-8 text-muted-foreground text-sm">
+                          No leaderboard data available yet
+                        </div>
+                      ) : (
+                        <div className="space-y-2">
+                          {leaderboard.map((entry) => (
+                            <div
+                              key={entry.rank}
+                              className={`flex items-center justify-between p-3 rounded-lg border ${
+                                entry.isCurrentUser
+                                  ? 'bg-primary/10 border-primary/30 shadow-sm'
+                                  : 'bg-muted/30 border-border'
+                              }`}
+                            >
+                              <div className="flex items-center gap-3 flex-1 min-w-0">
+                                <div className={`flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center font-bold text-sm ${
+                                  entry.rank === 1
+                                    ? 'bg-yellow-500/20 text-yellow-600 dark:text-yellow-400'
+                                    : entry.rank === 2
+                                    ? 'bg-gray-400/20 text-gray-600 dark:text-gray-400'
+                                    : entry.rank === 3
+                                    ? 'bg-orange-500/20 text-orange-600 dark:text-orange-400'
+                                    : 'bg-muted text-muted-foreground'
+                                }`}>
+                                  {entry.rank}
+                                </div>
+                                <div className="flex-1 min-w-0">
+                                  <div className={`font-semibold text-sm sm:text-base truncate ${
+                                    entry.isCurrentUser ? 'text-primary' : 'text-foreground'
+                                  }`}>
+                                    {entry.business_name}
+                                    {entry.isCurrentUser && (
+                                      <Badge variant="outline" className="ml-2 text-xs bg-primary/20 text-primary border-primary/30">
+                                        You
+                                      </Badge>
+                                    )}
+                                  </div>
+                                  <div className="text-xs text-muted-foreground mt-0.5">
+                                    ${entry.total_sales.toFixed(2)} sales
+                                  </div>
+                                </div>
+                              </div>
+                              <div className="text-right flex-shrink-0 ml-2">
+                                <div className="text-xs sm:text-sm font-bold text-primary">
+                                  ${entry.total_commission.toFixed(2)}
+                                </div>
+                                <div className="text-xs text-muted-foreground">
+                                  earned
+                                </div>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
                     </CardContent>
                   </Card>
                 </TabsContent>
