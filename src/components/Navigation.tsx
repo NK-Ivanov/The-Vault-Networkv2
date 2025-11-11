@@ -202,15 +202,16 @@ const Navigation = () => {
   const accountType = getAccountTypeLabel();
 
   return (
-    <nav className="fixed top-0 left-0 right-0 z-50 bg-vault-black/80 backdrop-blur-lg border-b border-border">
-      <div className="container mx-auto px-3 sm:px-4 md:px-6 py-2 sm:py-3 md:py-4">
+    <>
+      <nav className="sticky top-0 z-50 bg-vault-black/80 backdrop-blur-lg border-b border-border relative">
+        <div className="container mx-auto px-3 sm:px-4 md:px-6 py-2 sm:py-3 md:py-4">
         <div className="flex items-center justify-between gap-2 sm:gap-4">
           {/* Logo - Desktop, Text - Mobile */}
           <Link to="/" className="flex items-center gap-2 sm:gap-3 group shrink-0">
             <img 
               src={vaultLogo} 
               alt="The Vault Network" 
-              className="w-8 h-8 sm:w-10 sm:h-10 transition-transform group-hover:scale-110 hidden sm:block"
+              className="w-6 h-6 sm:w-8 sm:h-10 transition-transform group-hover:scale-110"
             />
             <span className="font-display text-base sm:text-lg md:text-xl font-bold text-primary gold-glow">
               THE VAULT NETWORK
@@ -559,7 +560,10 @@ const Navigation = () => {
           </div>
         </div>
       </div>
+      {/* Gold divider at bottom of nav */}
+      <div className="absolute bottom-0 left-0 right-0 h-px bg-gradient-to-r from-transparent via-primary to-transparent"></div>
     </nav>
+    </>
   );
 };
 
