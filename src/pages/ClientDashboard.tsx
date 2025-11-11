@@ -121,7 +121,7 @@ const ClientDashboard = () => {
   
   // Order confirmation state
   const [showOrderConfirmation, setShowOrderConfirmation] = useState(false);
-  const [orderDetails, setOrderDetails] = useState<{ automationName?: string; amount?: number } | null>(null);
+  const [orderDetails, setOrderDetails] = useState<{ automationName?: string; setupAmount?: number; monthlyAmount?: number; totalAmount?: number } | null>(null);
 
   useEffect(() => {
     if (!authLoading && !user) {
@@ -139,30 +139,51 @@ const ClientDashboard = () => {
   useEffect(() => {
     const sessionId = searchParams.get('session_id');
     if (sessionId && user && clientData) {
-      // Fetch order details from the most recent transaction
+      // Fetch order details from the most recent transactions
       const fetchOrderDetails = async () => {
         try {
-          // Get the most recent completed transaction
-          const { data: recentTransaction, error } = await supabase
+          // Get the most recent completed transactions (should be setup and monthly)
+          const { data: recentTransactions, error } = await supabase
             .from('transactions')
             .select(`
               *,
               automation:automations!transactions_automation_id_fkey (
-                name
+                name,
+                setup_price,
+                monthly_price
               )
             `)
             .eq('client_id', clientData.id)
             .eq('status', 'completed')
             .order('created_at', { ascending: false })
-            .limit(1)
-            .maybeSingle();
+            .limit(10);
 
           if (error) throw error;
 
-          if (recentTransaction) {
+          if (recentTransactions && recentTransactions.length > 0) {
+            // Find the most recent automation purchase
+            const mostRecentTransaction = recentTransactions[0];
+            const automationId = mostRecentTransaction.automation_id;
+            const automationName = mostRecentTransaction.automation?.name || 'Automation';
+
+            // Find setup and monthly transactions for this automation
+            const setupTransaction = recentTransactions.find(
+              t => t.automation_id === automationId && t.transaction_type === 'setup'
+            );
+            const monthlyTransaction = recentTransactions.find(
+              t => t.automation_id === automationId && t.transaction_type === 'monthly'
+            );
+
+            // Calculate totals
+            const setupAmount = setupTransaction?.amount || 0;
+            const monthlyAmount = monthlyTransaction?.amount || 0;
+            const totalAmount = setupAmount + monthlyAmount;
+
             setOrderDetails({
-              automationName: recentTransaction.automation?.name || 'Automation',
-              amount: recentTransaction.amount,
+              automationName,
+              setupAmount,
+              monthlyAmount,
+              totalAmount,
             });
             setShowOrderConfirmation(true);
             // Remove session_id from URL
@@ -177,7 +198,7 @@ const ClientDashboard = () => {
       // Small delay to ensure transactions are updated
       setTimeout(() => {
         fetchOrderDetails();
-      }, 1000);
+      }, 1500);
     }
   }, [searchParams, user, clientData]);
 
@@ -1294,38 +1315,50 @@ const ClientDashboard = () => {
 
       {/* Order Confirmation Dialog */}
       <Dialog open={showOrderConfirmation} onOpenChange={setShowOrderConfirmation}>
-        <DialogContent className="sm:max-w-md">
+        <DialogContent className="w-[95vw] max-w-md mx-4 sm:mx-auto">
           <DialogHeader>
-            <div className="flex items-center justify-center mb-4">
-              <div className="rounded-full bg-green-100 dark:bg-green-900/20 p-3">
-                <CheckCircle className="w-12 h-12 text-green-600 dark:text-green-400" />
+            <div className="flex items-center justify-center mb-3 sm:mb-4">
+              <div className="rounded-full bg-green-100 dark:bg-green-900/20 p-2 sm:p-3">
+                <CheckCircle className="w-8 h-8 sm:w-12 sm:h-12 text-green-600 dark:text-green-400" />
               </div>
             </div>
-            <DialogTitle className="text-center text-2xl">Order Confirmed!</DialogTitle>
-            <DialogDescription className="text-center">
+            <DialogTitle className="text-center text-xl sm:text-2xl px-2">Order Confirmed!</DialogTitle>
+            <DialogDescription className="text-center text-sm sm:text-base px-2">
               Your payment was successful. Thank you for your purchase!
             </DialogDescription>
           </DialogHeader>
-          <div className="space-y-4 py-4">
+          <div className="space-y-3 sm:space-y-4 py-3 sm:py-4 px-2">
             {orderDetails && (
               <>
-                <div className="bg-muted/50 rounded-lg p-4 space-y-2">
-                  <div className="flex justify-between items-center">
-                    <span className="text-sm text-muted-foreground">Automation:</span>
-                    <span className="font-semibold">{orderDetails.automationName}</span>
+                <div className="bg-muted/50 rounded-lg p-3 sm:p-4 space-y-2 sm:space-y-3">
+                  <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-1">
+                    <span className="text-xs sm:text-sm text-muted-foreground">Automation:</span>
+                    <span className="font-semibold text-sm sm:text-base break-words">{orderDetails.automationName}</span>
                   </div>
-                  {orderDetails.amount && (
-                    <div className="flex justify-between items-center">
-                      <span className="text-sm text-muted-foreground">Amount Paid:</span>
-                      <span className="font-bold text-primary text-lg">${orderDetails.amount.toFixed(2)}</span>
+                  {orderDetails.setupAmount && orderDetails.setupAmount > 0 && (
+                    <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-1">
+                      <span className="text-xs sm:text-sm text-muted-foreground">Setup Fee:</span>
+                      <span className="font-semibold text-sm sm:text-base">${orderDetails.setupAmount.toFixed(2)}</span>
+                    </div>
+                  )}
+                  {orderDetails.monthlyAmount && orderDetails.monthlyAmount > 0 && (
+                    <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-1">
+                      <span className="text-xs sm:text-sm text-muted-foreground">Monthly Subscription:</span>
+                      <span className="font-semibold text-sm sm:text-base">${orderDetails.monthlyAmount.toFixed(2)}/mo</span>
+                    </div>
+                  )}
+                  {orderDetails.totalAmount && (
+                    <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-1 pt-2 border-t border-border">
+                      <span className="text-sm sm:text-base font-medium text-foreground">Total Amount Paid:</span>
+                      <span className="font-bold text-primary text-lg sm:text-xl">${orderDetails.totalAmount.toFixed(2)}</span>
                     </div>
                   )}
                 </div>
-                <div className="bg-blue-50 dark:bg-blue-900/20 rounded-lg p-4 border border-blue-200 dark:border-blue-800">
-                  <p className="text-sm text-blue-900 dark:text-blue-200">
-                    <strong>What's Next?</strong>
+                <div className="bg-primary/10 dark:bg-primary/20 rounded-lg p-3 sm:p-4 border border-primary/30 dark:border-primary/40">
+                  <p className="text-sm sm:text-base font-semibold text-primary mb-1 sm:mb-2">
+                    What's Next?
                   </p>
-                  <p className="text-sm text-blue-800 dark:text-blue-300 mt-1">
+                  <p className="text-xs sm:text-sm text-foreground/90 leading-relaxed">
                     Your partner will be notified and will begin setting up your automation. You'll receive updates on the setup status.
                   </p>
                 </div>
@@ -1337,7 +1370,7 @@ const ClientDashboard = () => {
                 // Refresh data to show updated automations
                 fetchClientData();
               }}
-              className="w-full"
+              className="w-full mt-2 sm:mt-0"
             >
               Continue to Dashboard
             </Button>

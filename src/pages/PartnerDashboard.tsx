@@ -954,11 +954,11 @@ const PartnerDashboard = () => {
                     </CardHeader>
                     <CardContent>
                       <div className="flex flex-col sm:flex-row gap-3 sm:gap-4 items-stretch sm:items-center mb-3 sm:mb-4">
-                        <div className="flex-1 w-full p-2 sm:p-3 bg-background rounded-lg border border-border font-mono text-xs sm:text-sm overflow-x-auto">
+                        <div className="flex-1 w-full p-3 sm:p-4 md:p-5 bg-background rounded-lg border border-border font-mono text-sm sm:text-base md:text-lg overflow-x-auto">
                           {window.location.origin}/for-businesses?ref={sellerData?.referral_code || "YOUR-CODE"}
                         </div>
-                        <Button onClick={copyReferralLink} variant="outline" size="icon" className="shrink-0 w-full sm:w-auto">
-                          {copied ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
+                        <Button onClick={copyReferralLink} variant="outline" size="icon" className="shrink-0 w-full sm:w-auto h-10 sm:h-11 md:h-12">
+                          {copied ? <Check className="h-4 w-4 sm:h-5 sm:w-5" /> : <Copy className="h-4 w-4 sm:h-5 sm:w-5" />}
                         </Button>
                       </div>
                       
