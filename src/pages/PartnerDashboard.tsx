@@ -11,7 +11,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { DollarSign, Users, TrendingUp, Package, Copy, Check, CheckCircle, XCircle, MessageSquare, AlertCircle, HelpCircle, Send, RefreshCw, LayoutDashboard, Building2, Boxes, CreditCard, Ticket, Mail, Trophy } from "lucide-react";
+import { DollarSign, Users, TrendingUp, Package, Copy, Check, CheckCircle, XCircle, MessageSquare, AlertCircle, HelpCircle, Send, RefreshCw, LayoutDashboard, Building2, Boxes, CreditCard, Ticket, Mail, Trophy, MessageCircle, Phone } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -862,22 +862,73 @@ const PartnerDashboard = () => {
   }
 
   if (sellerData?.status === "pending") {
+    // Contact information for partner applications
+    const CONTACT_INFO = {
+      whatsapp: "+44 XXXXX", // Update with actual WhatsApp number
+      discordChannel: "#partner-applications", // Update with actual Discord channel name
+    };
+
     return (
       <div className="min-h-screen bg-background">
         <Navigation />
         <div className="container mx-auto px-6 py-20 flex flex-col items-center justify-center min-h-[80vh]">
-          <Card className="max-w-md w-full bg-card border-border">
+          <Card className="max-w-2xl w-full bg-card border-border">
             <CardHeader>
               <CardTitle className="text-2xl text-primary">Application Pending</CardTitle>
               <CardDescription>Your partner application is under review</CardDescription>
             </CardHeader>
-            <CardContent>
-              <p className="text-muted-foreground mb-4">
-                Thank you for applying to become a Vault Network partner.
+            <CardContent className="space-y-6">
+              <p className="text-muted-foreground">
+                Thank you for applying to become a Vault Network partner. Your application is currently under review and we'll get back to you soon.
               </p>
-              <Button onClick={() => navigate("/")} className="w-full">
-                Return Home
-              </Button>
+              
+              {/* Contact Information Section */}
+              <div className="p-4 bg-primary/5 border border-primary/20 rounded-lg">
+                <p className="text-sm font-semibold text-foreground mb-3">
+                  Next Steps - Verify Your Application:
+                </p>
+                <p className="text-sm text-muted-foreground mb-4">
+                  Please contact us via Discord or WhatsApp to verify your application and join our partner community.
+                </p>
+                <div className="space-y-4">
+                  <div className="flex items-start gap-3">
+                    <MessageCircle className="w-5 h-5 text-primary mt-0.5 flex-shrink-0" />
+                    <div className="flex-1">
+                      <p className="text-sm font-medium text-foreground mb-1">Discord</p>
+                      <p className="text-sm text-muted-foreground mb-2">
+                        Join our Discord server and create a ticket in the <span className="font-mono text-primary">{CONTACT_INFO.discordChannel}</span> channel
+                      </p>
+                      <p className="text-xs text-muted-foreground bg-muted/50 p-2 rounded border border-border">
+                        <strong>In your ticket, include:</strong> "I just applied to be a partner - {sellerData?.business_name || 'Your Name'}" or "Partner application verification - {user?.email || 'Your Email'}"
+                      </p>
+                    </div>
+                  </div>
+                  <div className="flex items-start gap-3">
+                    <Phone className="w-5 h-5 text-primary mt-0.5 flex-shrink-0" />
+                    <div className="flex-1">
+                      <p className="text-sm font-medium text-foreground mb-1">WhatsApp</p>
+                      <p className="text-sm text-muted-foreground mb-2">
+                        Message us at: <span className="font-mono text-primary">{CONTACT_INFO.whatsapp}</span>
+                      </p>
+                      <p className="text-xs text-muted-foreground bg-muted/50 p-2 rounded border border-border">
+                        <strong>Message example:</strong> "Partner application verification - {sellerData?.business_name || 'Your Name'} - {user?.email || 'Your Email'}"
+                      </p>
+                    </div>
+                  </div>
+                </div>
+                <p className="text-xs text-muted-foreground mt-4 pt-4 border-t border-primary/10">
+                  <strong>Privacy Note:</strong> Only share your application name/business name and email address to verify your identity. We'll match it with your application.
+                </p>
+              </div>
+
+              <div className="flex gap-3">
+                <Button onClick={() => navigate("/")} variant="outline" className="flex-1">
+                  Return Home
+                </Button>
+                <Button onClick={() => window.location.reload()} className="flex-1">
+                  Refresh Status
+                </Button>
+              </div>
             </CardContent>
           </Card>
         </div>

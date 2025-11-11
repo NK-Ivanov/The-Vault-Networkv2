@@ -7,11 +7,17 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { CheckCircle, DollarSign, Users, TrendingUp, Link as LinkIcon, BarChart3, Zap, Shield, Clock, Target, Award, Building2, ArrowRight } from "lucide-react";
+import { CheckCircle, DollarSign, Users, TrendingUp, Link as LinkIcon, BarChart3, Zap, Shield, Clock, Target, Award, Building2, ArrowRight, MessageCircle, Phone } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/integrations/supabase/client";
 import { Switch } from "@/components/ui/switch";
+
+// Contact information for partner applications
+const CONTACT_INFO = {
+  whatsapp: "+44 XXXXX", // Update with actual WhatsApp number
+  discordChannel: "#partner-applications", // Update with actual Discord channel name
+};
 
 const Partners = () => {
   const navigate = useNavigate();
@@ -136,7 +142,10 @@ const Partners = () => {
         description: "We'll review your application and get back to you soon.",
       });
 
-      navigate("/partner-dashboard");
+      // Show success dialog with contact instructions
+      setTimeout(() => {
+        navigate("/partner-dashboard");
+      }, 2000);
     } catch (error: any) {
       toast({
         title: "Application failed",
@@ -544,6 +553,45 @@ const Partners = () => {
                   >
                     {loading ? "Submitting..." : "Submit Application"}
                   </Button>
+                  
+                  {/* Contact Information Section */}
+                  <div className="mt-6 p-4 bg-primary/5 border border-primary/20 rounded-lg">
+                    <p className="text-sm font-semibold text-foreground mb-3">
+                      After submitting your application:
+                    </p>
+                    <p className="text-sm text-muted-foreground mb-4">
+                      Please contact us via Discord or WhatsApp to verify your application and join our partner community.
+                    </p>
+                    <div className="space-y-3">
+                      <div className="flex items-start gap-3">
+                        <MessageCircle className="w-5 h-5 text-primary mt-0.5 flex-shrink-0" />
+                        <div className="flex-1">
+                          <p className="text-sm font-medium text-foreground">Discord</p>
+                          <p className="text-sm text-muted-foreground">
+                            Join our Discord server and create a ticket in the <span className="font-mono text-primary">{CONTACT_INFO.discordChannel}</span> channel
+                          </p>
+                          <p className="text-xs text-muted-foreground mt-1">
+                            In your ticket, include: "I just applied to be a partner - [Your Name/Business Name]" or "Partner application verification - [Your Email]"
+                          </p>
+                        </div>
+                      </div>
+                      <div className="flex items-start gap-3">
+                        <Phone className="w-5 h-5 text-primary mt-0.5 flex-shrink-0" />
+                        <div className="flex-1">
+                          <p className="text-sm font-medium text-foreground">WhatsApp</p>
+                          <p className="text-sm text-muted-foreground">
+                            Message us at: <span className="font-mono text-primary">{CONTACT_INFO.whatsapp}</span>
+                          </p>
+                          <p className="text-xs text-muted-foreground mt-1">
+                            Send: "Partner application verification - [Your Name/Business Name] - [Your Email]"
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+                    <p className="text-xs text-muted-foreground mt-4 pt-4 border-t border-primary/10">
+                      <strong>Privacy Note:</strong> Only share your application name/business name and email address to verify your identity. We'll match it with your application.
+                    </p>
+                  </div>
                 </form>
               )}
             </CardContent>

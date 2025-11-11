@@ -2,7 +2,7 @@ import { Link, useLocation, useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import vaultLogo from "@/assets/vault-logo.png";
 import { useAuth } from "@/hooks/useAuth";
-import { LogOut, LayoutDashboard, Bell, Menu } from "lucide-react";
+import { LogOut, LayoutDashboard, Bell, Menu, MessageCircle, Phone } from "lucide-react";
 import { useEffect, useState, useRef } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { Badge } from "@/components/ui/badge";
@@ -28,6 +28,7 @@ const Navigation = () => {
   const [unreadCount, setUnreadCount] = useState(0);
   const [notificationsOpen, setNotificationsOpen] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [sellerStatus, setSellerStatus] = useState<string | null>(null);
   
   useEffect(() => {
     if (user && !fetchingRef.current) {
@@ -38,6 +39,10 @@ const Navigation = () => {
       if (cachedRole && cachedUserId === user.id) {
         // Use cached role if it's for the same user
         setUserRole(cachedRole);
+        // Fetch seller status if user is a seller
+        if (cachedRole === 'seller') {
+          fetchSellerStatus();
+        }
       } else {
         // Fetch only if not cached or user changed
         fetchingRef.current = true;
@@ -45,6 +50,7 @@ const Navigation = () => {
       }
     } else if (!user) {
       setUserRole(null);
+      setSellerStatus(null);
       sessionStorage.removeItem('user_role');
       sessionStorage.removeItem('user_role_user_id');
       setNotifications([]);
@@ -152,11 +158,33 @@ const Navigation = () => {
         sessionStorage.setItem('user_role', role);
         sessionStorage.setItem('user_role_user_id', user.id);
       }
+      
+      // Fetch seller status if user is a seller
+      if (role === "seller") {
+        fetchSellerStatus();
+      }
     } catch (error) {
       console.error("Error fetching user role:", error);
       setUserRole(null);
     } finally {
       fetchingRef.current = false;
+    }
+  };
+
+  const fetchSellerStatus = async () => {
+    if (!user) return;
+    try {
+      const { data } = await supabase
+        .from("sellers")
+        .select("status")
+        .eq("user_id", user.id)
+        .maybeSingle();
+      
+      if (data) {
+        setSellerStatus(data.status);
+      }
+    } catch (error) {
+      console.error("Error fetching seller status:", error);
     }
   };
 
@@ -454,9 +482,39 @@ const Navigation = () => {
                       </span>
                     </div>
                     {user && accountType && (
-                      <Badge variant="outline" className="bg-primary/10 text-primary border-primary/20 text-xs">
-                        {accountType}
-                      </Badge>
+                      <div className="space-y-2">
+                        <Badge variant="outline" className="bg-primary/10 text-primary border-primary/20 text-xs">
+                          {accountType}
+                        </Badge>
+                        {sellerStatus === "pending" && (
+                          <Badge variant="outline" className="bg-yellow-500/10 text-yellow-500 border-yellow-500/20 text-xs">
+                            Pending Approval
+                          </Badge>
+                        )}
+                      </div>
+                    )}
+                    {user && sellerStatus === "pending" && (
+                      <div className="mt-4 p-3 bg-primary/5 border border-primary/20 rounded-lg">
+                        <p className="text-xs font-semibold text-foreground mb-2">
+                          Next Steps - Verify Your Application:
+                        </p>
+                        <div className="space-y-2 text-xs text-muted-foreground">
+                          <div className="flex items-start gap-2">
+                            <MessageCircle className="w-3 h-3 text-primary mt-0.5 flex-shrink-0" />
+                            <div className="flex-1">
+                              <p className="font-medium text-foreground mb-1">Discord</p>
+                              <p>Create a ticket in <span className="font-mono text-primary">#partner-applications</span></p>
+                            </div>
+                          </div>
+                          <div className="flex items-start gap-2">
+                            <Phone className="w-3 h-3 text-primary mt-0.5 flex-shrink-0" />
+                            <div className="flex-1">
+                              <p className="font-medium text-foreground mb-1">WhatsApp</p>
+                              <p>Message: <span className="font-mono text-primary">+44 XXXXX</span></p>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
                     )}
                   </div>
                   <ScrollArea className="flex-1">
