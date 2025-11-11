@@ -19,6 +19,7 @@ const Partners = () => {
   const { user } = useAuth();
   const [loading, setLoading] = useState(false);
   const [hasApplication, setHasApplication] = useState(false);
+  const [shouldAutoSubmit, setShouldAutoSubmit] = useState(false);
 
   const [name, setName] = useState("");
   const [isBusiness, setIsBusiness] = useState(false);
@@ -26,10 +27,37 @@ const Partners = () => {
   const [about, setAbout] = useState("");
 
   useEffect(() => {
+    if (shouldAutoSubmit && user && !hasApplication && name && about) {
+      // Auto-submit the form after data is restored
+      const timer = setTimeout(() => {
+        const fakeEvent = { preventDefault: () => {} } as React.FormEvent;
+        handleSubmit(fakeEvent);
+        setShouldAutoSubmit(false);
+      }, 500);
+      return () => clearTimeout(timer);
+    }
+  }, [shouldAutoSubmit, user, hasApplication, name, about]);
+
+  useEffect(() => {
     if (user) {
       checkExistingApplication();
+      // Check for saved form data and restore it
+      const savedForm = localStorage.getItem("pending_partner_form");
+      if (savedForm && !hasApplication) {
+        try {
+          const formData = JSON.parse(savedForm);
+          setName(formData.name || "");
+          setIsBusiness(formData.isBusiness || false);
+          setWebsite(formData.website || "");
+          setAbout(formData.about || "");
+          // Set flag to auto-submit after form data is restored
+          setShouldAutoSubmit(true);
+        } catch (error) {
+          console.error("Error restoring form data:", error);
+        }
+      }
     }
-  }, [user]);
+  }, [user, hasApplication]);
 
   const checkExistingApplication = async () => {
     try {
@@ -56,7 +84,14 @@ const Partners = () => {
         description: "Please log in to apply as a partner.",
         variant: "destructive",
       });
-      navigate("/login");
+      // Save form data to localStorage before redirecting
+      localStorage.setItem("pending_partner_form", JSON.stringify({
+        name,
+        isBusiness,
+        website,
+        about,
+      }));
+      navigate("/login?redirect=/partners");
       return;
     }
 
@@ -92,6 +127,9 @@ const Partners = () => {
         console.error("Error assigning seller role:", roleError);
         // Continue anyway - role might already exist
       }
+
+      // Clear saved form data
+      localStorage.removeItem("pending_partner_form");
 
       toast({
         title: "Application Submitted!",

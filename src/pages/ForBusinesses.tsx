@@ -21,11 +21,19 @@ const ForBusinesses = () => {
   const [loading, setLoading] = useState(false);
   const [hasAccount, setHasAccount] = useState(false);
   const [automations, setAutomations] = useState<any[]>([]);
+  const [shouldAutoSubmit, setShouldAutoSubmit] = useState(false);
   
   // Get referral code from URL or localStorage
   const urlReferralCode = searchParams.get("ref");
   const storedReferralCode = localStorage.getItem("referral_code");
   const referralCode = urlReferralCode || storedReferralCode;
+  
+  // Debug: Log referral code extraction
+  useEffect(() => {
+    if (referralCode) {
+      console.log("Referral code detected:", referralCode, "from URL:", !!urlReferralCode, "from storage:", !!storedReferralCode);
+    }
+  }, [referralCode, urlReferralCode, storedReferralCode]);
 
   // Save referral code to localStorage when it's in URL, or restore it in URL if only in localStorage
   useEffect(() => {
@@ -50,11 +58,41 @@ const ForBusinesses = () => {
   const [enquiryMessage, setEnquiryMessage] = useState("");
 
   useEffect(() => {
+    if (shouldAutoSubmit && user && !hasAccount && businessName && contactName) {
+      // Auto-submit the form after data is restored
+      const timer = setTimeout(() => {
+        const fakeEvent = { preventDefault: () => {} } as React.FormEvent;
+        handleSignup(fakeEvent);
+        setShouldAutoSubmit(false);
+      }, 500);
+      return () => clearTimeout(timer);
+    }
+  }, [shouldAutoSubmit, user, hasAccount, businessName, contactName]);
+
+  useEffect(() => {
     fetchAutomations();
     if (user) {
       checkExistingAccount();
+      // Check for saved form data and restore it
+      const savedForm = localStorage.getItem("pending_business_form");
+      if (savedForm && !hasAccount) {
+        try {
+          const formData = JSON.parse(savedForm);
+          setBusinessName(formData.businessName || "");
+          setContactName(formData.contactName || "");
+          setIndustry(formData.industry || "");
+          setDescription(formData.description || "");
+          if (formData.referralCode) {
+            localStorage.setItem("referral_code", formData.referralCode);
+          }
+          // Set flag to auto-submit after form data is restored
+          setShouldAutoSubmit(true);
+        } catch (error) {
+          console.error("Error restoring form data:", error);
+        }
+      }
     }
-  }, [user]);
+  }, [user, hasAccount]);
 
   const fetchAutomations = async () => {
     try {
@@ -96,11 +134,19 @@ const ForBusinesses = () => {
         description: "Please log in to create a business account.",
         variant: "destructive",
       });
+      // Save form data to localStorage before redirecting
+      localStorage.setItem("pending_business_form", JSON.stringify({
+        businessName,
+        contactName,
+        industry,
+        description,
+        referralCode,
+      }));
       // Preserve referral code when redirecting to login
       if (referralCode) {
         localStorage.setItem("referral_code", referralCode);
       }
-      navigate("/login");
+      navigate("/login?redirect=/for-businesses");
       return;
     }
 
@@ -114,15 +160,27 @@ const ForBusinesses = () => {
     try {
       let sellerId = null;
       if (referralCode) {
-        const { data: seller } = await supabase
+        console.log("Looking up referral code:", referralCode);
+        const { data: seller, error: sellerError } = await supabase
           .from("sellers")
-          .select("id")
+          .select("id, referral_code, status")
           .eq("referral_code", referralCode)
           .eq("status", "approved")
           .maybeSingle();
         
-        sellerId = seller?.id || null;
+        if (sellerError) {
+          console.error("Error looking up seller:", sellerError);
+        }
+        
+        if (seller) {
+          console.log("Found seller:", seller);
+          sellerId = seller.id;
+        } else {
+          console.log("No approved seller found with referral code:", referralCode);
+        }
       }
+
+      console.log("Creating client with seller_id:", sellerId, "invited_by_code:", referralCode);
 
       const { error } = await supabase.from("clients").insert({
         user_id: user.id,
@@ -131,6 +189,7 @@ const ForBusinesses = () => {
         industry: industry || null,
         description: description || null,
         seller_id: sellerId,
+        invited_by_code: referralCode || null,
         status: "active",
       });
 
@@ -146,6 +205,9 @@ const ForBusinesses = () => {
         console.error("Error assigning client role:", roleError);
         // Continue anyway - role might already exist
       }
+
+      // Clear saved form data
+      localStorage.removeItem("pending_business_form");
 
       toast({
         title: "Account Created!",

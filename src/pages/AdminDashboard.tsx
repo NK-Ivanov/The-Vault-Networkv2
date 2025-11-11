@@ -14,8 +14,12 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
-import { CheckCircle, XCircle, Users, DollarSign, Package, Plus, Eye, Settings, Edit } from "lucide-react";
+import { CheckCircle, XCircle, Users, DollarSign, Package, Plus, Eye, Settings, Edit, Search, ArrowUpDown } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import { callNetlifyFunction } from "@/lib/netlify-functions";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 
 interface SellerData {
   id: string;
@@ -32,6 +36,7 @@ interface ClientData {
   contact_name: string;
   status: string;
   invited_by_code: string | null;
+  created_at: string;
 }
 
 interface EnquiryData {
@@ -42,6 +47,7 @@ interface EnquiryData {
   message: string;
   status: string;
   created_at: string;
+  client_id: string | null;
 }
 
 interface AutomationData {
@@ -54,6 +60,9 @@ interface AutomationData {
   is_active: boolean;
   image_url: string | null;
   features: string[] | null;
+  stripe_product_id: string | null;
+  stripe_setup_price_id: string | null;
+  stripe_monthly_price_id: string | null;
 }
 
 interface SellerProfileData extends SellerData {
@@ -82,7 +91,13 @@ const AdminDashboard = () => {
   const [showEditAutomation, setShowEditAutomation] = useState(false);
   const [editingAutomation, setEditingAutomation] = useState<AutomationData | null>(null);
   const [selectedSellerForAssignment, setSelectedSellerForAssignment] = useState<string>("");
-  const [selectedAutomationForAssignment, setSelectedAutomationForAssignment] = useState<string>("");
+  const [selectedAutomationsForAssignment, setSelectedAutomationsForAssignment] = useState<string[]>([]);
+  const [sellerSearchOpen, setSellerSearchOpen] = useState(false);
+  const [assignedAutomations, setAssignedAutomations] = useState<string[]>([]);
+  const [clientsSearchQuery, setClientsSearchQuery] = useState("");
+  const [partnersSearchQuery, setPartnersSearchQuery] = useState("");
+  const [clientsSortBy, setClientsSortBy] = useState<"name" | "contact" | "status" | "date">("date");
+  const [partnersSortBy, setPartnersSortBy] = useState<"name" | "status" | "date">("date");
   
   // New automation form state
   const [newAutomation, setNewAutomation] = useState({
@@ -168,7 +183,7 @@ const AdminDashboard = () => {
 
       const { data: enquiriesData, error: enquiriesError } = await supabase
         .from("enquiries")
-        .select("*")
+        .select("*, client_id")
         .order("created_at", { ascending: false });
 
       if (enquiriesError) throw enquiriesError;
@@ -303,6 +318,35 @@ const AdminDashboard = () => {
     }
   };
 
+  const syncStripeAutomation = async (automation: AutomationData) => {
+    try {
+      const result = await callNetlifyFunction('stripe-sync-automation', {
+        id: automation.id,
+        name: automation.name,
+        description: automation.description || '',
+        setup_price: automation.setup_price,
+        monthly_price: automation.monthly_price,
+      });
+
+      // Refresh automations to get updated Stripe IDs
+      await fetchAdminData();
+
+      toast({
+        title: "Synced with Stripe!",
+        description: "Automation has been successfully synced with Stripe.",
+      });
+
+      return result;
+    } catch (error: any) {
+      toast({
+        title: "Stripe Sync Failed",
+        description: error.message || "Failed to sync with Stripe. Please check your Stripe configuration.",
+        variant: "destructive",
+      });
+      throw error;
+    }
+  };
+
   const handleAddAutomation = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
@@ -311,7 +355,7 @@ const AdminDashboard = () => {
         .map(f => f.trim())
         .filter(f => f.length > 0);
 
-      const { error } = await supabase.from("automations").insert({
+      const { data: insertedData, error } = await supabase.from("automations").insert({
         name: newAutomation.name,
         description: newAutomation.description,
         category: newAutomation.category || null,
@@ -321,13 +365,21 @@ const AdminDashboard = () => {
         features: featuresArray.length > 0 ? featuresArray : null,
         default_commission_rate: parseFloat(newAutomation.default_commission_rate) || 20.00,
         is_active: true,
-      });
+      }).select().single();
 
       if (error) throw error;
 
+      // Auto-sync with Stripe after creating
+      try {
+        await syncStripeAutomation(insertedData);
+      } catch (syncError) {
+        // Don't fail the whole operation if Stripe sync fails
+        console.error("Stripe sync error:", syncError);
+      }
+
       toast({
         title: "Automation Added!",
-        description: "New automation has been added to the system.",
+        description: "New automation has been added to the system and synced with Stripe.",
       });
 
       setNewAutomation({
@@ -376,7 +428,7 @@ const AdminDashboard = () => {
         .map(f => f.trim())
         .filter(f => f.length > 0);
 
-      const { error } = await supabase
+      const { data: updatedData, error } = await supabase
         .from("automations")
         .update({
           name: newAutomation.name,
@@ -388,13 +440,23 @@ const AdminDashboard = () => {
           features: featuresArray.length > 0 ? featuresArray : null,
           default_commission_rate: parseFloat(newAutomation.default_commission_rate) || 20.00,
         })
-        .eq("id", editingAutomation.id);
+        .eq("id", editingAutomation.id)
+        .select()
+        .single();
 
       if (error) throw error;
 
+      // Auto-sync with Stripe after updating
+      try {
+        await syncStripeAutomation(updatedData);
+      } catch (syncError) {
+        // Don't fail the whole operation if Stripe sync fails
+        console.error("Stripe sync error:", syncError);
+      }
+
       toast({
         title: "Automation Updated!",
-        description: "Automation has been updated successfully.",
+        description: "Automation has been updated successfully and synced with Stripe.",
       });
 
       setShowEditAutomation(false);
@@ -437,47 +499,52 @@ const AdminDashboard = () => {
   };
 
   const handleAssignAutomationToSeller = async () => {
-    if (!selectedSellerForAssignment || !selectedAutomationForAssignment) {
+    if (!selectedSellerForAssignment || selectedAutomationsForAssignment.length === 0) {
       toast({
         title: "Selection required",
-        description: "Please select both a seller and an automation",
+        description: "Please select a seller and at least one automation",
         variant: "destructive",
       });
       return;
     }
 
     try {
-      // Check if already assigned
+      // Check which automations are already assigned
       const { data: existing } = await supabase
         .from("seller_automations")
-        .select("id")
+        .select("automation_id")
         .eq("seller_id", selectedSellerForAssignment)
-        .eq("automation_id", selectedAutomationForAssignment)
-        .maybeSingle();
+        .in("automation_id", selectedAutomationsForAssignment);
 
-      if (existing) {
+      const existingIds = existing?.map(e => e.automation_id) || [];
+      const newAutomations = selectedAutomationsForAssignment.filter(id => !existingIds.includes(id));
+
+      if (newAutomations.length === 0) {
         toast({
           title: "Already assigned",
-          description: "This automation is already assigned to this seller",
+          description: "All selected automations are already assigned to this seller",
           variant: "destructive",
         });
         return;
       }
 
-      const { error } = await supabase.from("seller_automations").insert({
+      // Insert new assignments
+      const assignments = newAutomations.map(automation_id => ({
         seller_id: selectedSellerForAssignment,
-        automation_id: selectedAutomationForAssignment,
-      });
+        automation_id,
+      }));
+
+      const { error } = await supabase.from("seller_automations").insert(assignments);
 
       if (error) throw error;
 
       toast({
-        title: "Automation Assigned!",
-        description: "The automation has been assigned to the seller",
+        title: "Automations Assigned!",
+        description: `${newAutomations.length} automation(s) have been assigned to the seller`,
       });
 
       setSelectedSellerForAssignment("");
-      setSelectedAutomationForAssignment("");
+      setSelectedAutomationsForAssignment([]);
       setShowAssignAutomation(false);
       fetchAdminData();
     } catch (error: any) {
@@ -488,6 +555,45 @@ const AdminDashboard = () => {
       });
     }
   };
+
+  const filteredClients = clients.filter(client => {
+    const query = clientsSearchQuery.toLowerCase();
+    return (
+      client.business_name.toLowerCase().includes(query) ||
+      client.contact_name.toLowerCase().includes(query) ||
+      (client.invited_by_code?.toLowerCase().includes(query) ?? false)
+    );
+  }).sort((a, b) => {
+    switch (clientsSortBy) {
+      case "name":
+        return a.business_name.localeCompare(b.business_name);
+      case "contact":
+        return a.contact_name.localeCompare(b.contact_name);
+      case "status":
+        return a.status.localeCompare(b.status);
+      case "date":
+      default:
+        return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
+    }
+  });
+
+  const filteredPartners = sellers.filter(seller => {
+    const query = partnersSearchQuery.toLowerCase();
+    return (
+      seller.business_name.toLowerCase().includes(query) ||
+      (seller.referral_code?.toLowerCase().includes(query) ?? false)
+    );
+  }).sort((a, b) => {
+    switch (partnersSortBy) {
+      case "name":
+        return a.business_name.localeCompare(b.business_name);
+      case "status":
+        return a.status.localeCompare(b.status);
+      case "date":
+      default:
+        return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
+    }
+  });
 
   if (authLoading || loading || !isAdmin) {
     return (
@@ -783,44 +889,127 @@ const AdminDashboard = () => {
                   Assign Automation to Seller
                 </Button>
               </DialogTrigger>
-              <DialogContent>
+              <DialogContent className="max-w-2xl">
                 <DialogHeader>
                   <DialogTitle>Assign Automation to Seller</DialogTitle>
-                  <DialogDescription>Select a seller and automation to assign</DialogDescription>
+                  <DialogDescription>Select a seller and one or more automations to assign</DialogDescription>
                 </DialogHeader>
                 <div className="space-y-4">
                   <div className="space-y-2">
                     <Label>Select Seller</Label>
-                    <Select value={selectedSellerForAssignment} onValueChange={setSelectedSellerForAssignment}>
-                      <SelectTrigger>
-                        <SelectValue placeholder="Choose a seller..." />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {sellers.filter(s => s.status === "approved").map((seller) => (
-                          <SelectItem key={seller.id} value={seller.id}>
-                            {seller.business_name}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
+                    <Popover open={sellerSearchOpen} onOpenChange={setSellerSearchOpen}>
+                      <PopoverTrigger asChild>
+                        <Button
+                          variant="outline"
+                          role="combobox"
+                          className="w-full justify-between"
+                        >
+                          {selectedSellerForAssignment
+                            ? sellers.find(s => s.id === selectedSellerForAssignment)?.business_name
+                            : "Choose a seller..."}
+                          <Search className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                        </Button>
+                      </PopoverTrigger>
+                      <PopoverContent className="w-[400px] p-0" align="start">
+                        <Command>
+                          <CommandInput placeholder="Search sellers..." />
+                          <CommandList>
+                            <CommandEmpty>No seller found.</CommandEmpty>
+                            <CommandGroup>
+                              {sellers.filter(s => s.status === "approved").map((seller) => (
+                                <CommandItem
+                                  key={seller.id}
+                                  value={seller.business_name}
+                                  onSelect={async () => {
+                                    setSelectedSellerForAssignment(seller.id);
+                                    setSellerSearchOpen(false);
+                                    // Fetch already assigned automations for this seller
+                                    const { data: assigned } = await supabase
+                                      .from("seller_automations")
+                                      .select("automation_id")
+                                      .eq("seller_id", seller.id);
+                                    const assignedIds = assigned?.map(a => a.automation_id) || [];
+                                    setAssignedAutomations(assignedIds);
+                                    // Don't pre-select - user should select new ones to assign
+                                    setSelectedAutomationsForAssignment([]);
+                                  }}
+                                >
+                                  {seller.business_name}
+                                </CommandItem>
+                              ))}
+                            </CommandGroup>
+                          </CommandList>
+                        </Command>
+                      </PopoverContent>
+                    </Popover>
                   </div>
                   <div className="space-y-2">
-                    <Label>Select Automation</Label>
-                    <Select value={selectedAutomationForAssignment} onValueChange={setSelectedAutomationForAssignment}>
-                      <SelectTrigger>
-                        <SelectValue placeholder="Choose an automation..." />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {automations.filter(a => a.is_active).map((automation) => (
-                          <SelectItem key={automation.id} value={automation.id}>
-                            {automation.name}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
+                    <Label>Select Automations (Multiple)</Label>
+                    <div className="border rounded-md p-4 max-h-[300px] overflow-y-auto">
+                      {automations.filter(a => a.is_active).length === 0 ? (
+                        <p className="text-sm text-muted-foreground">No active automations available</p>
+                      ) : (
+                        <div className="space-y-3">
+                          {automations.filter(a => a.is_active).map((automation) => {
+                            const isAssigned = assignedAutomations.includes(automation.id);
+                            const isSelected = selectedAutomationsForAssignment.includes(automation.id);
+                            return (
+                              <div key={automation.id} className="flex items-start space-x-3">
+                                <Checkbox
+                                  id={`automation-${automation.id}`}
+                                  checked={isAssigned || isSelected}
+                                  disabled={isAssigned}
+                                  onCheckedChange={(checked) => {
+                                    if (isAssigned) return; // Can't uncheck already assigned
+                                    if (checked) {
+                                      setSelectedAutomationsForAssignment([...selectedAutomationsForAssignment, automation.id]);
+                                    } else {
+                                      setSelectedAutomationsForAssignment(
+                                        selectedAutomationsForAssignment.filter(id => id !== automation.id)
+                                      );
+                                    }
+                                  }}
+                                />
+                                <label
+                                  htmlFor={`automation-${automation.id}`}
+                                  className={`flex-1 cursor-pointer text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 ${isAssigned ? 'opacity-60' : ''}`}
+                                >
+                                  <div className="flex items-center gap-2">
+                                    <span className="font-medium">{automation.name}</span>
+                                    {isAssigned && (
+                                      <Badge variant="secondary" className="text-xs">Already Assigned</Badge>
+                                    )}
+                                  </div>
+                                  {automation.description && (
+                                    <div className="text-xs text-muted-foreground mt-1 line-clamp-2">
+                                      {automation.description}
+                                    </div>
+                                  )}
+                                </label>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
+                    {selectedAutomationsForAssignment.length > 0 && (
+                      <p className="text-xs text-muted-foreground">
+                        {selectedAutomationsForAssignment.length} new automation(s) selected for assignment
+                      </p>
+                    )}
+                    {assignedAutomations.length > 0 && (
+                      <p className="text-xs text-muted-foreground">
+                        {assignedAutomations.length} automation(s) already assigned to this seller
+                      </p>
+                    )}
                   </div>
                   <div className="flex justify-end gap-2">
-                    <Button type="button" variant="outline" onClick={() => setShowAssignAutomation(false)}>
+                    <Button type="button" variant="outline" onClick={() => {
+                      setShowAssignAutomation(false);
+                      setSelectedSellerForAssignment("");
+                      setSelectedAutomationsForAssignment([]);
+                      setAssignedAutomations([]);
+                    }}>
                       Cancel
                     </Button>
                     <Button onClick={handleAssignAutomationToSeller}>Assign</Button>
@@ -841,6 +1030,31 @@ const AdminDashboard = () => {
                 </TabsList>
 
                 <TabsContent value="sellers">
+                  <div className="space-y-4 mb-4">
+                    <div className="flex flex-col sm:flex-row gap-4">
+                      <div className="flex-1">
+                        <div className="relative">
+                          <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
+                          <Input
+                            placeholder="Search partners..."
+                            value={partnersSearchQuery}
+                            onChange={(e) => setPartnersSearchQuery(e.target.value)}
+                            className="pl-8"
+                          />
+                        </div>
+                      </div>
+                      <Select value={partnersSortBy} onValueChange={(value: "name" | "status" | "date") => setPartnersSortBy(value)}>
+                        <SelectTrigger className="w-[180px]">
+                          <SelectValue placeholder="Sort by..." />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="date">Date (Newest)</SelectItem>
+                          <SelectItem value="name">Name (A-Z)</SelectItem>
+                          <SelectItem value="status">Status</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  </div>
                   <Table>
                     <TableHeader>
                       <TableRow>
@@ -852,60 +1066,94 @@ const AdminDashboard = () => {
                       </TableRow>
                     </TableHeader>
                     <TableBody>
-                      {sellers.map((seller) => (
-                        <TableRow key={seller.id}>
-                          <TableCell className="font-medium">{seller.business_name}</TableCell>
-                          <TableCell>
-                            <Badge variant="outline">Business</Badge>
-                          </TableCell>
-                          <TableCell className="font-mono">{seller.referral_code || "N/A"}</TableCell>
-                          <TableCell>
-                            <Badge variant={
-                              seller.status === "approved" ? "default" :
-                              seller.status === "pending" ? "secondary" : "destructive"
-                            }>
-                              {seller.status}
-                            </Badge>
-                          </TableCell>
-                          <TableCell>
-                            <div className="flex gap-2">
-                              <Button
-                                size="sm"
-                                variant="outline"
-                                onClick={() => viewSellerDetails(seller.id)}
-                              >
-                                <Eye className="w-4 h-4 mr-1" />
-                                View
-                              </Button>
-                              {seller.status === "pending" && (
-                                <>
-                                  <Button
-                                    size="sm"
-                                    variant="outline"
-                                    onClick={() => handleSellerApproval(seller.id, seller.user_id, true)}
-                                  >
-                                    <CheckCircle className="w-4 h-4 mr-1" />
-                                    Approve
-                                  </Button>
-                                  <Button
-                                    size="sm"
-                                    variant="destructive"
-                                    onClick={() => handleSellerApproval(seller.id, seller.user_id, false)}
-                                  >
-                                    <XCircle className="w-4 h-4 mr-1" />
-                                    Reject
-                                  </Button>
-                                </>
-                              )}
-                            </div>
+                      {filteredPartners.length === 0 ? (
+                        <TableRow>
+                          <TableCell colSpan={5} className="text-center text-muted-foreground py-8">
+                            No partners found
                           </TableCell>
                         </TableRow>
-                      ))}
+                      ) : (
+                        filteredPartners.map((seller) => (
+                          <TableRow key={seller.id}>
+                            <TableCell className="font-medium">{seller.business_name}</TableCell>
+                            <TableCell>
+                              <Badge variant="outline">Business</Badge>
+                            </TableCell>
+                            <TableCell className="font-mono">{seller.referral_code || "N/A"}</TableCell>
+                            <TableCell>
+                              <Badge variant={
+                                seller.status === "approved" ? "default" :
+                                seller.status === "pending" ? "secondary" : "destructive"
+                              }>
+                                {seller.status}
+                              </Badge>
+                            </TableCell>
+                            <TableCell>
+                              <div className="flex gap-2">
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  onClick={() => viewSellerDetails(seller.id)}
+                                >
+                                  <Eye className="w-4 h-4 mr-1" />
+                                  View
+                                </Button>
+                                {seller.status === "pending" && (
+                                  <>
+                                    <Button
+                                      size="sm"
+                                      variant="outline"
+                                      onClick={() => handleSellerApproval(seller.id, seller.user_id, true)}
+                                    >
+                                      <CheckCircle className="w-4 h-4 mr-1" />
+                                      Approve
+                                    </Button>
+                                    <Button
+                                      size="sm"
+                                      variant="destructive"
+                                      onClick={() => handleSellerApproval(seller.id, seller.user_id, false)}
+                                    >
+                                      <XCircle className="w-4 h-4 mr-1" />
+                                      Reject
+                                    </Button>
+                                  </>
+                                )}
+                              </div>
+                            </TableCell>
+                          </TableRow>
+                        ))
+                      )}
                     </TableBody>
                   </Table>
                 </TabsContent>
 
                 <TabsContent value="clients">
+                  <div className="space-y-4 mb-4">
+                    <div className="flex flex-col sm:flex-row gap-4">
+                      <div className="flex-1">
+                        <div className="relative">
+                          <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
+                          <Input
+                            placeholder="Search clients..."
+                            value={clientsSearchQuery}
+                            onChange={(e) => setClientsSearchQuery(e.target.value)}
+                            className="pl-8"
+                          />
+                        </div>
+                      </div>
+                      <Select value={clientsSortBy} onValueChange={(value: "name" | "contact" | "status" | "date") => setClientsSortBy(value)}>
+                        <SelectTrigger className="w-[180px]">
+                          <SelectValue placeholder="Sort by..." />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="date">Date (Newest)</SelectItem>
+                          <SelectItem value="name">Business Name (A-Z)</SelectItem>
+                          <SelectItem value="contact">Contact Name (A-Z)</SelectItem>
+                          <SelectItem value="status">Status</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  </div>
                   <Table>
                     <TableHeader>
                       <TableRow>
@@ -916,18 +1164,26 @@ const AdminDashboard = () => {
                       </TableRow>
                     </TableHeader>
                     <TableBody>
-                      {clients.map((client) => (
-                        <TableRow key={client.id}>
-                          <TableCell className="font-medium">{client.business_name}</TableCell>
-                          <TableCell>{client.contact_name}</TableCell>
-                          <TableCell className="font-mono">{client.invited_by_code || "Direct"}</TableCell>
-                          <TableCell>
-                            <Badge variant={client.status === "active" ? "default" : "secondary"}>
-                              {client.status}
-                            </Badge>
+                      {filteredClients.length === 0 ? (
+                        <TableRow>
+                          <TableCell colSpan={4} className="text-center text-muted-foreground py-8">
+                            No clients found
                           </TableCell>
                         </TableRow>
-                      ))}
+                      ) : (
+                        filteredClients.map((client) => (
+                          <TableRow key={client.id}>
+                            <TableCell className="font-medium">{client.business_name}</TableCell>
+                            <TableCell>{client.contact_name}</TableCell>
+                            <TableCell className="font-mono">{client.invited_by_code || "Direct"}</TableCell>
+                            <TableCell>
+                              <Badge variant={client.status === "active" ? "default" : "secondary"}>
+                                {client.status}
+                              </Badge>
+                            </TableCell>
+                          </TableRow>
+                        ))
+                      )}
                     </TableBody>
                   </Table>
                 </TabsContent>
@@ -968,16 +1224,41 @@ const AdminDashboard = () => {
                                   <span className="text-sm text-muted-foreground">Default Commission:</span>
                                   <span className="font-bold text-primary">{(automation as any).default_commission_rate || 20}%</span>
                                 </div>
+                                <div className="flex items-center justify-between pt-2 border-t border-border">
+                                  <span className="text-xs text-muted-foreground">Stripe Status:</span>
+                                  {automation.stripe_product_id ? (
+                                    <Badge variant="default" className="text-xs">
+                                      <CheckCircle className="w-3 h-3 mr-1" />
+                                      Synced
+                                    </Badge>
+                                  ) : (
+                                    <Badge variant="secondary" className="text-xs">
+                                      <XCircle className="w-3 h-3 mr-1" />
+                                      Not Synced
+                                    </Badge>
+                                  )}
+                                </div>
                               </div>
-                              <Button
-                                onClick={() => handleEditAutomation(automation)}
-                                variant="outline"
-                                size="sm"
-                                className="w-full mt-4"
-                              >
-                                <Edit className="w-4 h-4 mr-2" />
-                                Edit Automation
-                              </Button>
+                              <div className="flex gap-2 mt-4">
+                                <Button
+                                  onClick={() => handleEditAutomation(automation)}
+                                  variant="outline"
+                                  size="sm"
+                                  className="flex-1"
+                                >
+                                  <Edit className="w-4 h-4 mr-2" />
+                                  Edit
+                                </Button>
+                                <Button
+                                  onClick={() => syncStripeAutomation(automation)}
+                                  variant={automation.stripe_product_id ? "outline" : "default"}
+                                  size="sm"
+                                  className="flex-1"
+                                >
+                                  <Settings className="w-4 h-4 mr-2" />
+                                  {automation.stripe_product_id ? "Re-sync" : "Sync Stripe"}
+                                </Button>
+                              </div>
                             </CardContent>
                           </Card>
                         ))}
@@ -987,55 +1268,134 @@ const AdminDashboard = () => {
                 </TabsContent>
 
                 <TabsContent value="enquiries">
-                  <div className="space-y-4">
-                    {enquiries.map((enquiry) => (
-                      <Card key={enquiry.id} className="bg-muted/20">
-                        <CardHeader>
-                          <div className="flex justify-between items-start">
-                            <div>
-                              <CardTitle className="text-lg">{enquiry.business_name}</CardTitle>
-                              <CardDescription>
-                                {enquiry.contact_name} • {enquiry.email}
-                              </CardDescription>
-                            </div>
-                            <div className="flex gap-2">
-                              <Badge variant={
-                                enquiry.status === "new" ? "default" :
-                                enquiry.status === "contacted" ? "secondary" : "outline"
-                              }>
-                                {enquiry.status}
-                              </Badge>
-                            </div>
-                          </div>
-                        </CardHeader>
-                        <CardContent>
-                          <p className="text-foreground mb-4">{enquiry.message}</p>
-                          <div className="flex gap-2">
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              onClick={() => updateEnquiryStatus(enquiry.id, "contacted")}
-                            >
-                              Mark Contacted
-                            </Button>
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              onClick={() => updateEnquiryStatus(enquiry.id, "converted")}
-                            >
-                              Mark Converted
-                            </Button>
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              onClick={() => updateEnquiryStatus(enquiry.id, "closed")}
-                            >
-                              Close
-                            </Button>
-                          </div>
-                        </CardContent>
-                      </Card>
-                    ))}
+                  <div className="space-y-6">
+                    {/* Registered Account Enquiries */}
+                    <div>
+                      <h3 className="text-lg font-semibold mb-4 text-foreground">
+                        From Registered Accounts ({enquiries.filter(e => e.client_id).length})
+                      </h3>
+                      {enquiries.filter(e => e.client_id).length === 0 ? (
+                        <p className="text-sm text-muted-foreground mb-4">No enquiries from registered accounts</p>
+                      ) : (
+                        <div className="space-y-4 mb-6">
+                          {enquiries.filter(e => e.client_id).map((enquiry) => (
+                            <Card key={enquiry.id} className="bg-muted/20">
+                              <CardHeader>
+                                <div className="flex justify-between items-start">
+                                  <div>
+                                    <CardTitle className="text-lg">{enquiry.business_name}</CardTitle>
+                                    <CardDescription>
+                                      {enquiry.contact_name} • {enquiry.email}
+                                    </CardDescription>
+                                  </div>
+                                  <div className="flex gap-2">
+                                    <Badge variant={
+                                      enquiry.status === "new" ? "default" :
+                                      enquiry.status === "contacted" ? "secondary" : "outline"
+                                    }>
+                                      {enquiry.status}
+                                    </Badge>
+                                    <Badge variant="outline" className="bg-primary/10 text-primary border-primary/20">
+                                      Registered
+                                    </Badge>
+                                  </div>
+                                </div>
+                              </CardHeader>
+                              <CardContent>
+                                <p className="text-foreground mb-4">{enquiry.message}</p>
+                                <div className="flex gap-2">
+                                  <Button
+                                    size="sm"
+                                    variant="outline"
+                                    onClick={() => updateEnquiryStatus(enquiry.id, "contacted")}
+                                  >
+                                    Mark Contacted
+                                  </Button>
+                                  <Button
+                                    size="sm"
+                                    variant="outline"
+                                    onClick={() => updateEnquiryStatus(enquiry.id, "converted")}
+                                  >
+                                    Mark Converted
+                                  </Button>
+                                  <Button
+                                    size="sm"
+                                    variant="outline"
+                                    onClick={() => updateEnquiryStatus(enquiry.id, "closed")}
+                                  >
+                                    Close
+                                  </Button>
+                                </div>
+                              </CardContent>
+                            </Card>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Non-Registered Enquiries */}
+                    <div>
+                      <h3 className="text-lg font-semibold mb-4 text-foreground">
+                        From Website Visitors ({enquiries.filter(e => !e.client_id).length})
+                      </h3>
+                      {enquiries.filter(e => !e.client_id).length === 0 ? (
+                        <p className="text-sm text-muted-foreground">No enquiries from website visitors</p>
+                      ) : (
+                        <div className="space-y-4">
+                          {enquiries.filter(e => !e.client_id).map((enquiry) => (
+                            <Card key={enquiry.id} className="bg-muted/20">
+                              <CardHeader>
+                                <div className="flex justify-between items-start">
+                                  <div>
+                                    <CardTitle className="text-lg">{enquiry.business_name}</CardTitle>
+                                    <CardDescription>
+                                      {enquiry.contact_name} • {enquiry.email}
+                                    </CardDescription>
+                                  </div>
+                                  <div className="flex gap-2">
+                                    <Badge variant={
+                                      enquiry.status === "new" ? "default" :
+                                      enquiry.status === "contacted" ? "secondary" : "outline"
+                                    }>
+                                      {enquiry.status}
+                                    </Badge>
+                                    <Badge variant="outline" className="bg-muted text-muted-foreground">
+                                      Visitor
+                                    </Badge>
+                                  </div>
+                                </div>
+                              </CardHeader>
+                              <CardContent>
+                                <p className="text-foreground mb-4">{enquiry.message}</p>
+                                <div className="flex gap-2">
+                                  <Button
+                                    size="sm"
+                                    variant="outline"
+                                    onClick={() => updateEnquiryStatus(enquiry.id, "contacted")}
+                                  >
+                                    Mark Contacted
+                                  </Button>
+                                  <Button
+                                    size="sm"
+                                    variant="outline"
+                                    onClick={() => updateEnquiryStatus(enquiry.id, "converted")}
+                                  >
+                                    Mark Converted
+                                  </Button>
+                                  <Button
+                                    size="sm"
+                                    variant="outline"
+                                    onClick={() => updateEnquiryStatus(enquiry.id, "closed")}
+                                  >
+                                    Close
+                                  </Button>
+                                </div>
+                              </CardContent>
+                            </Card>
+                          ))}
+                        </div>
+                      )}
+                    </div>
                   </div>
                 </TabsContent>
               </Tabs>

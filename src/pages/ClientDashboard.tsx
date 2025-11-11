@@ -10,8 +10,9 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
-import { DollarSign, Package, FileText, Send } from "lucide-react";
+import { DollarSign, Package, FileText, Send, CreditCard } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import { callNetlifyFunction } from "@/lib/netlify-functions";
 
 interface ClientData {
   id: string;
@@ -47,6 +48,9 @@ interface AutomationData {
   features: string[] | null;
   assigned_at: string;
   status: string;
+  stripe_product_id: string | null;
+  stripe_setup_price_id: string | null;
+  stripe_monthly_price_id: string | null;
 }
 
 const ClientDashboard = () => {
@@ -61,6 +65,7 @@ const ClientDashboard = () => {
 
   const [enquiryMessage, setEnquiryMessage] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  const [checkingOut, setCheckingOut] = useState<string | null>(null);
 
   useEffect(() => {
     if (!authLoading && !user) {
@@ -127,7 +132,10 @@ const ClientDashboard = () => {
             setup_price,
             monthly_price,
             image_url,
-            features
+            features,
+            stripe_product_id,
+            stripe_setup_price_id,
+            stripe_monthly_price_id
           )
         `)
         .eq("client_id", client.id)
@@ -148,6 +156,9 @@ const ClientDashboard = () => {
         features: ca.automations.features,
         assigned_at: ca.assigned_at,
         status: ca.status,
+        stripe_product_id: ca.automations.stripe_product_id,
+        stripe_setup_price_id: ca.automations.stripe_setup_price_id,
+        stripe_monthly_price_id: ca.automations.stripe_monthly_price_id,
       }));
       
       setAutomations(transformedAutomations);
@@ -159,6 +170,50 @@ const ClientDashboard = () => {
       });
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleCheckout = async (automation: AutomationData) => {
+    if (!user?.email || !clientData?.id) {
+      toast({
+        title: "Error",
+        description: "Please ensure you're logged in and have a client account.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    if (!automation.stripe_setup_price_id || !automation.stripe_monthly_price_id) {
+      toast({
+        title: "Not Available",
+        description: "This automation is not yet set up for payments. Please contact your partner.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setCheckingOut(automation.id);
+    try {
+      const result = await callNetlifyFunction('stripe-checkout', {
+        automationId: automation.id,
+        clientEmail: user.email,
+        clientId: clientData.id,
+      });
+
+      if (result.url) {
+        // Redirect to Stripe Checkout
+        window.location.href = result.url;
+      } else {
+        throw new Error('No checkout URL received');
+      }
+    } catch (error: any) {
+      toast({
+        title: "Checkout Failed",
+        description: error.message || "Failed to initiate checkout. Please try again.",
+        variant: "destructive",
+      });
+    } finally {
+      setCheckingOut(null);
     }
   };
 
@@ -314,6 +369,23 @@ const ClientDashboard = () => {
                         <p className="text-xs text-muted-foreground mt-4">
                           Assigned: {new Date(automation.assigned_at).toLocaleDateString()}
                         </p>
+                        <Button
+                          onClick={() => handleCheckout(automation)}
+                          disabled={checkingOut === automation.id || !automation.stripe_setup_price_id}
+                          className="w-full mt-4"
+                          variant={automation.stripe_setup_price_id ? "default" : "outline"}
+                        >
+                          {checkingOut === automation.id ? (
+                            <>Processing...</>
+                          ) : automation.stripe_setup_price_id ? (
+                            <>
+                              <CreditCard className="w-4 h-4 mr-2" />
+                              Purchase Now
+                            </>
+                          ) : (
+                            <>Not Available</>
+                          )}
+                        </Button>
                       </CardContent>
                     </Card>
                   ))}

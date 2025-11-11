@@ -1,5 +1,5 @@
-import { useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useState, useEffect } from "react";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import Navigation from "@/components/Navigation";
 import Footer from "@/components/Footer";
 import { Button } from "@/components/ui/button";
@@ -12,8 +12,10 @@ import { supabase } from "@/integrations/supabase/client";
 
 const Login = () => {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const { toast } = useToast();
   const [loading, setLoading] = useState(false);
+  const redirectPath = searchParams.get("redirect") || null;
 
   const [loginEmail, setLoginEmail] = useState("");
   const [loginPassword, setLoginPassword] = useState("");
@@ -73,6 +75,10 @@ const Login = () => {
         }
       }
 
+      // Clear navigation cache to force refresh
+      sessionStorage.removeItem('user_role');
+      sessionStorage.removeItem('user_role_user_id');
+
       toast({
         title: "Welcome back!",
         description: "You've successfully logged in.",
@@ -80,6 +86,12 @@ const Login = () => {
 
       // Check for referral code in localStorage
       const referralCode = localStorage.getItem("referral_code");
+      
+      // If there's a redirect path (from form submission), go there first
+      if (redirectPath) {
+        navigate(redirectPath);
+        return;
+      }
       
       // Redirect based on role priority: admin > seller > client
       if (userRoles.includes("admin")) {
@@ -220,6 +232,10 @@ const Login = () => {
 
         const userRoles = roles?.map(r => r.role) || [];
 
+        // Clear navigation cache to force refresh
+        sessionStorage.removeItem('user_role');
+        sessionStorage.removeItem('user_role_user_id');
+
         toast({
           title: "Account created!",
           description: "Welcome! You've been automatically logged in.",
@@ -227,6 +243,12 @@ const Login = () => {
 
         // Check for referral code in localStorage
         const referralCode = localStorage.getItem("referral_code");
+        
+        // If there's a redirect path (from form submission), go there first
+        if (redirectPath) {
+          navigate(redirectPath);
+          return;
+        }
         
         // Redirect based on role priority: admin > seller > client
         if (userRoles.includes("admin")) {
