@@ -1355,9 +1355,18 @@ const AdminDashboard = () => {
 
                 <TabsContent value="client-automations">
                   <div className="space-y-4">
-                    {clientAutomations.length === 0 ? (
+                    <div className="flex items-center justify-between mb-4">
+                      <div>
+                        <h3 className="text-lg font-semibold text-foreground">Paid Client Automations</h3>
+                        <p className="text-sm text-muted-foreground">
+                          Showing {clientAutomations.filter(ca => ca.payment_status === 'paid').length} paid automation(s) requiring setup
+                        </p>
+                      </div>
+                    </div>
+                    {clientAutomations.filter(ca => ca.payment_status === 'paid').length === 0 ? (
                       <div className="text-center py-8">
-                        <p className="text-muted-foreground">No client automations yet.</p>
+                        <p className="text-muted-foreground">No paid client automations yet.</p>
+                        <p className="text-sm text-muted-foreground mt-2">Automations will appear here once clients complete payment.</p>
                       </div>
                     ) : (
                       <Table>
@@ -1372,7 +1381,7 @@ const AdminDashboard = () => {
                           </TableRow>
                         </TableHeader>
                         <TableBody>
-                          {clientAutomations.map((ca) => (
+                          {clientAutomations.filter(ca => ca.payment_status === 'paid').map((ca) => (
                             <TableRow key={ca.id}>
                               <TableCell className="font-medium">
                                 {ca.client?.business_name || 'Unknown'}
