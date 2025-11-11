@@ -52,6 +52,22 @@ export const handler = async (event: any) => {
     };
   }
 
+  // Validate that it's a SECRET key, not a publishable key
+  if (process.env.STRIPE_SECRET_KEY.startsWith('pk_')) {
+    console.error('STRIPE_SECRET_KEY appears to be a publishable key (pk_...), not a secret key (sk_...)');
+    return {
+      statusCode: 500,
+      headers: {
+        'Access-Control-Allow-Origin': '*',
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        error: 'Server configuration error',
+        message: 'STRIPE_SECRET_KEY must be a secret key (sk_test_... or sk_live_...), not a publishable key (pk_...)',
+      }),
+    };
+  }
+
   if (!process.env.SUPABASE_URL && !process.env.VITE_SUPABASE_URL) {
     console.error('Missing SUPABASE_URL environment variable');
     return {

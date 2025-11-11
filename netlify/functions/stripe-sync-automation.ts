@@ -52,6 +52,22 @@ export const handler = async (event: any) => {
     };
   }
 
+  // Validate that it's a SECRET key, not a publishable key
+  if (process.env.STRIPE_SECRET_KEY.startsWith('pk_')) {
+    console.error('STRIPE_SECRET_KEY appears to be a publishable key (pk_...), not a secret key (sk_...)');
+    return {
+      statusCode: 500,
+      headers: {
+        'Access-Control-Allow-Origin': '*',
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        error: 'Server configuration error',
+        message: 'STRIPE_SECRET_KEY must be a secret key (sk_test_... or sk_live_...), not a publishable key (pk_...)',
+      }),
+    };
+  }
+
   if (!process.env.SUPABASE_URL && !process.env.VITE_SUPABASE_URL) {
     console.error('Missing SUPABASE_URL environment variable');
     return {
@@ -272,6 +288,13 @@ export const handler = async (event: any) => {
     };
   } catch (error: any) {
     console.error('Stripe sync error:', error);
+    console.error('Error details:', {
+      message: error.message,
+      type: error.type,
+      code: error.code,
+      statusCode: error.statusCode,
+      raw: error.raw,
+    });
     return {
       statusCode: 500,
       headers: {
@@ -280,7 +303,8 @@ export const handler = async (event: any) => {
       },
       body: JSON.stringify({
         error: 'Failed to sync with Stripe',
-        message: error.message,
+        message: error.message || 'Unknown error occurred',
+        details: error.type || error.code || 'Check server logs for more details',
       }),
     };
   }
