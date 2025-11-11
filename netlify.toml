@@ -18,8 +18,6 @@
   directory = "netlify/functions"
   # Node.js version for functions
   node_bundler = "esbuild"
-  # Timeout for functions (in seconds)
-  timeout = 10
 
 # Redirect all routes to index.html for client-side routing
 [[redirects]]
