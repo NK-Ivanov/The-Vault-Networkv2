@@ -116,6 +116,8 @@ export const handler = async (event: any) => {
 
     // If no existing Stripe product, create one
     let productId = automation.stripe_product_id;
+    let setupPriceId = automation.stripe_setup_price_id;
+    let monthlyPriceId = automation.stripe_monthly_price_id;
     
     if (!productId) {
       const product = await stripe.products.create({
@@ -128,15 +130,33 @@ export const handler = async (event: any) => {
       });
       productId = product.id;
     } else {
-      // Update existing product
-      await stripe.products.update(productId, {
-        name,
-        description: description || '',
-      });
+      // Try to update existing product
+      // If product was created with different mode (test vs live), this will fail
+      // In that case, create a new product
+      try {
+        await stripe.products.update(productId, {
+          name,
+          description: description || '',
+        });
+      } catch (updateError: any) {
+        // If update fails (e.g., product doesn't exist in current mode), create new one
+        console.log('Failed to update existing product, creating new one:', updateError.message);
+        const product = await stripe.products.create({
+          name,
+          description: description || '',
+          metadata: {
+            automation_id: id,
+            source: 'vault_network',
+          },
+        });
+        productId = product.id;
+        // Reset price IDs since we're creating a new product
+        setupPriceId = null;
+        monthlyPriceId = null;
+      }
     }
 
     // Create or update setup price (one-time)
-    let setupPriceId = automation.stripe_setup_price_id;
     const setupAmount = Math.round(parseFloat(setup_price.toString()) * 100);
 
     if (!setupPriceId || setupAmount !== Math.round(parseFloat(automation.setup_price?.toString() || '0') * 100)) {
@@ -148,10 +168,34 @@ export const handler = async (event: any) => {
         nickname: `${name} - Setup Fee`,
       });
       setupPriceId = setupPrice.id;
+    } else {
+      // Verify price exists and belongs to the product
+      try {
+        const existingPrice = await stripe.prices.retrieve(setupPriceId);
+        if (existingPrice.product !== productId) {
+          // Price belongs to different product, create new one
+          const setupPrice = await stripe.prices.create({
+            unit_amount: setupAmount,
+            currency: 'usd',
+            product: productId,
+            nickname: `${name} - Setup Fee`,
+          });
+          setupPriceId = setupPrice.id;
+        }
+      } catch (priceError: any) {
+        // Price doesn't exist in current mode, create new one
+        console.log('Failed to retrieve existing setup price, creating new one:', priceError.message);
+        const setupPrice = await stripe.prices.create({
+          unit_amount: setupAmount,
+          currency: 'usd',
+          product: productId,
+          nickname: `${name} - Setup Fee`,
+        });
+        setupPriceId = setupPrice.id;
+      }
     }
 
     // Create or update monthly price (recurring)
-    let monthlyPriceId = automation.stripe_monthly_price_id;
     const monthlyAmount = Math.round(parseFloat(monthly_price.toString()) * 100);
 
     if (!monthlyPriceId || monthlyAmount !== Math.round(parseFloat(automation.monthly_price?.toString() || '0') * 100)) {
@@ -166,6 +210,37 @@ export const handler = async (event: any) => {
         },
       });
       monthlyPriceId = monthlyPrice.id;
+    } else {
+      // Verify price exists and belongs to the product
+      try {
+        const existingPrice = await stripe.prices.retrieve(monthlyPriceId);
+        if (existingPrice.product !== productId) {
+          // Price belongs to different product, create new one
+          const monthlyPrice = await stripe.prices.create({
+            unit_amount: monthlyAmount,
+            currency: 'usd',
+            product: productId,
+            nickname: `${name} - Monthly Subscription`,
+            recurring: {
+              interval: 'month',
+            },
+          });
+          monthlyPriceId = monthlyPrice.id;
+        }
+      } catch (priceError: any) {
+        // Price doesn't exist in current mode, create new one
+        console.log('Failed to retrieve existing monthly price, creating new one:', priceError.message);
+        const monthlyPrice = await stripe.prices.create({
+          unit_amount: monthlyAmount,
+          currency: 'usd',
+          product: productId,
+          nickname: `${name} - Monthly Subscription`,
+          recurring: {
+            interval: 'month',
+          },
+        });
+        monthlyPriceId = monthlyPrice.id;
+      }
     }
 
     // Save Stripe IDs back to Supabase
