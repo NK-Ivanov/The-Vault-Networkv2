@@ -50,6 +50,28 @@ interface EnquiryData {
   client_id: string | null;
 }
 
+interface ClientAutomationData {
+  id: string;
+  client_id: string;
+  automation_id: string;
+  seller_id: string | null;
+  payment_status: 'unpaid' | 'paid';
+  setup_status: 'pending_setup' | 'setup_in_progress' | 'active';
+  assigned_at: string;
+  paid_at: string | null;
+  client: {
+    business_name: string;
+    contact_name: string;
+  };
+  automation: {
+    name: string;
+    description: string;
+  };
+  seller: {
+    business_name: string;
+  } | null;
+}
+
 interface AutomationData {
   id: string;
   name: string;
@@ -84,6 +106,7 @@ const AdminDashboard = () => {
   const [clients, setClients] = useState<ClientData[]>([]);
   const [enquiries, setEnquiries] = useState<EnquiryData[]>([]);
   const [automations, setAutomations] = useState<AutomationData[]>([]);
+  const [clientAutomations, setClientAutomations] = useState<ClientAutomationData[]>([]);
   const [selectedSeller, setSelectedSeller] = useState<SellerProfileData | null>(null);
   const [showSellerDetails, setShowSellerDetails] = useState(false);
   const [showAddAutomation, setShowAddAutomation] = useState(false);
@@ -197,6 +220,44 @@ const AdminDashboard = () => {
 
       if (automationsError) throw automationsError;
       setAutomations(automationsData || []);
+
+      // Fetch client automations with related data
+      const { data: clientAutomationsData, error: clientAutomationsError } = await supabase
+        .from("client_automations")
+        .select(`
+          *,
+          client:clients!client_automations_client_id_fkey (
+            business_name,
+            contact_name
+          ),
+          automation:automations!client_automations_automation_id_fkey (
+            name,
+            description
+          ),
+          seller:sellers!client_automations_seller_id_fkey (
+            business_name
+          )
+        `)
+        .order("assigned_at", { ascending: false });
+
+      if (clientAutomationsError) throw clientAutomationsError;
+      
+      // Transform the nested data
+      const transformedClientAutomations = (clientAutomationsData || []).map((ca: any) => ({
+        id: ca.id,
+        client_id: ca.client_id,
+        automation_id: ca.automation_id,
+        seller_id: ca.seller_id,
+        payment_status: ca.payment_status || 'unpaid',
+        setup_status: ca.setup_status || 'pending_setup',
+        assigned_at: ca.assigned_at,
+        paid_at: ca.paid_at,
+        client: ca.client,
+        automation: ca.automation,
+        seller: ca.seller,
+      }));
+      
+      setClientAutomations(transformedClientAutomations);
 
       const { data: transactionsData } = await supabase
         .from("transactions")
@@ -312,6 +373,30 @@ const AdminDashboard = () => {
     } catch (error: any) {
       toast({
         title: "Error loading seller details",
+        description: error.message,
+        variant: "destructive",
+      });
+    }
+  };
+
+  const handleUpdateSetupStatus = async (clientAutomationId: string, newStatus: 'pending_setup' | 'setup_in_progress' | 'active') => {
+    try {
+      const { error } = await supabase
+        .from("client_automations")
+        .update({ setup_status: newStatus })
+        .eq("id", clientAutomationId);
+
+      if (error) throw error;
+
+      toast({
+        title: "Status Updated!",
+        description: `Setup status updated to ${newStatus.replace('_', ' ')}`,
+      });
+
+      fetchAdminData();
+    } catch (error: any) {
+      toast({
+        title: "Failed to update status",
         description: error.message,
         variant: "destructive",
       });
@@ -1022,10 +1107,11 @@ const AdminDashboard = () => {
           <Card className="bg-card border-border">
             <CardContent className="pt-6">
               <Tabs defaultValue="sellers" className="w-full">
-                <TabsList className="grid w-full grid-cols-4 mb-6">
+                <TabsList className="grid w-full grid-cols-5 mb-6">
                   <TabsTrigger value="sellers">Partners</TabsTrigger>
                   <TabsTrigger value="clients">Clients</TabsTrigger>
                   <TabsTrigger value="automations">Automations</TabsTrigger>
+                  <TabsTrigger value="client-automations">Client Automations</TabsTrigger>
                   <TabsTrigger value="enquiries">Enquiries</TabsTrigger>
                 </TabsList>
 
@@ -1263,6 +1349,92 @@ const AdminDashboard = () => {
                           </Card>
                         ))}
                       </div>
+                    )}
+                  </div>
+                </TabsContent>
+
+                <TabsContent value="client-automations">
+                  <div className="space-y-4">
+                    {clientAutomations.length === 0 ? (
+                      <div className="text-center py-8">
+                        <p className="text-muted-foreground">No client automations yet.</p>
+                      </div>
+                    ) : (
+                      <Table>
+                        <TableHeader>
+                          <TableRow>
+                            <TableHead>Client</TableHead>
+                            <TableHead>Automation</TableHead>
+                            <TableHead>Partner</TableHead>
+                            <TableHead>Payment Status</TableHead>
+                            <TableHead>Setup Status</TableHead>
+                            <TableHead>Assigned Date</TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {clientAutomations.map((ca) => (
+                            <TableRow key={ca.id}>
+                              <TableCell className="font-medium">
+                                {ca.client?.business_name || 'Unknown'}
+                                <div className="text-xs text-muted-foreground">
+                                  {ca.client?.contact_name}
+                                </div>
+                              </TableCell>
+                              <TableCell>
+                                <div className="font-medium">{ca.automation?.name || 'Unknown'}</div>
+                                <div className="text-xs text-muted-foreground line-clamp-1">
+                                  {ca.automation?.description}
+                                </div>
+                              </TableCell>
+                              <TableCell>
+                                {ca.seller?.business_name || 'N/A'}
+                              </TableCell>
+                              <TableCell>
+                                <Badge variant={ca.payment_status === 'paid' ? 'default' : 'secondary'}>
+                                  {ca.payment_status === 'paid' ? (
+                                    <>
+                                      <CheckCircle className="w-3 h-3 mr-1" />
+                                      Paid
+                                    </>
+                                  ) : (
+                                    <>
+                                      <XCircle className="w-3 h-3 mr-1" />
+                                      Unpaid
+                                    </>
+                                  )}
+                                </Badge>
+                                {ca.paid_at && (
+                                  <div className="text-xs text-muted-foreground mt-1">
+                                    {new Date(ca.paid_at).toLocaleDateString()}
+                                  </div>
+                                )}
+                              </TableCell>
+                              <TableCell>
+                                <Select
+                                  value={ca.setup_status}
+                                  onValueChange={(value: 'pending_setup' | 'setup_in_progress' | 'active') => 
+                                    handleUpdateSetupStatus(ca.id, value)
+                                  }
+                                >
+                                  <SelectTrigger className="w-[180px]">
+                                    <SelectValue />
+                                  </SelectTrigger>
+                                  <SelectContent>
+                                    <SelectItem value="pending_setup">Pending Setup</SelectItem>
+                                    <SelectItem value="setup_in_progress">Setup In Progress</SelectItem>
+                                    <SelectItem value="active">Active</SelectItem>
+                                  </SelectContent>
+                                </Select>
+                              </TableCell>
+                              <TableCell>
+                                <div className="text-xs text-muted-foreground">
+                                  {new Date(ca.assigned_at).toLocaleDateString()}
+                                </div>
+                              </TableCell>
+                            </TableRow>
+                          ))}
+                        </TableBody>
+                      </Table>
                     )}
                   </div>
                 </TabsContent>

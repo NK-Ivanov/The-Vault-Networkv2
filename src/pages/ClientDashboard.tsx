@@ -48,6 +48,8 @@ interface AutomationData {
   features: string[] | null;
   assigned_at: string;
   status: string;
+  payment_status: 'unpaid' | 'paid';
+  setup_status: 'pending_setup' | 'setup_in_progress' | 'active';
   stripe_product_id: string | null;
   stripe_setup_price_id: string | null;
   stripe_monthly_price_id: string | null;
@@ -156,6 +158,8 @@ const ClientDashboard = () => {
         features: ca.automations.features,
         assigned_at: ca.assigned_at,
         status: ca.status,
+        payment_status: ca.payment_status || 'unpaid',
+        setup_status: ca.setup_status || 'pending_setup',
         stripe_product_id: ca.automations.stripe_product_id,
         stripe_setup_price_id: ca.automations.stripe_setup_price_id,
         stripe_monthly_price_id: ca.automations.stripe_monthly_price_id,
@@ -369,14 +373,49 @@ const ClientDashboard = () => {
                         <p className="text-xs text-muted-foreground mt-4">
                           Assigned: {new Date(automation.assigned_at).toLocaleDateString()}
                         </p>
+                        <div className="flex items-center justify-between pt-2 border-t border-border mt-2">
+                          <div className="flex flex-col gap-1">
+                            <div className="flex items-center gap-2">
+                              <span className="text-xs text-muted-foreground">Payment:</span>
+                              <Badge variant={automation.payment_status === 'paid' ? 'default' : 'secondary'} className="text-xs">
+                                {automation.payment_status === 'paid' ? (
+                                  <>
+                                    <CheckCircle className="w-3 h-3 mr-1" />
+                                    Paid
+                                  </>
+                                ) : (
+                                  <>
+                                    <XCircle className="w-3 h-3 mr-1" />
+                                    Unpaid
+                                  </>
+                                )}
+                              </Badge>
+                            </div>
+                            <div className="flex items-center gap-2">
+                              <span className="text-xs text-muted-foreground">Setup:</span>
+                              <Badge 
+                                variant={
+                                  automation.setup_status === 'active' ? 'default' :
+                                  automation.setup_status === 'setup_in_progress' ? 'secondary' : 'outline'
+                                } 
+                                className="text-xs"
+                              >
+                                {automation.setup_status === 'active' ? 'Active' :
+                                 automation.setup_status === 'setup_in_progress' ? 'Setup In Progress' : 'Pending Setup'}
+                              </Badge>
+                            </div>
+                          </div>
+                        </div>
                         <Button
                           onClick={() => handleCheckout(automation)}
-                          disabled={checkingOut === automation.id || !automation.stripe_setup_price_id}
+                          disabled={checkingOut === automation.id || !automation.stripe_setup_price_id || automation.payment_status === 'paid'}
                           className="w-full mt-4"
-                          variant={automation.stripe_setup_price_id ? "default" : "outline"}
+                          variant={automation.payment_status === 'paid' ? 'outline' : automation.stripe_setup_price_id ? "default" : "outline"}
                         >
                           {checkingOut === automation.id ? (
                             <>Processing...</>
+                          ) : automation.payment_status === 'paid' ? (
+                            <>Already Purchased</>
                           ) : automation.stripe_setup_price_id ? (
                             <>
                               <CreditCard className="w-4 h-4 mr-2" />

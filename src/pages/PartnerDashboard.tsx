@@ -9,7 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
-import { DollarSign, Users, TrendingUp, Package, Copy, Check } from "lucide-react";
+import { DollarSign, Users, TrendingUp, Package, Copy, Check, CheckCircle, XCircle } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 
 interface SellerData {
@@ -20,6 +20,24 @@ interface SellerData {
   commission_rate: number;
   total_sales: number;
   total_commission: number;
+}
+
+interface ClientAutomationData {
+  id: string;
+  client_id: string;
+  automation_id: string;
+  payment_status: 'unpaid' | 'paid';
+  setup_status: 'pending_setup' | 'setup_in_progress' | 'active';
+  assigned_at: string;
+  paid_at: string | null;
+  client: {
+    business_name: string;
+    contact_name: string;
+  };
+  automation: {
+    name: string;
+    description: string;
+  };
 }
 
 interface ClientData {
@@ -49,6 +67,7 @@ const PartnerDashboard = () => {
   const [sellerData, setSellerData] = useState<SellerData | null>(null);
   const [clients, setClients] = useState<ClientData[]>([]);
   const [availableAutomations, setAvailableAutomations] = useState<AutomationData[]>([]);
+  const [clientAutomations, setClientAutomations] = useState<ClientAutomationData[]>([]);
   const [selectedClient, setSelectedClient] = useState<string>("");
   const [selectedAutomation, setSelectedAutomation] = useState<string>("");
   const [assigning, setAssigning] = useState(false);
@@ -132,6 +151,40 @@ const PartnerDashboard = () => {
       }));
       
       setAvailableAutomations(transformedAutomations);
+      
+      // Fetch client automations with payment and setup status
+      const { data: clientAutomationsData, error: clientAutomationsError } = await supabase
+        .from("client_automations")
+        .select(`
+          *,
+          client:clients!client_automations_client_id_fkey (
+            business_name,
+            contact_name
+          ),
+          automation:automations!client_automations_automation_id_fkey (
+            name,
+            description
+          )
+        `)
+        .eq("seller_id", seller.id)
+        .order("assigned_at", { ascending: false });
+
+      if (clientAutomationsError) throw clientAutomationsError;
+      
+      // Transform client automations data
+      const transformedClientAutomations = (clientAutomationsData || []).map((ca: any) => ({
+        id: ca.id,
+        client_id: ca.client_id,
+        automation_id: ca.automation_id,
+        payment_status: ca.payment_status || 'unpaid',
+        setup_status: ca.setup_status || 'pending_setup',
+        assigned_at: ca.assigned_at,
+        paid_at: ca.paid_at,
+        client: ca.client,
+        automation: ca.automation,
+      }));
+      
+      setClientAutomations(transformedClientAutomations);
       
       // Set initial referral code for editing
       if (seller.referral_code) {
@@ -518,6 +571,83 @@ const PartnerDashboard = () => {
                     </Card>
                   ))}
                 </div>
+              </CardContent>
+            </Card>
+          )}
+
+          {/* Client Automations Section */}
+          {clientAutomations.length > 0 && (
+            <Card className="mb-8 bg-card border-border">
+              <CardHeader>
+                <CardTitle className="text-primary">Client Automations</CardTitle>
+                <CardDescription>Track automations assigned to your clients and their payment/setup status</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Client</TableHead>
+                      <TableHead>Automation</TableHead>
+                      <TableHead>Payment Status</TableHead>
+                      <TableHead>Setup Status</TableHead>
+                      <TableHead>Assigned Date</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {clientAutomations.map((ca) => (
+                      <TableRow key={ca.id}>
+                        <TableCell className="font-medium">
+                          {ca.client?.business_name || 'Unknown'}
+                          <div className="text-xs text-muted-foreground">
+                            {ca.client?.contact_name}
+                          </div>
+                        </TableCell>
+                        <TableCell>
+                          <div className="font-medium">{ca.automation?.name || 'Unknown'}</div>
+                          <div className="text-xs text-muted-foreground line-clamp-1">
+                            {ca.automation?.description}
+                          </div>
+                        </TableCell>
+                        <TableCell>
+                          <Badge variant={ca.payment_status === 'paid' ? 'default' : 'secondary'}>
+                            {ca.payment_status === 'paid' ? (
+                              <>
+                                <CheckCircle className="w-3 h-3 mr-1" />
+                                Paid
+                              </>
+                            ) : (
+                              <>
+                                <XCircle className="w-3 h-3 mr-1" />
+                                Unpaid
+                              </>
+                            )}
+                          </Badge>
+                          {ca.paid_at && (
+                            <div className="text-xs text-muted-foreground mt-1">
+                              Paid: {new Date(ca.paid_at).toLocaleDateString()}
+                            </div>
+                          )}
+                        </TableCell>
+                        <TableCell>
+                          <Badge 
+                            variant={
+                              ca.setup_status === 'active' ? 'default' :
+                              ca.setup_status === 'setup_in_progress' ? 'secondary' : 'outline'
+                            }
+                          >
+                            {ca.setup_status === 'active' ? 'Active' :
+                             ca.setup_status === 'setup_in_progress' ? 'Setup In Progress' : 'Pending Setup'}
+                          </Badge>
+                        </TableCell>
+                        <TableCell>
+                          <div className="text-xs text-muted-foreground">
+                            {new Date(ca.assigned_at).toLocaleDateString()}
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
               </CardContent>
             </Card>
           )}
