@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import Navigation from "@/components/Navigation";
 import Footer from "@/components/Footer";
@@ -36,7 +36,13 @@ interface ClientData {
   contact_name: string;
   status: string;
   invited_by_code: string | null;
+  seller_id: string | null;
   created_at: string;
+  seller?: {
+    id: string;
+    business_name: string;
+    referral_code: string | null;
+  } | null;
 }
 
 interface EnquiryData {
@@ -122,6 +128,15 @@ const AdminDashboard = () => {
   const [clientsSortBy, setClientsSortBy] = useState<"name" | "contact" | "status" | "date">("date");
   const [partnersSortBy, setPartnersSortBy] = useState<"name" | "status" | "date">("date");
   
+  // Vault Network client management state
+  const [vaultNetworkSellerId, setVaultNetworkSellerId] = useState<string | null>(null);
+  const [vaultNetworkClients, setVaultNetworkClients] = useState<ClientData[]>([]);
+  const [vaultNetworkAutomations, setVaultNetworkAutomations] = useState<AutomationData[]>([]);
+  const [selectedVaultClient, setSelectedVaultClient] = useState<string>("");
+  const [selectedVaultAutomation, setSelectedVaultAutomation] = useState<string>("");
+  const [assigningVaultAutomation, setAssigningVaultAutomation] = useState(false);
+  const [showVaultAssignDialog, setShowVaultAssignDialog] = useState(false);
+  
   // New automation form state
   const [newAutomation, setNewAutomation] = useState({
     name: "",
@@ -198,11 +213,95 @@ const AdminDashboard = () => {
 
       const { data: clientsData, error: clientsError } = await supabase
         .from("clients")
-        .select("*")
+        .select(`
+          id,
+          business_name,
+          contact_name,
+          status,
+          invited_by_code,
+          seller_id,
+          created_at,
+          seller:sellers!clients_seller_id_fkey (
+            id,
+            business_name,
+            referral_code
+          )
+        `)
         .order("created_at", { ascending: false });
 
       if (clientsError) throw clientsError;
       setClients(clientsData || []);
+
+      // Fetch Vault Network seller and its clients
+      const { data: vaultNetworkSeller, error: vaultError } = await supabase
+        .from("sellers")
+        .select("id")
+        .eq("referral_code", "VAULT-NETWORK")
+        .maybeSingle();
+
+      if (!vaultError && vaultNetworkSeller) {
+        setVaultNetworkSellerId(vaultNetworkSeller.id);
+        
+        // Fetch clients assigned to The Vault Network
+        const { data: vaultClients, error: vaultClientsError } = await supabase
+          .from("clients")
+          .select(`
+            id,
+            business_name,
+            contact_name,
+            status,
+            invited_by_code,
+            seller_id,
+            created_at,
+            seller:sellers!clients_seller_id_fkey (
+              id,
+              business_name,
+              referral_code
+            )
+          `)
+          .eq("seller_id", vaultNetworkSeller.id)
+          .order("created_at", { ascending: false });
+
+        if (!vaultClientsError && vaultClients) {
+          setVaultNetworkClients(vaultClients);
+        }
+
+        // Fetch automations available to The Vault Network seller
+        const { data: vaultAutomations, error: vaultAutomationsError } = await supabase
+          .from("seller_automations")
+          .select(`
+            automation_id,
+            automations (
+              id,
+              name,
+              description,
+              category,
+              setup_price,
+              monthly_price,
+              image_url,
+              features,
+              is_active
+            )
+          `)
+          .eq("seller_id", vaultNetworkSeller.id);
+
+        if (!vaultAutomationsError && vaultAutomations) {
+          const transformedVaultAutomations = vaultAutomations
+            .filter((sa: any) => sa.automations && sa.automations.is_active)
+            .map((sa: any) => ({
+              id: sa.automations.id,
+              name: sa.automations.name,
+              description: sa.automations.description,
+              category: sa.automations.category,
+              setup_price: sa.automations.setup_price,
+              monthly_price: sa.automations.monthly_price,
+              image_url: sa.automations.image_url,
+              features: sa.automations.features,
+              is_active: sa.automations.is_active,
+            }));
+          setVaultNetworkAutomations(transformedVaultAutomations);
+        }
+      }
 
       const { data: enquiriesData, error: enquiriesError } = await supabase
         .from("enquiries")
@@ -454,6 +553,19 @@ const AdminDashboard = () => {
 
       if (error) throw error;
 
+      // Automatically assign to The Vault Network seller if it exists
+      if (insertedData && vaultNetworkSellerId) {
+        await supabase.from("seller_automations").insert({
+          seller_id: vaultNetworkSellerId,
+          automation_id: insertedData.id,
+        }).then(({ error: assignError }) => {
+          if (assignError) {
+            console.warn("Failed to auto-assign to Vault Network:", assignError);
+            // Don't throw - this is not critical
+          }
+        });
+      }
+
       // Auto-sync with Stripe after creating
       try {
         await syncStripeAutomation(insertedData);
@@ -464,7 +576,7 @@ const AdminDashboard = () => {
 
       toast({
         title: "Automation Added!",
-        description: "New automation has been added to the system and synced with Stripe.",
+        description: "New automation has been added to the system" + (vaultNetworkSellerId ? ", assigned to The Vault Network," : "") + " and synced with Stripe.",
       });
 
       setNewAutomation({
@@ -556,7 +668,7 @@ const AdminDashboard = () => {
     }
   };
 
-  const handleUpdateSellerCommission = async (sellerId: string, commissionRate: number) => {
+  const handleUpdateSellerCommission = async (sellerId: string, commissionRate: number | null) => {
     try {
       const { error } = await supabase
         .from("sellers")
@@ -567,11 +679,13 @@ const AdminDashboard = () => {
 
       toast({
         title: "Commission Rate Updated!",
-        description: "Seller commission rate has been updated.",
+        description: commissionRate 
+          ? `Seller now has a custom commission rate of ${commissionRate}% that overrides all automation defaults.`
+          : "Seller will now use each automation's default commission rate.",
       });
 
       if (selectedSeller) {
-        setSelectedSeller({ ...selectedSeller, commission_rate: commissionRate });
+        setSelectedSeller({ ...selectedSeller, commission_rate: commissionRate || 0 });
       }
       fetchAdminData();
     } catch (error: any) {
@@ -638,6 +752,64 @@ const AdminDashboard = () => {
         description: error.message,
         variant: "destructive",
       });
+    }
+  };
+
+  const handleAssignVaultAutomation = async () => {
+    if (!selectedVaultClient || !selectedVaultAutomation || !vaultNetworkSellerId) {
+      toast({
+        title: "Selection required",
+        description: "Please select both a client and an automation",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setAssigningVaultAutomation(true);
+    try {
+      // Check if already assigned
+      const { data: existing } = await supabase
+        .from("client_automations")
+        .select("id")
+        .eq("client_id", selectedVaultClient)
+        .eq("automation_id", selectedVaultAutomation)
+        .maybeSingle();
+
+      if (existing) {
+        toast({
+          title: "Already assigned",
+          description: "This automation is already assigned to this client",
+          variant: "destructive",
+        });
+        return;
+      }
+
+      const { error } = await supabase.from("client_automations").insert({
+        client_id: selectedVaultClient,
+        automation_id: selectedVaultAutomation,
+        seller_id: vaultNetworkSellerId,
+        status: "active",
+      });
+
+      if (error) throw error;
+
+      toast({
+        title: "Automation Assigned!",
+        description: "The automation has been assigned to the client",
+      });
+
+      setSelectedVaultClient("");
+      setSelectedVaultAutomation("");
+      setShowVaultAssignDialog(false);
+      fetchAdminData();
+    } catch (error: any) {
+      toast({
+        title: "Assignment failed",
+        description: error.message,
+        variant: "destructive",
+      });
+    } finally {
+      setAssigningVaultAutomation(false);
     }
   };
 
@@ -1104,6 +1276,138 @@ const AdminDashboard = () => {
             </Dialog>
           </div>
 
+          {/* Vault Network Client Management Section */}
+          {vaultNetworkSellerId && (
+            <Card className="mb-8 bg-gradient-to-r from-primary/10 via-primary/5 to-background border-primary/20">
+              <CardHeader>
+                <CardTitle className="text-primary flex items-center gap-2">
+                  <Users className="h-5 w-5" />
+                  The Vault Network Clients
+                </CardTitle>
+                <CardDescription>
+                  Manage clients assigned to The Vault Network {vaultNetworkClients.length > 0 && `(${vaultNetworkClients.length} client${vaultNetworkClients.length !== 1 ? 's' : ''})`}
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-4">
+                  {vaultNetworkClients.length === 0 ? (
+                    <div className="text-center py-8">
+                      <p className="text-muted-foreground mb-4">
+                        No clients assigned to The Vault Network yet.
+                      </p>
+                      <p className="text-sm text-muted-foreground">
+                        Clients who sign up without a referral code will be automatically assigned here.
+                      </p>
+                    </div>
+                  ) : (
+                    <>
+                      {/* Clients List */}
+                      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mb-4">
+                        {vaultNetworkClients.map((client) => (
+                          <Card key={client.id} className="bg-background/50 border-border">
+                            <CardContent className="pt-4">
+                              <div className="flex justify-between items-start mb-2">
+                                <div className="flex-1">
+                                  <p className="font-medium text-foreground">{client.business_name}</p>
+                                  <p className="text-sm text-muted-foreground">{client.contact_name}</p>
+                                </div>
+                                <Badge variant={client.status === "active" ? "default" : "secondary"}>
+                                  {client.status}
+                                </Badge>
+                              </div>
+                              <p className="text-xs text-muted-foreground">
+                                Joined: {new Date(client.created_at).toLocaleDateString()}
+                              </p>
+                            </CardContent>
+                          </Card>
+                        ))}
+                      </div>
+
+                      {/* Assign Automation Button */}
+                      <Dialog open={showVaultAssignDialog} onOpenChange={setShowVaultAssignDialog}>
+                        <DialogTrigger asChild>
+                          <Button className="w-full sm:w-auto">
+                            <Plus className="w-4 h-4 mr-2" />
+                            Assign Automation to Client
+                          </Button>
+                        </DialogTrigger>
+                        <DialogContent className="max-w-2xl">
+                          <DialogHeader>
+                            <DialogTitle>Assign Automation to Vault Network Client</DialogTitle>
+                            <DialogDescription>
+                              Select a client and automation to assign
+                            </DialogDescription>
+                          </DialogHeader>
+                          <div className="space-y-4">
+                            <div className="space-y-2">
+                              <Label>Select Client</Label>
+                              <Select value={selectedVaultClient} onValueChange={setSelectedVaultClient}>
+                                <SelectTrigger>
+                                  <SelectValue placeholder="Choose a client..." />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  {vaultNetworkClients.map((client) => (
+                                    <SelectItem key={client.id} value={client.id}>
+                                      {client.business_name} - {client.contact_name}
+                                    </SelectItem>
+                                  ))}
+                                </SelectContent>
+                              </Select>
+                            </div>
+
+                            <div className="space-y-2">
+                              <Label>Select Automation</Label>
+                              {vaultNetworkAutomations.length === 0 ? (
+                                <div className="p-4 border border-border rounded-md bg-muted/20">
+                                  <p className="text-sm text-muted-foreground">
+                                    No automations available. Please assign automations to The Vault Network seller first using the "Assign Automation" button above.
+                                  </p>
+                                </div>
+                              ) : (
+                                <Select value={selectedVaultAutomation} onValueChange={setSelectedVaultAutomation}>
+                                  <SelectTrigger>
+                                    <SelectValue placeholder="Choose an automation..." />
+                                  </SelectTrigger>
+                                  <SelectContent>
+                                    {vaultNetworkAutomations.map((automation) => (
+                                      <SelectItem key={automation.id} value={automation.id}>
+                                        {automation.name} - ${automation.setup_price} setup / ${automation.monthly_price}/mo
+                                      </SelectItem>
+                                    ))}
+                                  </SelectContent>
+                                </Select>
+                              )}
+                            </div>
+
+                            <div className="flex justify-end gap-2 pt-4">
+                              <Button
+                                type="button"
+                                variant="outline"
+                                onClick={() => {
+                                  setShowVaultAssignDialog(false);
+                                  setSelectedVaultClient("");
+                                  setSelectedVaultAutomation("");
+                                }}
+                              >
+                                Cancel
+                              </Button>
+                              <Button
+                                onClick={handleAssignVaultAutomation}
+                                disabled={!selectedVaultClient || !selectedVaultAutomation || assigningVaultAutomation || vaultNetworkAutomations.length === 0}
+                              >
+                                {assigningVaultAutomation ? "Assigning..." : "Assign Automation"}
+                              </Button>
+                            </div>
+                          </div>
+                        </DialogContent>
+                      </Dialog>
+                    </>
+                  )}
+                </div>
+              </CardContent>
+            </Card>
+          )}
+
           <Card className="bg-card border-border">
             <CardContent className="pt-6">
               <Tabs defaultValue="sellers" className="w-full">
@@ -1245,6 +1549,7 @@ const AdminDashboard = () => {
                       <TableRow>
                         <TableHead>Business Name</TableHead>
                         <TableHead>Contact</TableHead>
+                        <TableHead>Partner</TableHead>
                         <TableHead>Referral Code Used</TableHead>
                         <TableHead>Status</TableHead>
                       </TableRow>
@@ -1252,7 +1557,7 @@ const AdminDashboard = () => {
                     <TableBody>
                       {filteredClients.length === 0 ? (
                         <TableRow>
-                          <TableCell colSpan={4} className="text-center text-muted-foreground py-8">
+                          <TableCell colSpan={5} className="text-center text-muted-foreground py-8">
                             No clients found
                           </TableCell>
                         </TableRow>
@@ -1261,6 +1566,13 @@ const AdminDashboard = () => {
                           <TableRow key={client.id}>
                             <TableCell className="font-medium">{client.business_name}</TableCell>
                             <TableCell>{client.contact_name}</TableCell>
+                            <TableCell>
+                              {client.seller ? (
+                                <Badge variant="secondary">{client.seller.business_name}</Badge>
+                              ) : (
+                                <Badge variant="outline">The Vault Network</Badge>
+                              )}
+                            </TableCell>
                             <TableCell className="font-mono">{client.invited_by_code || "Direct"}</TableCell>
                             <TableCell>
                               <Badge variant={client.status === "active" ? "default" : "secondary"}>
@@ -1625,18 +1937,31 @@ const AdminDashboard = () => {
                       step="0.01"
                       min="0"
                       max="100"
-                      value={selectedSeller.commission_rate}
+                      value={selectedSeller.commission_rate ? selectedSeller.commission_rate.toString() : ''}
+                      placeholder="Auto (uses automation default)"
                       onChange={(e) => {
-                        const newRate = parseFloat(e.target.value) || 0;
-                        setSelectedSeller({ ...selectedSeller, commission_rate: newRate });
+                        const newRate = e.target.value === '' ? null : parseFloat(e.target.value);
+                        setSelectedSeller({ ...selectedSeller, commission_rate: newRate || 0 });
                       }}
-                      onBlur={() => {
-                        handleUpdateSellerCommission(selectedSeller.id, selectedSeller.commission_rate);
+                      onBlur={(e) => {
+                        // Only update if value actually changed
+                        const currentValue = selectedSeller.commission_rate;
+                        const inputValue = e.target.value === '' ? null : parseFloat(e.target.value);
+                        if (currentValue !== inputValue) {
+                          handleUpdateSellerCommission(selectedSeller.id, inputValue);
+                        }
                       }}
-                      className="w-24"
+                      className="w-32"
+                      autoFocus={false}
+                      readOnly={false}
                     />
                     <span className="text-sm">%</span>
                   </div>
+                  <p className="text-xs text-muted-foreground mt-1">
+                    {selectedSeller.commission_rate 
+                      ? `Custom rate: ${selectedSeller.commission_rate}% (overrides all automation defaults)`
+                      : 'Uses each automation\'s default commission rate'}
+                  </p>
                 </div>
                 {selectedSeller.website && (
                   <div>

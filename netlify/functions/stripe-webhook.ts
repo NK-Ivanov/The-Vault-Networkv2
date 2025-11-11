@@ -119,15 +119,47 @@ export const handler = async (event: any) => {
           .single();
 
         if (automation.data) {
+          // Calculate commission for setup fee
+          const { data: setupCommission, error: setupCommError } = await supabase
+            .rpc('calculate_commission', {
+              p_seller_id: clientAutomation.seller_id,
+              p_automation_id: automationId,
+              p_amount: automation.data.setup_price
+            });
+
+          if (setupCommError) {
+            console.error('Error calculating setup commission:', setupCommError);
+          }
+
+          const setupComm = setupCommission?.[0] || { commission_rate: 0, seller_earnings: 0, vault_share: automation.data.setup_price };
+
           // Create setup fee transaction
           await supabase.from('transactions').insert({
             client_id: clientId,
             seller_id: clientAutomation.seller_id,
             automation_id: automationId,
             amount: automation.data.setup_price,
+            commission: setupComm.seller_earnings,
+            seller_earnings: setupComm.seller_earnings,
+            vault_share: setupComm.vault_share,
+            commission_rate_used: setupComm.commission_rate,
             transaction_type: 'setup',
             status: 'completed',
           });
+
+          // Calculate commission for monthly fee
+          const { data: monthlyCommission, error: monthlyCommError } = await supabase
+            .rpc('calculate_commission', {
+              p_seller_id: clientAutomation.seller_id,
+              p_automation_id: automationId,
+              p_amount: automation.data.monthly_price
+            });
+
+          if (monthlyCommError) {
+            console.error('Error calculating monthly commission:', monthlyCommError);
+          }
+
+          const monthlyComm = monthlyCommission?.[0] || { commission_rate: 0, seller_earnings: 0, vault_share: automation.data.monthly_price };
 
           // Create first month transaction
           await supabase.from('transactions').insert({
@@ -135,6 +167,10 @@ export const handler = async (event: any) => {
             seller_id: clientAutomation.seller_id,
             automation_id: automationId,
             amount: automation.data.monthly_price,
+            commission: monthlyComm.seller_earnings,
+            seller_earnings: monthlyComm.seller_earnings,
+            vault_share: monthlyComm.vault_share,
+            commission_rate_used: monthlyComm.commission_rate,
             transaction_type: 'monthly',
             status: 'completed',
           });
@@ -185,11 +221,29 @@ export const handler = async (event: any) => {
           .single();
 
         if (automation.data) {
+          // Calculate commission for monthly payment
+          const { data: monthlyCommission, error: monthlyCommError } = await supabase
+            .rpc('calculate_commission', {
+              p_seller_id: clientAutomation.seller_id,
+              p_automation_id: clientAutomation.automation_id,
+              p_amount: automation.data.monthly_price
+            });
+
+          if (monthlyCommError) {
+            console.error('Error calculating monthly commission:', monthlyCommError);
+          }
+
+          const monthlyComm = monthlyCommission?.[0] || { commission_rate: 0, seller_earnings: 0, vault_share: automation.data.monthly_price };
+
           await supabase.from('transactions').insert({
             client_id: clientAutomation.client_id,
             seller_id: clientAutomation.seller_id,
             automation_id: clientAutomation.automation_id,
             amount: automation.data.monthly_price,
+            commission: monthlyComm.seller_earnings,
+            seller_earnings: monthlyComm.seller_earnings,
+            vault_share: monthlyComm.vault_share,
+            commission_rate_used: monthlyComm.commission_rate,
             transaction_type: 'monthly',
             status: 'completed',
           });

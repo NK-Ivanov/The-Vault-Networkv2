@@ -10,7 +10,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
-import { DollarSign, Package, FileText, Send, CreditCard, CheckCircle, XCircle } from "lucide-react";
+import { DollarSign, Package, FileText, Send, CreditCard, CheckCircle, XCircle, UserCheck, Sparkles, ArrowRight, Clock, Users } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { callNetlifyFunction } from "@/lib/netlify-functions";
 
@@ -20,6 +20,16 @@ interface ClientData {
   contact_name: string;
   total_spent: number;
   seller_id: string | null;
+  invited_by_code: string | null;
+  created_at: string;
+}
+
+interface PartnerData {
+  id: string;
+  business_name: string;
+  contact_name: string;
+  email: string;
+  referral_code: string | null;
 }
 
 interface TransactionData {
@@ -61,6 +71,7 @@ const ClientDashboard = () => {
   const { toast } = useToast();
   const [loading, setLoading] = useState(true);
   const [clientData, setClientData] = useState<ClientData | null>(null);
+  const [partnerData, setPartnerData] = useState<PartnerData | null>(null);
   const [transactions, setTransactions] = useState<TransactionData[]>([]);
   const [enquiries, setEnquiries] = useState<EnquiryData[]>([]);
   const [automations, setAutomations] = useState<AutomationData[]>([]);
@@ -85,7 +96,7 @@ const ClientDashboard = () => {
     try {
       const { data: client, error: clientError } = await supabase
         .from("clients")
-        .select("*")
+        .select("id, business_name, contact_name, total_spent, seller_id, invited_by_code, created_at")
         .eq("user_id", user?.id)
         .maybeSingle();
 
@@ -102,6 +113,61 @@ const ClientDashboard = () => {
       }
 
       setClientData(client);
+
+      // Fetch partner/seller information if seller_id exists
+      if (client.seller_id) {
+        try {
+          const { data: partner, error: partnerError } = await supabase
+            .from("sellers")
+            .select("id, business_name, referral_code")
+            .eq("id", client.seller_id)
+            .maybeSingle();
+
+          if (partnerError) {
+            console.error("Error fetching partner:", partnerError);
+          }
+
+          if (partner) {
+            // Partner found - use their data
+            setPartnerData({
+              id: partner.id,
+              business_name: partner.business_name || 'The Vault Network',
+              contact_name: partner.business_name === 'The Vault Network' ? 'Support Team' : 'Partner',
+              email: 'support@vaultnetwork.com', // Default email, can be updated
+              referral_code: partner.referral_code,
+            });
+          } else {
+            // Partner not found - default to The Vault Network
+            console.log("Partner not found for seller_id:", client.seller_id, "defaulting to The Vault Network");
+            setPartnerData({
+              id: client.seller_id,
+              business_name: 'The Vault Network',
+              contact_name: 'Support Team',
+              email: 'support@vaultnetwork.com',
+              referral_code: 'VAULT-NETWORK',
+            });
+          }
+        } catch (error) {
+          console.error("Error in partner fetch:", error);
+          // Fallback to The Vault Network
+          setPartnerData({
+            id: client.seller_id || 'system',
+            business_name: 'The Vault Network',
+            contact_name: 'Support Team',
+            email: 'support@vaultnetwork.com',
+            referral_code: 'VAULT-NETWORK',
+          });
+        }
+      } else {
+        // If no seller_id, show The Vault Network as partner
+        setPartnerData({
+          id: 'system',
+          business_name: 'The Vault Network',
+          contact_name: 'Support Team',
+          email: 'support@vaultnetwork.com',
+          referral_code: 'VAULT-NETWORK',
+        });
+      }
 
       const { data: transactionsData, error: transactionsError } = await supabase
         .from("transactions")
@@ -280,6 +346,186 @@ const ClientDashboard = () => {
             </p>
           </div>
 
+          {/* Onboarding Section - Show for new clients or clients without automations */}
+          {(automations.length === 0 || (clientData && new Date(clientData.created_at).getTime() > Date.now() - 7 * 24 * 60 * 60 * 1000)) && (
+            <Card className="mb-12 bg-gradient-to-r from-primary/10 via-primary/5 to-background border-primary/20">
+              <CardHeader>
+                <CardTitle className="text-primary flex items-center gap-2">
+                  <Sparkles className="h-5 w-5" />
+                  Welcome to Vault Network!
+                </CardTitle>
+                <CardDescription>Here's how your automation journey works</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-6">
+                  {/* Partner Information */}
+                  {partnerData ? (
+                    <div className="p-4 bg-background/50 rounded-lg border border-border">
+                      <div className="flex items-start gap-3">
+                        <Users className="h-5 w-5 text-primary mt-0.5" />
+                        <div className="flex-1">
+                          <h3 className="font-semibold text-foreground mb-1">Your Partner</h3>
+                          <p className="text-sm text-muted-foreground mb-2">
+                            You're working with <span className="font-medium text-foreground">{partnerData.business_name}</span>
+                            {partnerData.contact_name && ` (${partnerData.contact_name})`}
+                          </p>
+                          {partnerData.email && (
+                            <p className="text-xs text-muted-foreground">
+                              Contact: <a href={`mailto:${partnerData.email}`} className="text-primary hover:underline">{partnerData.email}</a>
+                            </p>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="p-4 bg-muted/30 rounded-lg border border-border">
+                      <div className="flex items-start gap-3">
+                        <Users className="h-5 w-5 text-muted-foreground mt-0.5" />
+                        <div className="flex-1">
+                          <h3 className="font-semibold text-foreground mb-1">No Partner Assigned</h3>
+                          <p className="text-sm text-muted-foreground">
+                            You signed up without a referral code. Contact support if you need assistance.
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Workflow Steps */}
+                  <div className="space-y-4">
+                    <h3 className="font-semibold text-foreground">Your Automation Workflow</h3>
+                    
+                    {/* Step 1 */}
+                    <div className="flex gap-4 p-4 rounded-lg border bg-primary/5 border-primary/20">
+                      <div className="flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center font-bold bg-primary text-primary-foreground">
+                        1
+                      </div>
+                      <div className="flex-1">
+                        <div className="flex items-center gap-2 mb-1">
+                          <h4 className="font-medium text-foreground">Account Created</h4>
+                          {clientData && <CheckCircle className="h-4 w-4 text-primary" />}
+                        </div>
+                        <p className="text-sm text-muted-foreground">
+                          Your business account has been successfully created.
+                        </p>
+                        {clientData && (
+                          <p className="text-xs text-muted-foreground mt-1">
+                            Created: {new Date(clientData.created_at).toLocaleDateString()}
+                          </p>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Step 2 */}
+                    <div className={`flex gap-4 p-4 rounded-lg border ${automations.length === 0 ? 'bg-muted/20 border-border' : 'bg-primary/5 border-primary/20'}`}>
+                      <div className={`flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center font-bold ${
+                        automations.length === 0 
+                          ? 'bg-muted text-muted-foreground' 
+                          : 'bg-primary text-primary-foreground'
+                      }`}>
+                        2
+                      </div>
+                      <div className="flex-1">
+                        <div className="flex items-center gap-2 mb-1">
+                          <h4 className="font-medium text-foreground">
+                            {automations.length === 0 ? 'Waiting for Automation Assignment' : 'Automations Assigned'}
+                          </h4>
+                          {automations.length > 0 ? (
+                            <CheckCircle className="h-4 w-4 text-primary" />
+                          ) : (
+                            <Clock className="h-4 w-4 text-muted-foreground" />
+                          )}
+                        </div>
+                        {automations.length === 0 ? (
+                          <div>
+                            <p className="text-sm text-muted-foreground mb-2">
+                              {partnerData 
+                                ? `Your partner (${partnerData.business_name}) will assign automations to you. They'll select the best solutions for your business needs.`
+                                : 'Automations will be assigned to you by your partner. Contact support if you need assistance.'}
+                            </p>
+                            {partnerData && (
+                              <p className="text-xs text-muted-foreground">
+                                💡 Tip: You can reach out to your partner if you have specific automation needs.
+                              </p>
+                            )}
+                          </div>
+                        ) : (
+                          <p className="text-sm text-muted-foreground">
+                            Great! You have {automations.length} automation{automations.length !== 1 ? 's' : ''} assigned. Review them below.
+                          </p>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Step 3 */}
+                    <div className={`flex gap-4 p-4 rounded-lg border ${
+                      automations.length > 0 && automations.some(a => a.payment_status === 'paid')
+                        ? 'bg-primary/5 border-primary/20'
+                        : 'bg-muted/20 border-border'
+                    }`}>
+                      <div className={`flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center font-bold ${
+                        automations.length > 0 && automations.some(a => a.payment_status === 'paid')
+                          ? 'bg-primary text-primary-foreground'
+                          : 'bg-muted text-muted-foreground'
+                      }`}>
+                        3
+                      </div>
+                      <div className="flex-1">
+                        <div className="flex items-center gap-2 mb-1">
+                          <h4 className="font-medium text-foreground">Purchase & Setup</h4>
+                          {automations.some(a => a.payment_status === 'paid') ? (
+                            <CheckCircle className="h-4 w-4 text-primary" />
+                          ) : automations.length > 0 ? (
+                            <ArrowRight className="h-4 w-4 text-muted-foreground" />
+                          ) : null}
+                        </div>
+                        {automations.length === 0 ? (
+                          <p className="text-sm text-muted-foreground">
+                            Once automations are assigned, you can review and purchase them here.
+                          </p>
+                        ) : automations.some(a => a.payment_status === 'paid') ? (
+                          <p className="text-sm text-muted-foreground">
+                            You've purchased automation{automations.filter(a => a.payment_status === 'paid').length !== 1 ? 's' : ''}! Setup will begin soon.
+                          </p>
+                        ) : (
+                          <p className="text-sm text-muted-foreground">
+                            Review the assigned automations below and click "Purchase Now" to get started.
+                          </p>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Step 4 */}
+                    <div className={`flex gap-4 p-4 rounded-lg border ${
+                      automations.some(a => a.setup_status === 'active')
+                        ? 'bg-primary/5 border-primary/20'
+                        : 'bg-muted/20 border-border'
+                    }`}>
+                      <div className={`flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center font-bold ${
+                        automations.some(a => a.setup_status === 'active')
+                          ? 'bg-primary text-primary-foreground'
+                          : 'bg-muted text-muted-foreground'
+                      }`}>
+                        4
+                      </div>
+                      <div className="flex-1">
+                        <div className="flex items-center gap-2 mb-1">
+                          <h4 className="font-medium text-foreground">Automation Active</h4>
+                          {automations.some(a => a.setup_status === 'active') && (
+                            <CheckCircle className="h-4 w-4 text-primary" />
+                          )}
+                        </div>
+                        <p className="text-sm text-muted-foreground">
+                          Once setup is complete, your automations will be active and running for your business.
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          )}
+
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-12">
             <Card className="bg-card border-border">
               <CardHeader className="flex flex-row items-center justify-between pb-2">
@@ -322,12 +568,46 @@ const ClientDashboard = () => {
           <Card className="mb-12 bg-card border-border">
             <CardHeader>
               <CardTitle className="text-primary">Your Assigned Automations</CardTitle>
-              <CardDescription>Automations assigned to you by your partner</CardDescription>
+              <CardDescription>
+                {automations.length === 0 
+                  ? "Automations assigned to you by your partner will appear here"
+                  : "Automations assigned to you by your partner"}
+              </CardDescription>
             </CardHeader>
             <CardContent>
               {automations.length === 0 ? (
-                <div className="text-center py-8">
-                  <p className="text-muted-foreground">No automations assigned yet</p>
+                <div className="text-center py-12">
+                  <div className="mx-auto w-16 h-16 rounded-full bg-muted flex items-center justify-center mb-4">
+                    <Sparkles className="h-8 w-8 text-muted-foreground" />
+                  </div>
+                  <h3 className="text-lg font-semibold text-foreground mb-2">No Automations Assigned Yet</h3>
+                  <p className="text-muted-foreground mb-4 max-w-md mx-auto">
+                    {partnerData 
+                      ? `Your partner (${partnerData.business_name}) will assign automations to you soon. They'll select the best solutions tailored to your business needs.`
+                      : 'Automations will be assigned to you by your partner. Contact support if you need assistance.'}
+                  </p>
+                  {partnerData && (
+                    <div className="mt-6 p-4 bg-muted/30 rounded-lg border border-border max-w-md mx-auto">
+                      <p className="text-sm text-muted-foreground mb-2">
+                        <strong className="text-foreground">Need help?</strong> Reach out to your partner:
+                      </p>
+                      <div className="flex items-center justify-center gap-2">
+                        <Users className="h-4 w-4 text-muted-foreground" />
+                        <span className="text-sm text-foreground">{partnerData.business_name}</span>
+                        {partnerData.email && (
+                          <>
+                            <span className="text-muted-foreground">•</span>
+                            <a 
+                              href={`mailto:${partnerData.email}`} 
+                              className="text-sm text-primary hover:underline"
+                            >
+                              {partnerData.email}
+                            </a>
+                          </>
+                        )}
+                      </div>
+                    </div>
+                  )}
                 </div>
               ) : (
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">

@@ -22,6 +22,24 @@ interface SellerData {
   total_commission: number;
 }
 
+interface TransactionData {
+  id: string;
+  amount: number;
+  commission: number;
+  seller_earnings: number;
+  vault_share: number;
+  commission_rate_used: number | null;
+  transaction_type: string;
+  status: string;
+  created_at: string;
+  client: {
+    business_name: string;
+  } | null;
+  automation: {
+    name: string;
+  } | null;
+}
+
 interface ClientAutomationData {
   id: string;
   client_id: string;
@@ -68,6 +86,7 @@ const PartnerDashboard = () => {
   const [clients, setClients] = useState<ClientData[]>([]);
   const [availableAutomations, setAvailableAutomations] = useState<AutomationData[]>([]);
   const [clientAutomations, setClientAutomations] = useState<ClientAutomationData[]>([]);
+  const [transactions, setTransactions] = useState<TransactionData[]>([]);
   const [selectedClient, setSelectedClient] = useState<string>("");
   const [selectedAutomation, setSelectedAutomation] = useState<string>("");
   const [assigning, setAssigning] = useState(false);
@@ -185,6 +204,40 @@ const PartnerDashboard = () => {
       }));
       
       setClientAutomations(transformedClientAutomations);
+      
+      // Fetch transactions for this seller
+      const { data: transactionsData, error: transactionsError } = await supabase
+        .from("transactions")
+        .select(`
+          *,
+          client:clients!transactions_client_id_fkey (
+            business_name
+          ),
+          automation:automations!transactions_automation_id_fkey (
+            name
+          )
+        `)
+        .eq("seller_id", seller.id)
+        .order("created_at", { ascending: false })
+        .limit(50);
+
+      if (transactionsError) throw transactionsError;
+      
+      const transformedTransactions = (transactionsData || []).map((t: any) => ({
+        id: t.id,
+        amount: t.amount,
+        commission: t.commission || 0,
+        seller_earnings: t.seller_earnings || t.commission || 0,
+        vault_share: t.vault_share || (t.amount - (t.commission || 0)),
+        commission_rate_used: t.commission_rate_used,
+        transaction_type: t.transaction_type,
+        status: t.status,
+        created_at: t.created_at,
+        client: t.client,
+        automation: t.automation,
+      }));
+      
+      setTransactions(transformedTransactions);
       
       // Set initial referral code for editing
       if (seller.referral_code) {
@@ -481,8 +534,13 @@ const PartnerDashboard = () => {
               </CardHeader>
               <CardContent>
                 <div className="text-2xl font-bold text-foreground">
-                  {sellerData?.commission_rate}%
+                  {sellerData?.commission_rate ? `${sellerData.commission_rate}%` : 'Auto'}
                 </div>
+                <p className="text-xs text-muted-foreground mt-1">
+                  {sellerData?.commission_rate 
+                    ? 'Custom rate (overrides automation defaults)'
+                    : 'Uses each automation\'s default rate'}
+                </p>
               </CardContent>
             </Card>
           </div>
@@ -648,6 +706,82 @@ const PartnerDashboard = () => {
                     ))}
                   </TableBody>
                 </Table>
+              </CardContent>
+            </Card>
+          )}
+
+          {/* Transactions & Earnings Section */}
+          {transactions.length > 0 && (
+            <Card className="mb-8 bg-card border-border">
+              <CardHeader>
+                <CardTitle className="text-primary">Transaction History & Earnings</CardTitle>
+                <CardDescription>
+                  View your sales and commission breakdown. Each transaction shows how the payment was split.
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Date</TableHead>
+                      <TableHead>Client</TableHead>
+                      <TableHead>Automation</TableHead>
+                      <TableHead>Type</TableHead>
+                      <TableHead className="text-right">Sale Amount</TableHead>
+                      <TableHead className="text-right">Your Earnings</TableHead>
+                      <TableHead className="text-right">Vault Share</TableHead>
+                      <TableHead>Rate Used</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {transactions.map((transaction) => (
+                      <TableRow key={transaction.id}>
+                        <TableCell className="text-sm">
+                          {new Date(transaction.created_at).toLocaleDateString()}
+                        </TableCell>
+                        <TableCell className="font-medium">
+                          {transaction.client?.business_name || 'Unknown'}
+                        </TableCell>
+                        <TableCell>
+                          {transaction.automation?.name || 'Unknown'}
+                        </TableCell>
+                        <TableCell>
+                          <Badge variant="outline" className="capitalize">
+                            {transaction.transaction_type}
+                          </Badge>
+                        </TableCell>
+                        <TableCell className="text-right font-medium">
+                          ${transaction.amount.toFixed(2)}
+                        </TableCell>
+                        <TableCell className="text-right font-bold text-primary">
+                          ${transaction.seller_earnings.toFixed(2)}
+                        </TableCell>
+                        <TableCell className="text-right text-muted-foreground">
+                          ${transaction.vault_share.toFixed(2)}
+                        </TableCell>
+                        <TableCell>
+                          {transaction.commission_rate_used !== null ? (
+                            <span className="text-sm font-mono">{transaction.commission_rate_used}%</span>
+                          ) : (
+                            <span className="text-xs text-muted-foreground">N/A</span>
+                          )}
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+                <div className="mt-4 p-4 bg-muted/20 rounded-lg border border-border">
+                  <div className="grid grid-cols-2 gap-4 text-sm">
+                    <div>
+                      <span className="text-muted-foreground">Total Sales:</span>
+                      <span className="font-bold ml-2">${transactions.reduce((sum, t) => sum + t.amount, 0).toFixed(2)}</span>
+                    </div>
+                    <div>
+                      <span className="text-muted-foreground">Total Earnings:</span>
+                      <span className="font-bold text-primary ml-2">${transactions.reduce((sum, t) => sum + t.seller_earnings, 0).toFixed(2)}</span>
+                    </div>
+                  </div>
+                </div>
               </CardContent>
             </Card>
           )}

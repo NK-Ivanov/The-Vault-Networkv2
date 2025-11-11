@@ -178,6 +178,25 @@ const ForBusinesses = () => {
         } else {
           console.log("No approved seller found with referral code:", referralCode);
         }
+      } else {
+        // No referral code - assign to "The Vault Network"
+        console.log("No referral code provided, assigning to The Vault Network");
+        const { data: vaultNetworkSeller, error: vaultError } = await supabase
+          .from("sellers")
+          .select("id")
+          .eq("referral_code", "VAULT-NETWORK")
+          .maybeSingle();
+        
+        if (vaultError) {
+          console.error("Error looking up Vault Network seller:", vaultError);
+        }
+        
+        if (vaultNetworkSeller) {
+          sellerId = vaultNetworkSeller.id;
+          console.log("Assigned to The Vault Network seller:", sellerId);
+        } else {
+          console.warn("Vault Network seller not found. Client will be created without seller_id.");
+        }
       }
 
       console.log("Creating client with seller_id:", sellerId, "invited_by_code:", referralCode);
