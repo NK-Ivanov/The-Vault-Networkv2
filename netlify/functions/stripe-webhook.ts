@@ -203,7 +203,7 @@ export const handler = async (event: any) => {
           const totalAmount = automation.data.setup_price + automation.data.monthly_price;
           const { data: clientData } = await supabase
             .from('clients')
-            .select('total_spent')
+            .select('total_spent, business_name')
             .eq('id', clientId)
             .single();
           
@@ -212,6 +212,54 @@ export const handler = async (event: any) => {
               .from('clients')
               .update({ total_spent: (clientData.total_spent || 0) + totalAmount })
               .eq('id', clientId);
+          }
+
+          // Get automation name for notification
+          const { data: automationData } = await supabase
+            .from('automations')
+            .select('name')
+            .eq('id', automationId)
+            .single();
+
+          const automationName = automationData?.name || 'Unknown Automation';
+
+          // Notify seller if they exist
+          if (clientAutomation.seller_id) {
+            const { data: sellerData } = await supabase
+              .from('sellers')
+              .select('user_id')
+              .eq('id', clientAutomation.seller_id)
+              .single();
+
+            if (sellerData?.user_id) {
+              await supabase.rpc('create_notification', {
+                p_user_id: sellerData.user_id,
+                p_type: 'payment_received',
+                p_title: 'Payment Received',
+                p_message: `${clientData?.business_name || 'A client'} has paid for ${automationName}. Total: $${totalAmount.toFixed(2)}`,
+                p_link: '/partner-dashboard',
+                p_related_id: null
+              });
+            }
+          }
+
+          // Notify all admins
+          const { data: adminUsers } = await supabase
+            .from('user_roles')
+            .select('user_id')
+            .eq('role', 'admin');
+
+          if (adminUsers && adminUsers.length > 0) {
+            for (const admin of adminUsers) {
+              await supabase.rpc('create_notification', {
+                p_user_id: admin.user_id,
+                p_type: 'payment_received',
+                p_title: 'New Payment Received',
+                p_message: `${clientData?.business_name || 'A client'} has paid for ${automationName}. Total: $${totalAmount.toFixed(2)}`,
+                p_link: '/admin-dashboard',
+                p_related_id: null
+              });
+            }
           }
         }
 
@@ -287,7 +335,7 @@ export const handler = async (event: any) => {
           // Update client total_spent
           const { data: clientData } = await supabase
             .from('clients')
-            .select('total_spent')
+            .select('total_spent, business_name')
             .eq('id', clientAutomation.client_id)
             .single();
           
@@ -296,6 +344,54 @@ export const handler = async (event: any) => {
               .from('clients')
               .update({ total_spent: (clientData.total_spent || 0) + automation.data.monthly_price })
               .eq('id', clientAutomation.client_id);
+          }
+
+          // Get automation name for notification
+          const { data: automationData } = await supabase
+            .from('automations')
+            .select('name')
+            .eq('id', clientAutomation.automation_id)
+            .single();
+
+          const automationName = automationData?.name || 'Unknown Automation';
+
+          // Notify seller if they exist
+          if (clientAutomation.seller_id) {
+            const { data: sellerData } = await supabase
+              .from('sellers')
+              .select('user_id')
+              .eq('id', clientAutomation.seller_id)
+              .single();
+
+            if (sellerData?.user_id) {
+              await supabase.rpc('create_notification', {
+                p_user_id: sellerData.user_id,
+                p_type: 'payment_received',
+                p_title: 'Monthly Payment Received',
+                p_message: `${clientData?.business_name || 'A client'} has paid monthly fee for ${automationName}. Amount: $${automation.data.monthly_price.toFixed(2)}`,
+                p_link: '/partner-dashboard',
+                p_related_id: null
+              });
+            }
+          }
+
+          // Notify all admins
+          const { data: adminUsers } = await supabase
+            .from('user_roles')
+            .select('user_id')
+            .eq('role', 'admin');
+
+          if (adminUsers && adminUsers.length > 0) {
+            for (const admin of adminUsers) {
+              await supabase.rpc('create_notification', {
+                p_user_id: admin.user_id,
+                p_type: 'payment_received',
+                p_title: 'Monthly Payment Received',
+                p_message: `${clientData?.business_name || 'A client'} has paid monthly fee for ${automationName}. Amount: $${automation.data.monthly_price.toFixed(2)}`,
+                p_link: '/admin-dashboard',
+                p_related_id: null
+              });
+            }
           }
         }
 

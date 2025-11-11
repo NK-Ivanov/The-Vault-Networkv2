@@ -160,6 +160,7 @@ interface AnalyticsData {
   totalProfit: number;
   totalCommissionPaid: number;
   totalTransactions: number;
+  monthlyVaultShare: number;
   monthlyRevenue: Array<{ month: string; revenue: number; profit: number }>;
   topSellers: Array<{
     id: string;
@@ -428,11 +429,20 @@ const AdminDashboard = () => {
         { setup_revenue: 0, monthly_revenue: 0 }
       ) || { setup_revenue: 0, monthly_revenue: 0 };
 
+      // Calculate monthly vault share (The Vault Network's monthly cut)
+      const monthlyVaultShare = transactions?.reduce((sum, t) => {
+        if (t.transaction_type === "monthly") {
+          return sum + Number(t.vault_share || 0);
+        }
+        return sum;
+      }, 0) || 0;
+
       setAnalytics({
         totalRevenue,
         totalProfit,
         totalCommissionPaid,
         totalTransactions: transactions?.length || 0,
+        monthlyVaultShare,
         monthlyRevenue,
         topSellers,
         recentTransactions: transactions?.slice(0, 50).map((t) => ({
@@ -2270,7 +2280,7 @@ const AdminDashboard = () => {
                       )}
 
                       {/* Setup vs Monthly Revenue */}
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                         <Card className="bg-card border-border">
                           <CardHeader>
                             <CardTitle className="text-primary">Setup Fees</CardTitle>
@@ -2281,7 +2291,7 @@ const AdminDashboard = () => {
                               ${analytics.setupVsMonthly.setup_revenue.toFixed(2)}
                             </div>
                             <p className="text-xs text-muted-foreground mt-2">
-                              {((analytics.setupVsMonthly.setup_revenue / analytics.totalRevenue) * 100).toFixed(1)}% of total revenue
+                              {analytics.totalRevenue > 0 ? ((analytics.setupVsMonthly.setup_revenue / analytics.totalRevenue) * 100).toFixed(1) : 0}% of total revenue
                             </p>
                           </CardContent>
                         </Card>
@@ -2296,7 +2306,22 @@ const AdminDashboard = () => {
                               ${analytics.setupVsMonthly.monthly_revenue.toFixed(2)}
                             </div>
                             <p className="text-xs text-muted-foreground mt-2">
-                              {((analytics.setupVsMonthly.monthly_revenue / analytics.totalRevenue) * 100).toFixed(1)}% of total revenue
+                              {analytics.totalRevenue > 0 ? ((analytics.setupVsMonthly.monthly_revenue / analytics.totalRevenue) * 100).toFixed(1) : 0}% of total revenue
+                            </p>
+                          </CardContent>
+                        </Card>
+
+                        <Card className="bg-card border-border">
+                          <CardHeader>
+                            <CardTitle className="text-primary">Monthly Cut</CardTitle>
+                            <CardDescription>The Vault Network's monthly share</CardDescription>
+                          </CardHeader>
+                          <CardContent>
+                            <div className="text-3xl font-bold text-primary">
+                              ${analytics.monthlyVaultShare.toFixed(2)}
+                            </div>
+                            <p className="text-xs text-muted-foreground mt-2">
+                              {analytics.setupVsMonthly.monthly_revenue > 0 ? ((analytics.monthlyVaultShare / analytics.setupVsMonthly.monthly_revenue) * 100).toFixed(1) : 0}% of monthly revenue
                             </p>
                           </CardContent>
                         </Card>

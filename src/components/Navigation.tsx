@@ -211,7 +211,7 @@ const Navigation = () => {
             <img 
               src={vaultLogo} 
               alt="The Vault Network" 
-              className="w-6 h-6 sm:w-8 sm:h-10 transition-transform group-hover:scale-110"
+              className="w-6 h-6 sm:w-10 sm:h-10 transition-transform group-hover:scale-110 object-contain"
             />
             <span className="font-display text-base sm:text-lg md:text-xl font-bold text-primary gold-glow">
               THE VAULT NETWORK
