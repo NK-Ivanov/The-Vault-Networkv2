@@ -52,7 +52,7 @@ interface ClientAutomationData {
   client_id: string;
   automation_id: string;
   payment_status: 'unpaid' | 'paid';
-  setup_status: 'pending_setup' | 'setup_in_progress' | 'active';
+  setup_status: 'pending_setup' | 'setup_in_progress' | 'setup_complete' | 'active';
   assigned_at: string;
   paid_at: string | null;
   client: {
@@ -138,6 +138,19 @@ interface LeaderboardEntry {
   total_commission: number;
   isCurrentUser: boolean;
 }
+
+// Helper function to mask business name: first letter + ****** + last letter
+const maskBusinessName = (name: string): string => {
+  if (!name || name.length <= 1) {
+    return name || ''; // Too short to mask
+  }
+  if (name.length === 2) {
+    return `${name[0]}******${name[1]}`;
+  }
+  const firstLetter = name[0];
+  const lastLetter = name[name.length - 1];
+  return `${firstLetter}******${lastLetter}`;
+};
 
 const PartnerDashboard = () => {
   const { user, loading: authLoading } = useAuth();
@@ -1225,7 +1238,7 @@ const PartnerDashboard = () => {
                                   <div className={`font-semibold text-sm sm:text-base truncate ${
                                     entry.isCurrentUser ? 'text-primary' : 'text-foreground'
                                   }`}>
-                                    {entry.business_name}
+                                    {entry.isCurrentUser ? entry.business_name : maskBusinessName(entry.business_name)}
                                     {entry.isCurrentUser && (
                                       <Badge variant="outline" className="ml-2 text-xs bg-primary/20 text-primary border-primary/30">
                                         You
@@ -1239,10 +1252,10 @@ const PartnerDashboard = () => {
                               </div>
                               <div className="text-right flex-shrink-0 ml-2">
                                 <div className="text-xs sm:text-sm font-bold text-primary">
-                                  ${entry.total_commission.toFixed(2)}
+                                  ${entry.total_sales.toFixed(2)}
                                 </div>
                                 <div className="text-xs text-muted-foreground">
-                                  earned
+                                  revenue
                                 </div>
                               </div>
                             </div>
@@ -1471,11 +1484,13 @@ const PartnerDashboard = () => {
                                   <Badge 
                                     variant={
                                       ca.setup_status === 'active' ? 'default' :
+                                      ca.setup_status === 'setup_complete' ? 'secondary' :
                                       ca.setup_status === 'setup_in_progress' ? 'secondary' : 'outline'
                                     }
                                     className="text-xs"
                                   >
                                     {ca.setup_status === 'active' ? 'Active' :
+                                     ca.setup_status === 'setup_complete' ? 'Setup Complete' :
                                      ca.setup_status === 'setup_in_progress' ? 'Setup In Progress' : 'Pending Setup'}
                                   </Badge>
                                   <span className="text-xs text-muted-foreground">
@@ -1535,15 +1550,17 @@ const PartnerDashboard = () => {
                           )}
                         </TableCell>
                         <TableCell>
-                          <Badge 
-                            variant={
-                              ca.setup_status === 'active' ? 'default' :
-                              ca.setup_status === 'setup_in_progress' ? 'secondary' : 'outline'
-                            }
-                          >
-                            {ca.setup_status === 'active' ? 'Active' :
-                             ca.setup_status === 'setup_in_progress' ? 'Setup In Progress' : 'Pending Setup'}
-                          </Badge>
+                            <Badge 
+                              variant={
+                                ca.setup_status === 'active' ? 'default' :
+                                ca.setup_status === 'setup_complete' ? 'secondary' :
+                                ca.setup_status === 'setup_in_progress' ? 'secondary' : 'outline'
+                              }
+                            >
+                              {ca.setup_status === 'active' ? 'Active' :
+                               ca.setup_status === 'setup_complete' ? 'Setup Complete' :
+                               ca.setup_status === 'setup_in_progress' ? 'Setup In Progress' : 'Pending Setup'}
+                            </Badge>
                         </TableCell>
                         <TableCell>
                           <div className="text-xs text-muted-foreground">

@@ -115,7 +115,7 @@ interface ClientAutomationData {
   automation_id: string;
   seller_id: string | null;
   payment_status: 'unpaid' | 'paid';
-  setup_status: 'pending_setup' | 'setup_in_progress' | 'active';
+  setup_status: 'pending_setup' | 'setup_in_progress' | 'setup_complete' | 'active';
   assigned_at: string;
   paid_at: string | null;
   client: {
@@ -1126,7 +1126,7 @@ const AdminDashboard = () => {
     }
   };
 
-  const handleUpdateSetupStatus = async (clientAutomationId: string, newStatus: 'pending_setup' | 'setup_in_progress' | 'active') => {
+  const handleUpdateSetupStatus = async (clientAutomationId: string, newStatus: 'pending_setup' | 'setup_in_progress' | 'setup_complete' | 'active') => {
     try {
       const { error } = await supabase
         .from("client_automations")
@@ -2708,7 +2708,7 @@ const AdminDashboard = () => {
                               <TableCell>
                                 <Select
                                   value={ca.setup_status}
-                                  onValueChange={(value: 'pending_setup' | 'setup_in_progress' | 'active') => 
+                                  onValueChange={(value: 'pending_setup' | 'setup_in_progress' | 'setup_complete' | 'active') => 
                                     handleUpdateSetupStatus(ca.id, value)
                                   }
                                 >
@@ -2718,6 +2718,7 @@ const AdminDashboard = () => {
                                   <SelectContent>
                                     <SelectItem value="pending_setup">Pending Setup</SelectItem>
                                     <SelectItem value="setup_in_progress">Setup In Progress</SelectItem>
+                                    <SelectItem value="setup_complete">Setup Complete</SelectItem>
                                     <SelectItem value="active">Active</SelectItem>
                                   </SelectContent>
                                 </Select>

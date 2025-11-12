@@ -99,16 +99,27 @@ export const handler = async (event: any) => {
   }
 
   try {
-    const { automationId, clientEmail, clientId } = JSON.parse(event.body);
+    const { automationId, clientEmail, clientId, paymentType } = JSON.parse(event.body);
 
-    if (!automationId || !clientEmail) {
+    if (!automationId || !clientEmail || !paymentType) {
       return {
         statusCode: 400,
         headers: {
           'Access-Control-Allow-Origin': '*',
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ error: 'Missing required fields' }),
+        body: JSON.stringify({ error: 'Missing required fields: automationId, clientEmail, and paymentType are required' }),
+      };
+    }
+
+    if (paymentType !== 'setup_fee' && paymentType !== 'monthly_subscription') {
+      return {
+        statusCode: 400,
+        headers: {
+          'Access-Control-Allow-Origin': '*',
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ error: 'Invalid paymentType. Must be "setup_fee" or "monthly_subscription"' }),
       };
     }
 
@@ -130,48 +141,123 @@ export const handler = async (event: any) => {
       };
     }
 
-    if (!automation.stripe_setup_price_id || !automation.stripe_monthly_price_id) {
+    // Check if client_automation exists
+    const { data: clientAutomation } = await supabase
+      .from('client_automations')
+      .select('*')
+      .eq('client_id', clientId)
+      .eq('automation_id', automationId)
+      .maybeSingle();
+
+    if (!clientAutomation) {
       return {
-        statusCode: 400,
+        statusCode: 404,
         headers: {
           'Access-Control-Allow-Origin': '*',
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ error: 'Automation not synced with Stripe. Please sync it first.' }),
+        body: JSON.stringify({ error: 'Client automation not found' }),
       };
     }
 
-    // Create Stripe checkout session
-    const session = await stripe.checkout.sessions.create({
-      mode: 'subscription',
-      customer_email: clientEmail,
-      line_items: [
-        // One-time setup fee
-        {
-          price: automation.stripe_setup_price_id,
-          quantity: 1,
-        },
-        // Monthly subscription
-        {
-          price: automation.stripe_monthly_price_id,
-          quantity: 1,
-        },
-      ],
-      metadata: {
-        automation_id: automationId,
-        automation_name: automation.name,
-        client_id: clientId || '',
-      },
-      success_url: `${process.env.APP_URL || process.env.VITE_APP_URL || 'http://localhost:8080'}/client-dashboard?session_id={CHECKOUT_SESSION_ID}`,
-      cancel_url: `${process.env.APP_URL || process.env.VITE_APP_URL || 'http://localhost:8080'}/for-businesses`,
-      payment_method_types: ['card'],
-      subscription_data: {
+    // Validate payment type against current status
+    if (paymentType === 'setup_fee') {
+      if (clientAutomation.setup_status !== 'pending_setup') {
+        return {
+          statusCode: 400,
+          headers: {
+            'Access-Control-Allow-Origin': '*',
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ error: 'Setup fee already paid or automation is in wrong status' }),
+        };
+      }
+      if (!automation.stripe_setup_price_id) {
+        return {
+          statusCode: 400,
+          headers: {
+            'Access-Control-Allow-Origin': '*',
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ error: 'Automation setup fee not synced with Stripe. Please sync it first.' }),
+        };
+      }
+    } else if (paymentType === 'monthly_subscription') {
+      if (clientAutomation.setup_status !== 'setup_complete') {
+        return {
+          statusCode: 400,
+          headers: {
+            'Access-Control-Allow-Origin': '*',
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ error: 'Setup must be complete before paying for monthly subscription' }),
+        };
+      }
+      if (!automation.stripe_monthly_price_id) {
+        return {
+          statusCode: 400,
+          headers: {
+            'Access-Control-Allow-Origin': '*',
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ error: 'Automation monthly subscription not synced with Stripe. Please sync it first.' }),
+        };
+      }
+    }
+
+    // Create Stripe checkout session based on payment type
+    let session;
+    
+    if (paymentType === 'setup_fee') {
+      // One-time payment for setup fee
+      session = await stripe.checkout.sessions.create({
+        mode: 'payment',
+        customer_email: clientEmail,
+        line_items: [
+          {
+            price: automation.stripe_setup_price_id,
+            quantity: 1,
+          },
+        ],
         metadata: {
           automation_id: automationId,
           automation_name: automation.name,
+          client_id: clientId || '',
+          payment_type: 'setup_fee',
         },
-      },
-    });
+        success_url: `${process.env.APP_URL || process.env.VITE_APP_URL || 'http://localhost:8080'}/client-dashboard?session_id={CHECKOUT_SESSION_ID}`,
+        cancel_url: `${process.env.APP_URL || process.env.VITE_APP_URL || 'http://localhost:8080'}/client-dashboard`,
+        payment_method_types: ['card'],
+      });
+    } else {
+      // Subscription for monthly payments
+      session = await stripe.checkout.sessions.create({
+        mode: 'subscription',
+        customer_email: clientEmail,
+        line_items: [
+          {
+            price: automation.stripe_monthly_price_id,
+            quantity: 1,
+          },
+        ],
+        metadata: {
+          automation_id: automationId,
+          automation_name: automation.name,
+          client_id: clientId || '',
+          payment_type: 'monthly_subscription',
+        },
+        success_url: `${process.env.APP_URL || process.env.VITE_APP_URL || 'http://localhost:8080'}/client-dashboard?session_id={CHECKOUT_SESSION_ID}`,
+        cancel_url: `${process.env.APP_URL || process.env.VITE_APP_URL || 'http://localhost:8080'}/client-dashboard`,
+        payment_method_types: ['card'],
+        subscription_data: {
+          metadata: {
+            automation_id: automationId,
+            automation_name: automation.name,
+            client_id: clientId || '',
+          },
+        },
+      });
+    }
 
     return {
       statusCode: 200,

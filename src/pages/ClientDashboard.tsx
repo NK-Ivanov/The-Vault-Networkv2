@@ -87,7 +87,7 @@ interface AutomationData {
   assigned_at: string;
   status: string;
   payment_status: 'unpaid' | 'paid';
-  setup_status: 'pending_setup' | 'setup_in_progress' | 'active';
+  setup_status: 'pending_setup' | 'setup_in_progress' | 'setup_complete' | 'active';
   stripe_product_id: string | null;
   stripe_setup_price_id: string | null;
   stripe_monthly_price_id: string | null;
@@ -366,7 +366,7 @@ const ClientDashboard = () => {
     }
   };
 
-  const handleCheckout = async (automation: AutomationData) => {
+  const handleCheckout = async (automation: AutomationData, paymentType: 'setup_fee' | 'monthly_subscription') => {
     if (!user?.email || !clientData?.id) {
       toast({
         title: "Error",
@@ -376,10 +376,19 @@ const ClientDashboard = () => {
       return;
     }
 
-    if (!automation.stripe_setup_price_id || !automation.stripe_monthly_price_id) {
+    if (paymentType === 'setup_fee' && !automation.stripe_setup_price_id) {
       toast({
         title: "Not Available",
-        description: "This automation is not yet set up for payments. Please contact your partner.",
+        description: "Setup fee is not yet configured. Please contact your partner.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    if (paymentType === 'monthly_subscription' && !automation.stripe_monthly_price_id) {
+      toast({
+        title: "Not Available",
+        description: "Monthly subscription is not yet configured. Please contact your partner.",
         variant: "destructive",
       });
       return;
@@ -391,6 +400,7 @@ const ClientDashboard = () => {
         automationId: automation.id,
         clientEmail: user.email,
         clientId: clientData.id,
+        paymentType: paymentType,
       });
 
       if (result.url) {
@@ -1002,30 +1012,71 @@ const ClientDashboard = () => {
                                 className="text-xs"
                               >
                                 {automation.setup_status === 'active' ? 'Active' :
+                                 automation.setup_status === 'setup_complete' ? 'Setup Complete' :
                                  automation.setup_status === 'setup_in_progress' ? 'Setup In Progress' : 'Pending Setup'}
                               </Badge>
                             </div>
                           </div>
                         </div>
-                        <Button
-                          onClick={() => handleCheckout(automation)}
-                          disabled={checkingOut === automation.id || !automation.stripe_setup_price_id || automation.payment_status === 'paid'}
-                          className="w-full mt-4"
-                          variant={automation.payment_status === 'paid' ? 'outline' : automation.stripe_setup_price_id ? "default" : "outline"}
-                        >
-                          {checkingOut === automation.id ? (
-                            <>Processing...</>
-                          ) : automation.payment_status === 'paid' ? (
-                            <>Already Purchased</>
-                          ) : automation.stripe_setup_price_id ? (
-                            <>
-                              <CreditCard className="w-4 h-4 mr-2" />
-                              Purchase Now
-                            </>
-                          ) : (
-                            <>Not Available</>
+                        <div className="space-y-2 mt-4">
+                          {automation.setup_status === 'pending_setup' && (
+                            <Button
+                              onClick={() => handleCheckout(automation, 'setup_fee')}
+                              disabled={checkingOut === automation.id || !automation.stripe_setup_price_id}
+                              className="w-full"
+                              variant="default"
+                            >
+                              {checkingOut === automation.id ? (
+                                <>Processing...</>
+                              ) : automation.stripe_setup_price_id ? (
+                                <>
+                                  <CreditCard className="w-4 h-4 mr-2" />
+                                  Pay Setup Fee
+                                </>
+                              ) : (
+                                <>Not Available</>
+                              )}
+                            </Button>
                           )}
-                        </Button>
+                          {automation.setup_status === 'setup_complete' && (
+                            <Button
+                              onClick={() => handleCheckout(automation, 'monthly_subscription')}
+                              disabled={checkingOut === automation.id || !automation.stripe_monthly_price_id}
+                              className="w-full"
+                              variant="default"
+                            >
+                              {checkingOut === automation.id ? (
+                                <>Processing...</>
+                              ) : automation.stripe_monthly_price_id ? (
+                                <>
+                                  <CreditCard className="w-4 h-4 mr-2" />
+                                  Pay First Month
+                                </>
+                              ) : (
+                                <>Not Available</>
+                              )}
+                            </Button>
+                          )}
+                          {automation.setup_status === 'active' && (
+                            <Button
+                              disabled
+                              className="w-full"
+                              variant="outline"
+                            >
+                              <CheckCircle className="w-4 h-4 mr-2" />
+                              Active & Paid
+                            </Button>
+                          )}
+                          {(automation.setup_status === 'setup_in_progress') && (
+                            <Button
+                              disabled
+                              className="w-full"
+                              variant="outline"
+                            >
+                              Setup In Progress
+                            </Button>
+                          )}
+                        </div>
                       </CardContent>
                     </Card>
                   ))}

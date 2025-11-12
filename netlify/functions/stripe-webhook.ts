@@ -71,6 +71,7 @@ export const handler = async (event: any) => {
         // Get metadata from session
         const automationId = session.metadata?.automation_id;
         const clientId = session.metadata?.client_id;
+        const paymentType = session.metadata?.payment_type; // 'setup_fee' or 'monthly_subscription'
         
         if (!automationId || !clientId) {
           console.error('Missing metadata in checkout session', session.id);
@@ -95,62 +96,54 @@ export const handler = async (event: any) => {
           break;
         }
 
-        // Update payment status
-        const { error: updateError } = await supabase
-          .from('client_automations')
-          .update({
-            payment_status: 'paid',
-            paid_at: new Date().toISOString(),
-            stripe_checkout_session_id: session.id,
-            stripe_subscription_id: session.subscription as string | null,
-          })
-          .eq('id', clientAutomation.id);
-
-        if (updateError) {
-          console.error('Error updating client_automation:', updateError);
-          break;
-        }
-
-        // Create transaction records
-        const automation = await supabase
+        // Get automation data
+        const { data: automationData } = await supabase
           .from('automations')
-          .select('setup_price, monthly_price')
+          .select('setup_price, monthly_price, name')
           .eq('id', automationId)
           .single();
 
-        if (automation.data) {
+        if (!automationData) {
+          console.error('Automation not found', automationId);
+          break;
+        }
+
+        const automationName = automationData.name || 'Unknown Automation';
+
+        // Handle setup fee payment
+        if (paymentType === 'setup_fee') {
+          // Update status to setup_in_progress
+          const { error: updateError } = await supabase
+            .from('client_automations')
+            .update({
+              payment_status: 'paid',
+              paid_at: new Date().toISOString(),
+              stripe_checkout_session_id: session.id,
+              setup_status: 'setup_in_progress',
+            })
+            .eq('id', clientAutomation.id);
+
+          if (updateError) {
+            console.error('Error updating client_automation:', updateError);
+            break;
+          }
+
           // Calculate commission for setup fee
           const { data: setupCommission, error: setupCommError } = await supabase
             .rpc('calculate_commission', {
               p_seller_id: clientAutomation.seller_id,
               p_automation_id: automationId,
-              p_amount: automation.data.setup_price
+              p_amount: automationData.setup_price
             });
 
-          if (setupCommError) {
-            console.error('Error calculating setup commission:', setupCommError);
-            console.error('Details:', { seller_id: clientAutomation.seller_id, automation_id: automationId, amount: automation.data.setup_price });
-          }
-
-          if (!setupCommission || setupCommission.length === 0) {
-            console.error('No commission result returned for setup fee', { seller_id: clientAutomation.seller_id, automation_id: automationId });
-          }
-
-          const setupComm = setupCommission?.[0] || { commission_rate: 0, seller_earnings: 0, vault_share: automation.data.setup_price };
-          
-          console.log('Setup commission calculated:', {
-            rate: setupComm.commission_rate,
-            seller_earnings: setupComm.seller_earnings,
-            vault_share: setupComm.vault_share,
-            amount: automation.data.setup_price
-          });
+          const setupComm = setupCommission?.[0] || { commission_rate: 0, seller_earnings: 0, vault_share: automationData.setup_price };
 
           // Create setup fee transaction
           await supabase.from('transactions').insert({
             client_id: clientId,
             seller_id: clientAutomation.seller_id,
             automation_id: automationId,
-            amount: automation.data.setup_price,
+            amount: automationData.setup_price,
             commission: setupComm.seller_earnings,
             seller_earnings: setupComm.seller_earnings,
             vault_share: setupComm.vault_share,
@@ -159,48 +152,7 @@ export const handler = async (event: any) => {
             status: 'completed',
           });
 
-          // Calculate commission for monthly fee
-          const { data: monthlyCommission, error: monthlyCommError } = await supabase
-            .rpc('calculate_commission', {
-              p_seller_id: clientAutomation.seller_id,
-              p_automation_id: automationId,
-              p_amount: automation.data.monthly_price
-            });
-
-          if (monthlyCommError) {
-            console.error('Error calculating monthly commission:', monthlyCommError);
-            console.error('Details:', { seller_id: clientAutomation.seller_id, automation_id: automationId, amount: automation.data.monthly_price });
-          }
-
-          if (!monthlyCommission || monthlyCommission.length === 0) {
-            console.error('No commission result returned for monthly fee', { seller_id: clientAutomation.seller_id, automation_id: automationId });
-          }
-
-          const monthlyComm = monthlyCommission?.[0] || { commission_rate: 0, seller_earnings: 0, vault_share: automation.data.monthly_price };
-          
-          console.log('Monthly commission calculated:', {
-            rate: monthlyComm.commission_rate,
-            seller_earnings: monthlyComm.seller_earnings,
-            vault_share: monthlyComm.vault_share,
-            amount: automation.data.monthly_price
-          });
-
-          // Create first month transaction
-          await supabase.from('transactions').insert({
-            client_id: clientId,
-            seller_id: clientAutomation.seller_id,
-            automation_id: automationId,
-            amount: automation.data.monthly_price,
-            commission: monthlyComm.seller_earnings,
-            seller_earnings: monthlyComm.seller_earnings,
-            vault_share: monthlyComm.vault_share,
-            commission_rate_used: monthlyComm.commission_rate,
-            transaction_type: 'monthly',
-            status: 'completed',
-          });
-
           // Update client total_spent
-          const totalAmount = automation.data.setup_price + automation.data.monthly_price;
           const { data: clientData } = await supabase
             .from('clients')
             .select('total_spent, business_name')
@@ -210,60 +162,152 @@ export const handler = async (event: any) => {
           if (clientData) {
             await supabase
               .from('clients')
-              .update({ total_spent: (clientData.total_spent || 0) + totalAmount })
+              .update({ total_spent: (clientData.total_spent || 0) + automationData.setup_price })
               .eq('id', clientId);
-          }
 
-          // Get automation name for notification
-          const { data: automationData } = await supabase
-            .from('automations')
-            .select('name')
-            .eq('id', automationId)
-            .single();
+            // Notify seller if they exist
+            if (clientAutomation.seller_id) {
+              const { data: sellerData } = await supabase
+                .from('sellers')
+                .select('user_id')
+                .eq('id', clientAutomation.seller_id)
+                .single();
 
-          const automationName = automationData?.name || 'Unknown Automation';
+              if (sellerData?.user_id) {
+                await supabase.rpc('create_notification', {
+                  p_user_id: sellerData.user_id,
+                  p_type: 'payment_received',
+                  p_title: 'Setup Fee Paid',
+                  p_message: `${clientData.business_name || 'A client'} has paid the setup fee for ${automationName}. Amount: $${automationData.setup_price.toFixed(2)}`,
+                  p_link: '/partner-dashboard',
+                  p_related_id: null
+                });
+              }
+            }
 
-          // Notify seller if they exist
-          if (clientAutomation.seller_id) {
-            const { data: sellerData } = await supabase
-              .from('sellers')
+            // Notify all admins
+            const { data: adminUsers } = await supabase
+              .from('user_roles')
               .select('user_id')
-              .eq('id', clientAutomation.seller_id)
-              .single();
+              .eq('role', 'admin');
 
-            if (sellerData?.user_id) {
-              await supabase.rpc('create_notification', {
-                p_user_id: sellerData.user_id,
-                p_type: 'payment_received',
-                p_title: 'Payment Received',
-                p_message: `${clientData?.business_name || 'A client'} has paid for ${automationName}. Total: $${totalAmount.toFixed(2)}`,
-                p_link: '/partner-dashboard',
-                p_related_id: null
-              });
+            if (adminUsers && adminUsers.length > 0) {
+              for (const admin of adminUsers) {
+                await supabase.rpc('create_notification', {
+                  p_user_id: admin.user_id,
+                  p_type: 'payment_received',
+                  p_title: 'Setup Fee Paid',
+                  p_message: `${clientData.business_name || 'A client'} has paid the setup fee for ${automationName}. Amount: $${automationData.setup_price.toFixed(2)}`,
+                  p_link: '/admin-dashboard',
+                  p_related_id: null
+                });
+              }
             }
           }
 
-          // Notify all admins
-          const { data: adminUsers } = await supabase
-            .from('user_roles')
-            .select('user_id')
-            .eq('role', 'admin');
+          console.log('Setup fee payment processed successfully', { clientId, automationId });
+        }
+        // Handle monthly subscription payment
+        else if (paymentType === 'monthly_subscription') {
+          // Update status to active and save subscription ID
+          const { error: updateError } = await supabase
+            .from('client_automations')
+            .update({
+              payment_status: 'paid',
+              paid_at: new Date().toISOString(),
+              stripe_checkout_session_id: session.id,
+              stripe_subscription_id: session.subscription as string | null,
+              setup_status: 'active',
+            })
+            .eq('id', clientAutomation.id);
 
-          if (adminUsers && adminUsers.length > 0) {
-            for (const admin of adminUsers) {
-              await supabase.rpc('create_notification', {
-                p_user_id: admin.user_id,
-                p_type: 'payment_received',
-                p_title: 'New Payment Received',
-                p_message: `${clientData?.business_name || 'A client'} has paid for ${automationName}. Total: $${totalAmount.toFixed(2)}`,
-                p_link: '/admin-dashboard',
-                p_related_id: null
-              });
+          if (updateError) {
+            console.error('Error updating client_automation:', updateError);
+            break;
+          }
+
+          // Calculate commission for monthly fee
+          const { data: monthlyCommission, error: monthlyCommError } = await supabase
+            .rpc('calculate_commission', {
+              p_seller_id: clientAutomation.seller_id,
+              p_automation_id: automationId,
+              p_amount: automationData.monthly_price
+            });
+
+          const monthlyComm = monthlyCommission?.[0] || { commission_rate: 0, seller_earnings: 0, vault_share: automationData.monthly_price };
+
+          // Create first month transaction
+          await supabase.from('transactions').insert({
+            client_id: clientId,
+            seller_id: clientAutomation.seller_id,
+            automation_id: automationId,
+            amount: automationData.monthly_price,
+            commission: monthlyComm.seller_earnings,
+            seller_earnings: monthlyComm.seller_earnings,
+            vault_share: monthlyComm.vault_share,
+            commission_rate_used: monthlyComm.commission_rate,
+            transaction_type: 'monthly',
+            status: 'completed',
+          });
+
+          // Update client total_spent
+          const { data: clientData } = await supabase
+            .from('clients')
+            .select('total_spent, business_name')
+            .eq('id', clientId)
+            .single();
+          
+          if (clientData) {
+            await supabase
+              .from('clients')
+              .update({ total_spent: (clientData.total_spent || 0) + automationData.monthly_price })
+              .eq('id', clientId);
+
+            // Notify seller if they exist
+            if (clientAutomation.seller_id) {
+              const { data: sellerData } = await supabase
+                .from('sellers')
+                .select('user_id')
+                .eq('id', clientAutomation.seller_id)
+                .single();
+
+              if (sellerData?.user_id) {
+                await supabase.rpc('create_notification', {
+                  p_user_id: sellerData.user_id,
+                  p_type: 'payment_received',
+                  p_title: 'Monthly Payment Received',
+                  p_message: `${clientData.business_name || 'A client'} has paid for the first month of ${automationName}. Amount: $${automationData.monthly_price.toFixed(2)}`,
+                  p_link: '/partner-dashboard',
+                  p_related_id: null
+                });
+              }
+            }
+
+            // Notify all admins
+            const { data: adminUsers } = await supabase
+              .from('user_roles')
+              .select('user_id')
+              .eq('role', 'admin');
+
+            if (adminUsers && adminUsers.length > 0) {
+              for (const admin of adminUsers) {
+                await supabase.rpc('create_notification', {
+                  p_user_id: admin.user_id,
+                  p_type: 'payment_received',
+                  p_title: 'Monthly Payment Received',
+                  p_message: `${clientData.business_name || 'A client'} has paid for the first month of ${automationName}. Amount: $${automationData.monthly_price.toFixed(2)}`,
+                  p_link: '/admin-dashboard',
+                  p_related_id: null
+                });
+              }
             }
           }
+
+          console.log('Monthly subscription payment processed successfully', { clientId, automationId });
+        } else {
+          console.error('Unknown payment type in checkout session', { paymentType, sessionId: session.id });
         }
 
-        console.log('Payment processed successfully', { clientId, automationId });
         break;
       }
 
