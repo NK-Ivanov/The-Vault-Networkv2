@@ -12,6 +12,7 @@ import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/integrations/supabase/client";
 import { Switch } from "@/components/ui/switch";
+import { usePageMeta } from "@/hooks/usePageMeta";
 
 // Contact information for partner applications
 const CONTACT_INFO = {
@@ -26,6 +27,14 @@ const Partners = () => {
   const [loading, setLoading] = useState(false);
   const [hasApplication, setHasApplication] = useState(false);
   const [shouldAutoSubmit, setShouldAutoSubmit] = useState(false);
+
+  usePageMeta({
+    title: "Become a Partner - The Vault Network",
+    description: "Join The Vault Network as a partner and earn recurring commissions by selling proven AI automations. Get your own dashboard, referral links, and competitive commission rates. Build a sustainable automation business.",
+    ogTitle: "Become a Partner - The Vault Network",
+    ogDescription: "Join The Vault Network as a partner and earn recurring commissions by selling proven AI automations. Get your own dashboard, referral links, and competitive commission rates.",
+    ogUrl: "https://vaultnet.work/partners",
+  });
 
   const [name, setName] = useState("");
   const [isBusiness, setIsBusiness] = useState(false);

@@ -3,8 +3,17 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import Navigation from "@/components/Navigation";
 import Footer from "@/components/Footer";
+import { usePageMeta } from "@/hooks/usePageMeta";
 
 const Home = () => {
+  usePageMeta({
+    title: "The Vault Network - Master AI Automation & Build Your Future",
+    description: "Join The Vault Network and learn to build, deploy, and resell AI automations. Free course, templates, and an active community helping you automate and earn.",
+    ogTitle: "The Vault Network - Master AI Automation & Build Your Future",
+    ogDescription: "Join The Vault Network and learn to build, deploy, and resell AI automations. Free course, templates, and an active community helping you automate and earn.",
+    ogUrl: "https://vaultnet.work",
+  });
+
   return (
     <div className="min-h-screen bg-background">
       <Navigation />

@@ -13,6 +13,7 @@ import { useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/integrations/supabase/client";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Zap, Clock, TrendingUp, Shield, Users, ArrowRight, CheckCircle, BarChart3, Target, Rocket } from "lucide-react";
+import { usePageMeta } from "@/hooks/usePageMeta";
 
 const ForBusinesses = () => {
   const navigate = useNavigate();
@@ -23,6 +24,14 @@ const ForBusinesses = () => {
   const [hasAccount, setHasAccount] = useState(false);
   const [automations, setAutomations] = useState<any[]>([]);
   const [shouldAutoSubmit, setShouldAutoSubmit] = useState(false);
+
+  usePageMeta({
+    title: "For Businesses - Automate Your Operations | The Vault Network",
+    description: "Discover proven AI automations to streamline your business operations. Reduce costs, increase efficiency, and scale your business with ready-to-deploy automation solutions. Get started today.",
+    ogTitle: "For Businesses - Automate Your Operations | The Vault Network",
+    ogDescription: "Discover proven AI automations to streamline your business operations. Reduce costs, increase efficiency, and scale your business with ready-to-deploy automation solutions.",
+    ogUrl: "https://vaultnet.work/for-businesses",
+  });
   
   // Get referral code from URL or localStorage
   const urlReferralCode = searchParams.get("ref");
