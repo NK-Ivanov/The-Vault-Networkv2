@@ -121,7 +121,13 @@ const ClientDashboard = () => {
   
   // Order confirmation state
   const [showOrderConfirmation, setShowOrderConfirmation] = useState(false);
-  const [orderDetails, setOrderDetails] = useState<{ automationName?: string; setupAmount?: number; monthlyAmount?: number; totalAmount?: number } | null>(null);
+  const [orderDetails, setOrderDetails] = useState<{ 
+    automationName?: string; 
+    setupAmount?: number; 
+    monthlyAmount?: number; 
+    totalAmount?: number;
+    paymentType?: 'setup_fee' | 'monthly_subscription';
+  } | null>(null);
 
   useEffect(() => {
     if (!authLoading && !user) {
@@ -161,30 +167,41 @@ const ClientDashboard = () => {
           if (error) throw error;
 
           if (recentTransactions && recentTransactions.length > 0) {
-            // Find the most recent automation purchase
+            // Get the most recent transaction (this is what was just paid)
             const mostRecentTransaction = recentTransactions[0];
             const automationId = mostRecentTransaction.automation_id;
             const automationName = mostRecentTransaction.automation?.name || 'Automation';
+            const paymentType = mostRecentTransaction.transaction_type; // 'setup' or 'monthly'
+            const amountPaid = mostRecentTransaction.amount || 0;
 
-            // Find setup and monthly transactions for this automation
-            const setupTransaction = recentTransactions.find(
-              t => t.automation_id === automationId && t.transaction_type === 'setup'
-            );
-            const monthlyTransaction = recentTransactions.find(
-              t => t.automation_id === automationId && t.transaction_type === 'monthly'
-            );
-
-            // Calculate totals
-            const setupAmount = setupTransaction?.amount || 0;
-            const monthlyAmount = monthlyTransaction?.amount || 0;
-            const totalAmount = setupAmount + monthlyAmount;
-
-            setOrderDetails({
-              automationName,
-              setupAmount,
-              monthlyAmount,
-              totalAmount,
-            });
+            // Set order details based on what was actually paid
+            if (paymentType === 'setup') {
+              setOrderDetails({
+                automationName,
+                setupAmount: amountPaid,
+                monthlyAmount: 0,
+                totalAmount: amountPaid,
+                paymentType: 'setup_fee',
+              });
+            } else if (paymentType === 'monthly') {
+              setOrderDetails({
+                automationName,
+                setupAmount: 0,
+                monthlyAmount: amountPaid,
+                totalAmount: amountPaid,
+                paymentType: 'monthly_subscription',
+              });
+            } else {
+              // Fallback: show what was paid
+              setOrderDetails({
+                automationName,
+                setupAmount: 0,
+                monthlyAmount: 0,
+                totalAmount: amountPaid,
+                paymentType: paymentType === 'setup' ? 'setup_fee' : 'monthly_subscription',
+              });
+            }
+            
             setShowOrderConfirmation(true);
             // Remove session_id from URL
             searchParams.delete('session_id');
@@ -1410,7 +1427,9 @@ const ClientDashboard = () => {
                     What's Next?
                   </p>
                   <p className="text-xs sm:text-sm text-foreground/90 leading-relaxed">
-                    Your partner will be notified and will begin setting up your automation. You'll receive updates on the setup status.
+                    {orderDetails.paymentType === 'setup_fee' 
+                      ? "Your partner will be notified and will begin setting up your automation. You'll receive updates on the setup status. Once setup is complete, you'll be able to pay for your first month."
+                      : "Your monthly subscription is now active! Your automation will continue running, and you'll be charged monthly. Your partner will be notified of this payment."}
                   </p>
                 </div>
               </>

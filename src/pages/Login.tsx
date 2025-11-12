@@ -9,6 +9,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
+import { Mail, Lock, User, Shield, Sparkles, ArrowRight } from "lucide-react";
 
 const Login = () => {
   const navigate = useNavigate();
@@ -300,113 +301,216 @@ const Login = () => {
     <div className="min-h-screen bg-background">
       <Navigation />
       
-      <section className="relative min-h-screen flex items-center justify-center overflow-hidden pt-20 px-6">
+      <section className="relative h-screen flex items-center justify-center overflow-hidden px-6">
+        {/* Animated background gradient */}
         <div className="absolute inset-0 bg-gradient-to-b from-vault-black via-vault-charcoal to-vault-black"></div>
         
+        {/* Gold glow effects */}
         <div className="absolute top-1/4 left-1/4 w-96 h-96 bg-vault-gold opacity-10 blur-[120px] rounded-full"></div>
+        <div className="absolute bottom-1/4 right-1/4 w-96 h-96 bg-vault-gold opacity-5 blur-[120px] rounded-full"></div>
         
-        <div className="relative z-10 w-full max-w-md py-20">
+        {/* Decorative elements */}
+        <div className="absolute bottom-10 right-10 opacity-20">
+          <Shield className="w-6 h-6 text-primary" />
+        </div>
+        
+        <div className="relative z-10 w-full max-w-md">
+          {/* Header Section */}
+          <div className="text-center mb-4">
+            <div className="inline-flex items-center justify-center w-12 h-12 bg-primary/10 rounded-full mb-2 border border-primary/20">
+              <Shield className="w-6 h-6 text-primary" />
+            </div>
+            <h1 className="text-2xl md:text-3xl font-display font-bold mb-1 text-primary gold-glow">
+              Welcome to The Vault Network
+            </h1>
+            <p className="text-sm text-muted-foreground">
+              Secure access to your automation platform
+            </p>
+          </div>
+
           <Tabs defaultValue="login" className="w-full">
-            <TabsList className="grid w-full grid-cols-2 mb-8">
-              <TabsTrigger value="login">Login</TabsTrigger>
-              <TabsTrigger value="signup">Sign Up</TabsTrigger>
+            <TabsList className="grid w-full grid-cols-2 mb-4 bg-muted/50 p-1">
+              <TabsTrigger value="login" className="data-[state=active]:bg-primary data-[state=active]:text-primary-foreground">
+                Login
+              </TabsTrigger>
+              <TabsTrigger value="signup" className="data-[state=active]:bg-primary data-[state=active]:text-primary-foreground">
+                Sign Up
+              </TabsTrigger>
             </TabsList>
 
-            <TabsContent value="login">
-              <Card className="bg-card border-border">
-                <CardHeader>
-                  <CardTitle className="text-2xl text-primary gold-glow">Welcome Back</CardTitle>
-                  <CardDescription>Enter your credentials to access your account</CardDescription>
-                </CardHeader>
-                <CardContent>
-                  <form onSubmit={handleLogin} className="space-y-4">
-                    <div className="space-y-2">
-                      <Label htmlFor="login-email">Email</Label>
-                      <Input
-                        id="login-email"
-                        type="email"
-                        placeholder="your@email.com"
-                        value={loginEmail}
-                        onChange={(e) => setLoginEmail(e.target.value)}
-                        required
-                        className="bg-input border-border"
-                      />
+            <TabsContent value="login" className="mt-0">
+              <Card className="bg-card/80 backdrop-blur-sm border-border shadow-xl relative overflow-hidden">
+                {/* Card glow effect */}
+                <div className="absolute top-0 right-0 w-32 h-32 bg-primary/5 rounded-full blur-3xl"></div>
+                
+                <CardHeader className="relative z-10 pb-4">
+                  <div className="flex items-center gap-2 mb-1">
+                    <div className="w-8 h-8 bg-primary/10 rounded-lg flex items-center justify-center">
+                      <Lock className="w-4 h-4 text-primary" />
                     </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="login-password">Password</Label>
-                      <Input
-                        id="login-password"
-                        type="password"
-                        placeholder="••••••••"
-                        value={loginPassword}
-                        onChange={(e) => setLoginPassword(e.target.value)}
-                        required
-                        className="bg-input border-border"
-                      />
+                    <CardTitle className="text-xl text-primary gold-glow">Welcome Back</CardTitle>
+                  </div>
+                  <CardDescription className="text-sm">
+                    Enter your credentials to access your account
+                  </CardDescription>
+                </CardHeader>
+                <CardContent className="relative z-10 pt-0">
+                  <form onSubmit={handleLogin} className="space-y-3">
+                    <div className="space-y-1.5">
+                      <Label htmlFor="login-email" className="text-xs font-medium flex items-center gap-1.5">
+                        <Mail className="w-3.5 h-3.5 text-primary" />
+                        Email Address
+                      </Label>
+                      <div className="relative">
+                        <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                        <Input
+                          id="login-email"
+                          type="email"
+                          placeholder="your@email.com"
+                          value={loginEmail}
+                          onChange={(e) => setLoginEmail(e.target.value)}
+                          required
+                          className="bg-input border-border pl-9 h-10 text-sm focus:border-primary focus:ring-primary"
+                        />
+                      </div>
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label htmlFor="login-password" className="text-xs font-medium flex items-center gap-1.5">
+                        <Lock className="w-3.5 h-3.5 text-primary" />
+                        Password
+                      </Label>
+                      <div className="relative">
+                        <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                        <Input
+                          id="login-password"
+                          type="password"
+                          placeholder="••••••••"
+                          value={loginPassword}
+                          onChange={(e) => setLoginPassword(e.target.value)}
+                          required
+                          className="bg-input border-border pl-9 h-10 text-sm focus:border-primary focus:ring-primary"
+                        />
+                      </div>
                     </div>
                     <Button
                       type="submit"
-                      className="w-full bg-primary hover:bg-primary/90 text-primary-foreground font-bold"
+                      className="w-full bg-primary hover:bg-primary/90 text-primary-foreground font-bold h-10 text-sm gold-border-glow transition-all group mt-2"
                       disabled={loading}
                     >
-                      {loading ? "Logging in..." : "Login"}
+                      {loading ? (
+                        "Logging in..."
+                      ) : (
+                        <>
+                          Sign In
+                          <ArrowRight className="ml-2 h-4 w-4" />
+                        </>
+                      )}
                     </Button>
                   </form>
+                  
+                  {/* Security Note */}
+                  <div className="mt-3 p-3 bg-primary/5 border border-primary/20 rounded-lg">
+                    <div className="flex items-start gap-2">
+                      <Shield className="w-4 h-4 text-primary mt-0.5 flex-shrink-0" />
+                      <div className="text-xs text-muted-foreground">
+                        <p className="font-medium text-foreground mb-0.5">Secure Login</p>
+                        <p>Your credentials are encrypted and secure.</p>
+                      </div>
+                    </div>
+                  </div>
                 </CardContent>
               </Card>
             </TabsContent>
 
-            <TabsContent value="signup">
-              <Card className="bg-card border-border">
-                <CardHeader>
-                  <CardTitle className="text-2xl text-primary gold-glow">Create Account</CardTitle>
-                  <CardDescription>Sign up to get started with The Vault Network</CardDescription>
+            <TabsContent value="signup" className="mt-0">
+              <Card className="bg-card/80 backdrop-blur-sm border-border shadow-xl relative overflow-hidden">
+                {/* Card glow effect */}
+                <div className="absolute top-0 right-0 w-32 h-32 bg-primary/5 rounded-full blur-3xl"></div>
+                
+                <CardHeader className="relative z-10 pb-4">
+                  <div className="flex items-center gap-2 mb-1">
+                    <div className="w-8 h-8 bg-primary/10 rounded-lg flex items-center justify-center">
+                      <Sparkles className="w-4 h-4 text-primary" />
+                    </div>
+                    <CardTitle className="text-xl text-primary gold-glow">Create Account</CardTitle>
+                  </div>
+                  <CardDescription className="text-sm">
+                    Join The Vault Network and start your automation journey
+                  </CardDescription>
                 </CardHeader>
-                <CardContent>
-                  <form onSubmit={handleSignup} className="space-y-4">
-                    <div className="space-y-2">
-                      <Label htmlFor="signup-name">Full Name</Label>
-                      <Input
-                        id="signup-name"
-                        type="text"
-                        placeholder="John Doe"
-                        value={signupFullName}
-                        onChange={(e) => setSignupFullName(e.target.value)}
-                        required
-                        className="bg-input border-border"
-                      />
+                <CardContent className="relative z-10 pt-0">
+                  <form onSubmit={handleSignup} className="space-y-3">
+                    <div className="space-y-1.5">
+                      <Label htmlFor="signup-name" className="text-xs font-medium flex items-center gap-1.5">
+                        <User className="w-3.5 h-3.5 text-primary" />
+                        Full Name
+                      </Label>
+                      <div className="relative">
+                        <User className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                        <Input
+                          id="signup-name"
+                          type="text"
+                          placeholder="John Doe"
+                          value={signupFullName}
+                          onChange={(e) => setSignupFullName(e.target.value)}
+                          required
+                          className="bg-input border-border pl-9 h-10 text-sm focus:border-primary focus:ring-primary"
+                        />
+                      </div>
                     </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="signup-email">Email</Label>
-                      <Input
-                        id="signup-email"
-                        type="email"
-                        placeholder="your@email.com"
-                        value={signupEmail}
-                        onChange={(e) => setSignupEmail(e.target.value)}
-                        required
-                        className="bg-input border-border"
-                      />
+                    <div className="space-y-1.5">
+                      <Label htmlFor="signup-email" className="text-xs font-medium flex items-center gap-1.5">
+                        <Mail className="w-3.5 h-3.5 text-primary" />
+                        Email Address
+                      </Label>
+                      <div className="relative">
+                        <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                        <Input
+                          id="signup-email"
+                          type="email"
+                          placeholder="your@email.com"
+                          value={signupEmail}
+                          onChange={(e) => setSignupEmail(e.target.value)}
+                          required
+                          className="bg-input border-border pl-9 h-10 text-sm focus:border-primary focus:ring-primary"
+                        />
+                      </div>
                     </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="signup-password">Password</Label>
-                      <Input
-                        id="signup-password"
-                        type="password"
-                        placeholder="••••••••"
-                        value={signupPassword}
-                        onChange={(e) => setSignupPassword(e.target.value)}
-                        required
-                        minLength={6}
-                        className="bg-input border-border"
-                      />
+                    <div className="space-y-1.5">
+                      <Label htmlFor="signup-password" className="text-xs font-medium flex items-center gap-1.5">
+                        <Lock className="w-3.5 h-3.5 text-primary" />
+                        Password
+                      </Label>
+                      <div className="relative">
+                        <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                        <Input
+                          id="signup-password"
+                          type="password"
+                          placeholder="••••••••"
+                          value={signupPassword}
+                          onChange={(e) => setSignupPassword(e.target.value)}
+                          required
+                          minLength={6}
+                          className="bg-input border-border pl-9 h-10 text-sm focus:border-primary focus:ring-primary"
+                        />
+                      </div>
+                      <p className="text-xs text-muted-foreground">
+                        Must be at least 6 characters
+                      </p>
                     </div>
                     <Button
                       type="submit"
-                      className="w-full bg-primary hover:bg-primary/90 text-primary-foreground font-bold"
+                      className="w-full bg-primary hover:bg-primary/90 text-primary-foreground font-bold h-10 text-sm gold-border-glow transition-all group mt-2"
                       disabled={loading}
                     >
-                      {loading ? "Creating account..." : "Sign Up"}
+                      {loading ? (
+                        "Creating account..."
+                      ) : (
+                        <>
+                          Create Account
+                          <ArrowRight className="ml-2 h-4 w-4" />
+                        </>
+                      )}
                     </Button>
                   </form>
                 </CardContent>
