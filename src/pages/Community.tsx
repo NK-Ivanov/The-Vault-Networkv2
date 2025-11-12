@@ -3,8 +3,16 @@ import Footer from "@/components/Footer";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { BookOpen, DollarSign, Users, Zap, Target, ArrowRight, CheckCircle2, MessageSquare, BarChart3, Rocket, Shield, TrendingUp, Download, Settings, Award, Star, Clock, Sparkles } from "lucide-react";
+import { usePageMeta } from "@/hooks/usePageMeta";
 
 const CommunityPage = () => {
+  usePageMeta({
+    title: "Community - Learn & Build Automations | The Vault Network",
+    description: "Join our community of 3,000+ automation builders. Access free templates, daily workshops, step-by-step tutorials, and expert support. Learn automation from zero to expert and start selling your own automations.",
+    ogTitle: "Community - Learn & Build Automations | The Vault Network",
+    ogDescription: "Join our community of 3,000+ automation builders. Access free templates, daily workshops, step-by-step tutorials, and expert support.",
+    ogUrl: "https://vaultnet.work/community",
+  });
   const learnerPath = [
     {
       icon: BookOpen,

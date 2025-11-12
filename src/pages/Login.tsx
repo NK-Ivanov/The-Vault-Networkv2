@@ -10,6 +10,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 import { Mail, Lock, User, Shield, Sparkles, ArrowRight } from "lucide-react";
+import { usePageMeta } from "@/hooks/usePageMeta";
 
 const Login = () => {
   const navigate = useNavigate();
@@ -17,6 +18,14 @@ const Login = () => {
   const { toast } = useToast();
   const [loading, setLoading] = useState(false);
   const redirectPath = searchParams.get("redirect") || null;
+
+  usePageMeta({
+    title: "Login - The Vault Network",
+    description: "Sign in to your Vault Network account to access your dashboard, manage automations, track earnings, and connect with the community.",
+    ogTitle: "Login - The Vault Network",
+    ogDescription: "Sign in to your Vault Network account to access your dashboard, manage automations, track earnings, and connect with the community.",
+    ogUrl: "https://vaultnet.work/login",
+  });
 
   const [loginEmail, setLoginEmail] = useState("");
   const [loginPassword, setLoginPassword] = useState("");
