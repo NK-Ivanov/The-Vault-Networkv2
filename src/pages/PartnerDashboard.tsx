@@ -352,6 +352,7 @@ const PartnerDashboard = () => {
   const [viewedAutomations, setViewedAutomations] = useState<Set<string>>(new Set());
   const [showRanksDialog, setShowRanksDialog] = useState(false);
   const [showVerifiedRankPopup, setShowVerifiedRankPopup] = useState(false);
+  const [showPartnerProWelcomePopup, setShowPartnerProWelcomePopup] = useState(false);
   const [expandedLessonId, setExpandedLessonId] = useState<string | undefined>(undefined);
   const [showCourseDialog, setShowCourseDialog] = useState(false);
   const [selectedCourse, setSelectedCourse] = useState<PartnerLesson | null>(null);
@@ -428,14 +429,17 @@ const PartnerDashboard = () => {
           await callNetlifyFunction('verify-partner-pro-subscription', {
             sessionId: sessionId,
           });
-          toast({
-            title: "Welcome to Partner Pro! 🎉",
-            description: "Your subscription is now active. Enjoy all the premium features!",
-          });
+          // Show welcome popup after successful subscription
+          setShowPartnerProWelcomePopup(true);
           // Remove query params
           navigate('/partner-dashboard', { replace: true });
         } catch (error: any) {
           console.error('Error verifying subscription:', error);
+          toast({
+            title: "Subscription Verification Failed",
+            description: error.message || "Please refresh the page to see your updated status.",
+            variant: "destructive",
+          });
         }
       }
 
@@ -2449,7 +2453,9 @@ const PartnerDashboard = () => {
         <div className="relative z-10 container mx-auto">
           <div className="mb-6 sm:mb-8 md:mb-12">
             <h1 className="font-display text-2xl sm:text-3xl md:text-4xl lg:text-5xl font-bold mb-2 sm:mb-4 text-primary">
-              Partner Dashboard
+              Partner{sellerData?.partner_pro_subscription_status === 'active' ? (
+                <span className="gold-glow"> Pro</span>
+              ) : ''} Dashboard
             </h1>
             <p className="text-base sm:text-lg md:text-xl text-muted-foreground">
               Welcome back, {sellerData?.business_name}
@@ -2513,6 +2519,20 @@ const PartnerDashboard = () => {
                                   Upgrade - $24.99/mo
                                 </Button>
                               </div>
+                            </div>
+                          </div>
+                        );
+                      }
+                      
+                      // If user has Partner Pro, don't show XP progression (they're at max rank)
+                      if (hasPartnerPro) {
+                        return (
+                          <div className="mt-3 p-3 bg-primary/10 border border-primary/20 rounded-lg">
+                            <div className="flex items-center gap-2">
+                              <Trophy className="w-4 h-4 text-primary" />
+                              <p className="text-sm text-muted-foreground">
+                                You've reached <strong className="text-primary">Partner Pro</strong> - the highest tier! Continue earning XP and completing tasks to unlock exclusive rewards.
+                              </p>
                             </div>
                           </div>
                         );
@@ -2673,6 +2693,56 @@ const PartnerDashboard = () => {
             </DialogContent>
           </Dialog>
 
+          {/* Partner Pro Welcome Popup */}
+          <Dialog open={showPartnerProWelcomePopup} onOpenChange={setShowPartnerProWelcomePopup}>
+            <DialogContent className="max-w-2xl">
+              <DialogHeader>
+                <DialogTitle className="text-2xl text-primary flex items-center gap-2">
+                  <Trophy className="w-6 h-6" />
+                  Welcome to Partner Pro! 🎉
+                </DialogTitle>
+                <DialogDescription className="text-base pt-2">
+                  Your subscription is now active. You've unlocked the highest tier!
+                </DialogDescription>
+              </DialogHeader>
+              <div className="space-y-4 py-4">
+                <div className="p-4 bg-gradient-to-r from-primary/20 to-primary/10 border border-primary/30 rounded-lg">
+                  <p className="text-sm text-foreground mb-3 font-semibold">
+                    You now have access to:
+                  </p>
+                  <ul className="text-sm text-muted-foreground space-y-2 ml-4 list-disc">
+                    <li>45% commission on all sales (regardless of rank)</li>
+                    <li>50+ premium, high-ticket automations</li>
+                    <li>Vault Pro Academy - advanced training library</li>
+                    <li>Personalized client management portals</li>
+                    <li>White-label branding (logo, colors, custom sub-domain)</li>
+                    <li>Priority support and feature requests</li>
+                    <li>Early access to new automations</li>
+                  </ul>
+                </div>
+                <div className="flex gap-3">
+                  <Button
+                    onClick={() => {
+                      setShowPartnerProWelcomePopup(false);
+                      navigate('/partner-pro');
+                    }}
+                    className="flex-1 bg-primary hover:bg-primary/90 text-primary-foreground"
+                  >
+                    <Trophy className="w-4 h-4 mr-2" />
+                    Explore Partner Pro Features
+                  </Button>
+                  <Button
+                    onClick={() => setShowPartnerProWelcomePopup(false)}
+                    variant="outline"
+                    className="flex-1"
+                  >
+                    Continue to Dashboard
+                  </Button>
+                </div>
+              </div>
+            </DialogContent>
+          </Dialog>
+
           {/* View All Ranks Dialog */}
           <Dialog open={showRanksDialog} onOpenChange={setShowRanksDialog}>
             <DialogContent className="max-w-4xl max-h-[85vh]">
@@ -2686,8 +2756,9 @@ const PartnerDashboard = () => {
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 py-2">
                   {(['Recruit', 'Apprentice', 'Agent', 'Partner', 'Verified', 'Partner Pro'] as PartnerRank[]).map((rank, index) => {
                     const rankInfo = RANK_INFO[rank];
-                    const isCurrentRank = sellerData?.current_rank === rank;
-                    const isUnlocked = (sellerData?.current_xp || 0) >= rankInfo.xpThreshold;
+                    const hasPartnerPro = sellerData?.partner_pro_subscription_status === 'active';
+                    const isCurrentRank = rank === 'Partner Pro' ? hasPartnerPro : sellerData?.current_rank === rank;
+                    const isUnlocked = rank === 'Partner Pro' ? hasPartnerPro : (sellerData?.current_xp || 0) >= rankInfo.xpThreshold;
                     const nextRank = index < 5 ? (['Recruit', 'Apprentice', 'Agent', 'Partner', 'Verified', 'Partner Pro'] as PartnerRank[])[index + 1] : null;
                     const xpToNext = nextRank ? RANK_INFO[nextRank].xpThreshold - rankInfo.xpThreshold : 0;
                     
@@ -2732,7 +2803,9 @@ const PartnerDashboard = () => {
                                   {rank}
                                 </h3>
                                 {isCurrentRank && (
-                                  <Badge variant="default" className="mt-1 text-xs">Current Rank</Badge>
+                                  <Badge variant="default" className="mt-1 text-xs bg-primary text-primary-foreground">
+                                    {rank === 'Partner Pro' ? 'Active Subscription' : 'Current Rank'}
+                                  </Badge>
                                 )}
                                 {isUnlocked && !isCurrentRank && (
                                   <Badge variant="outline" className="mt-1 text-xs text-green-500 border-green-500">Unlocked</Badge>
@@ -3849,6 +3922,37 @@ const PartnerDashboard = () => {
                                             </div>
                                           </div>
                                         </div>
+                                      </div>
+                                    );
+                                  }
+                                  
+                                  // If user has Partner Pro, don't show rank progression (they're at max rank)
+                                  if (hasPartnerPro) {
+                                    return (
+                                      <div className="mt-6 pt-6 border-t border-border">
+                                        <Card className="bg-gradient-to-r from-primary/20 to-primary/10 border-primary/30">
+                                          <CardContent className="pt-6">
+                                            <div className="flex items-start gap-3">
+                                              <Trophy className="w-5 h-5 text-primary flex-shrink-0 mt-0.5" />
+                                              <div className="flex-1">
+                                                <h3 className="text-base font-semibold mb-2 text-primary">
+                                                  You've Reached Partner Pro!
+                                                </h3>
+                                                <p className="text-sm text-muted-foreground mb-3">
+                                                  You've unlocked the highest tier. Continue earning XP and completing tasks to unlock exclusive rewards and maintain your premium status.
+                                                </p>
+                                                <Button
+                                                  onClick={() => navigate('/partner-pro')}
+                                                  variant="outline"
+                                                  size="sm"
+                                                  className="border-primary/50 text-primary hover:bg-primary/10"
+                                                >
+                                                  Explore Partner Pro Features
+                                                </Button>
+                                              </div>
+                                            </div>
+                                          </CardContent>
+                                        </Card>
                                       </div>
                                     );
                                   }
