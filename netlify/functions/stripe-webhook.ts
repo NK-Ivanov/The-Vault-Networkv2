@@ -68,6 +68,66 @@ export const handler = async (event: any) => {
       case 'checkout.session.completed': {
         const session = stripeEvent.data.object as Stripe.Checkout.Session;
         
+        // Check if this is a Partner Pro subscription
+        const subscriptionType = session.metadata?.subscription_type;
+        if (subscriptionType === 'partner_pro') {
+          const sellerId = session.metadata?.seller_id;
+          if (!sellerId) {
+            console.error('Missing seller_id in Partner Pro checkout session');
+            break;
+          }
+
+          // Get subscription details
+          const subscriptionId = session.subscription as string;
+          if (!subscriptionId) {
+            console.error('Missing subscription ID in checkout session');
+            break;
+          }
+
+          // Retrieve subscription from Stripe
+          const subscription = await stripe.subscriptions.retrieve(subscriptionId);
+
+          // Update seller subscription status and set commission_rate to 45%
+          const { error: updateError } = await supabase
+            .from('sellers')
+            .update({
+              partner_pro_subscription_id: subscription.id,
+              partner_pro_subscription_status: subscription.status === 'active' ? 'active' : 'inactive',
+              partner_pro_subscription_started_at: new Date(subscription.created * 1000).toISOString(),
+              partner_pro_subscription_ends_at: subscription.current_period_end
+                ? new Date(subscription.current_period_end * 1000).toISOString()
+                : null,
+              commission_rate: 45.00, // Partner Pro gets 45% commission regardless of rank
+            })
+            .eq('id', sellerId);
+
+          if (updateError) {
+            console.error('Error updating Partner Pro subscription:', updateError);
+            break;
+          }
+
+          // Get seller user_id for notification
+          const { data: sellerData } = await supabase
+            .from('sellers')
+            .select('user_id, business_name')
+            .eq('id', sellerId)
+            .single();
+
+          if (sellerData?.user_id) {
+            await supabase.rpc('create_notification', {
+              p_user_id: sellerData.user_id,
+              p_type: 'subscription_activated',
+              p_title: 'Partner Pro Activated!',
+              p_message: 'Your Partner Pro subscription is now active. Enjoy all premium features!',
+              p_link: '/partner-dashboard',
+              p_related_id: null
+            });
+          }
+
+          console.log('Partner Pro subscription activated', { sellerId, subscriptionId });
+          break;
+        }
+        
         // Get metadata from session
         const automationId = session.metadata?.automation_id;
         const clientId = session.metadata?.client_id;
@@ -440,6 +500,63 @@ export const handler = async (event: any) => {
         }
 
         console.log('Monthly payment processed', { subscriptionId });
+        break;
+      }
+
+      case 'customer.subscription.updated':
+      case 'customer.subscription.deleted': {
+        const subscription = stripeEvent.data.object as Stripe.Subscription;
+        
+        // Check if this is a Partner Pro subscription
+        if (subscription.metadata?.subscription_type === 'partner_pro') {
+          const sellerId = subscription.metadata?.seller_id;
+          if (!sellerId) {
+            console.error('Missing seller_id in subscription metadata');
+            break;
+          }
+
+          // Determine status based on subscription state
+          let status = 'inactive';
+          if (stripeEvent.type === 'customer.subscription.deleted') {
+            status = 'canceled';
+          } else if (subscription.status === 'active') {
+            status = 'active';
+          } else if (subscription.status === 'past_due') {
+            status = 'past_due';
+          } else {
+            status = 'inactive';
+          }
+
+          // Update seller subscription status and commission rate
+          // If active, set commission_rate to 45%; if inactive/canceled, set to NULL to use rank-based rates
+          const updateData: any = {
+            partner_pro_subscription_status: status,
+            partner_pro_subscription_ends_at: subscription.current_period_end
+              ? new Date(subscription.current_period_end * 1000).toISOString()
+              : null,
+          };
+
+          // Set commission_rate to 45% if active, NULL if inactive/canceled
+          if (status === 'active') {
+            updateData.commission_rate = 45.00;
+          } else {
+            // When subscription is canceled/inactive, set commission_rate to NULL
+            // This allows the seller to use their rank-based commission rate
+            updateData.commission_rate = null;
+          }
+
+          const { error: updateError } = await supabase
+            .from('sellers')
+            .update(updateData)
+            .eq('partner_pro_subscription_id', subscription.id);
+
+          if (updateError) {
+            console.error('Error updating Partner Pro subscription status:', updateError);
+            break;
+          }
+
+          console.log('Partner Pro subscription updated', { sellerId, subscriptionId: subscription.id, status, commission_rate: updateData.commission_rate });
+        }
         break;
       }
 

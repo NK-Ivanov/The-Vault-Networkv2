@@ -14,7 +14,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
-import { CheckCircle, XCircle, Users, DollarSign, Package, Plus, Eye, Settings, Edit, Search, ArrowUpDown, TrendingUp, TrendingDown, BarChart3, PieChart, Activity, MessageSquare, AlertCircle, Send, LayoutDashboard, UserCog, Building2, Boxes, Link2, Ticket, Mail, HelpCircle } from "lucide-react";
+import { CheckCircle, XCircle, Users, DollarSign, Package, Plus, Eye, Settings, Edit, Search, ArrowUpDown, TrendingUp, TrendingDown, BarChart3, PieChart, Activity, MessageSquare, AlertCircle, Send, LayoutDashboard, UserCog, Building2, Boxes, Link2, Ticket, Mail, HelpCircle, Trophy } from "lucide-react";
 import { ChartContainer, ChartTooltip, ChartTooltipContent } from "@/components/ui/chart";
 import { BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid, ResponsiveContainer, PieChart as RechartsPieChart, Cell } from "recharts";
 import { useToast } from "@/hooks/use-toast";
@@ -24,6 +24,7 @@ import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, Command
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { formatDistanceToNow } from "date-fns";
+import { cn } from "@/lib/utils";
 
 interface SellerData {
   id: string;
@@ -32,6 +33,8 @@ interface SellerData {
   status: string;
   referral_code: string;
   created_at: string;
+  current_xp?: number;
+  current_rank?: string;
 }
 
 interface ClientData {
@@ -220,6 +223,13 @@ const AdminDashboard = () => {
   const [partnersSearchQuery, setPartnersSearchQuery] = useState("");
   const [clientsSortBy, setClientsSortBy] = useState<"name" | "contact" | "status" | "date">("date");
   const [partnersSortBy, setPartnersSortBy] = useState<"name" | "status" | "date">("date");
+  
+  // XP Management state
+  const [selectedSellerForXP, setSelectedSellerForXP] = useState<string>("");
+  const [xpAmount, setXpAmount] = useState<string>("");
+  const [xpDescription, setXpDescription] = useState<string>("");
+  const [givingXP, setGivingXP] = useState(false);
+  const [xpSellerSearchOpen, setXpSellerSearchOpen] = useState(false);
   
   // Vault Network client management state
   const [vaultNetworkSellerId, setVaultNetworkSellerId] = useState<string | null>(null);
@@ -1051,7 +1061,7 @@ const AdminDashboard = () => {
   useEffect(() => {
     // Handle URL query parameter for tab navigation
     const tab = searchParams.get('tab');
-    if (tab && ['analytics', 'sellers', 'clients', 'automations', 'client-automations', 'tickets', 'seller-messages', 'enquiries'].includes(tab)) {
+    if (tab && ['analytics', 'sellers', 'clients', 'automations', 'client-automations', 'tickets', 'seller-messages', 'enquiries', 'xp-management'].includes(tab)) {
       setActiveTab(tab);
     }
     
@@ -1173,6 +1183,28 @@ const AdminDashboard = () => {
       toast({
         title: "Stripe Sync Failed",
         description: error.message || "Failed to sync with Stripe. Please check your Stripe configuration.",
+        variant: "destructive",
+      });
+      throw error;
+    }
+  };
+
+  const syncPartnerProStripe = async () => {
+    try {
+      const result = await callNetlifyFunction('stripe-sync-partner-pro', {
+        monthlyPrice: 24.99,
+      });
+
+      toast({
+        title: "Partner Pro Synced!",
+        description: result.message || "Partner Pro has been successfully synced with Stripe. Please set the STRIPE_PARTNER_PRO_PRICE_ID environment variable.",
+      });
+
+      return result;
+    } catch (error: any) {
+      toast({
+        title: "Stripe Sync Failed",
+        description: error.message || "Failed to sync Partner Pro with Stripe. Please check your Stripe configuration.",
         variant: "destructive",
       });
       throw error;
@@ -1458,6 +1490,65 @@ const AdminDashboard = () => {
       });
     } finally {
       setAssigningVaultAutomation(false);
+    }
+  };
+
+  const handleGiveXP = async () => {
+    if (!selectedSellerForXP || !xpAmount) {
+      toast({
+        title: "Selection required",
+        description: "Please select a partner and enter an XP amount",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    const xpValue = parseInt(xpAmount);
+    if (isNaN(xpValue) || xpValue <= 0) {
+      toast({
+        title: "Invalid amount",
+        description: "Please enter a valid positive number for XP",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setGivingXP(true);
+    try {
+      const { data, error } = await supabase.rpc('add_seller_xp', {
+        _seller_id: selectedSellerForXP,
+        _xp_amount: xpValue,
+        _event_type: 'admin_grant',
+        _description: xpDescription || `Admin granted ${xpValue} XP`,
+        _metadata: { 
+          granted_by: user?.id,
+          reason: xpDescription || 'Admin grant'
+        }
+      });
+
+      if (error) throw error;
+
+      toast({
+        title: "XP Granted!",
+        description: `Successfully granted ${xpValue} XP to ${sellers.find(s => s.id === selectedSellerForXP)?.business_name || 'partner'}`,
+      });
+
+      // Reset form
+      setSelectedSellerForXP("");
+      setXpAmount("");
+      setXpDescription("");
+      setXpSellerSearchOpen(false);
+
+      // Refresh seller data
+      fetchAdminData();
+    } catch (error: any) {
+      toast({
+        title: "Failed to grant XP",
+        description: error.message,
+        variant: "destructive",
+      });
+    } finally {
+      setGivingXP(false);
     }
   };
 
@@ -2092,6 +2183,10 @@ const AdminDashboard = () => {
                     <HelpCircle className="w-4 h-4" />
                     <span className="hidden sm:inline">Enquiries</span>
                   </TabsTrigger>
+                  <TabsTrigger value="xp-management" className="flex items-center justify-center gap-2 data-[state=active]:bg-background">
+                    <Trophy className="w-4 h-4" />
+                    <span className="hidden sm:inline">Give XP</span>
+                  </TabsTrigger>
                 </TabsList>
 
                 <TabsContent value="analytics">
@@ -2563,6 +2658,48 @@ const AdminDashboard = () => {
 
                 <TabsContent value="automations">
                   <div className="space-y-4">
+                    {/* Partner Pro Stripe Sync Section */}
+                    <Card className="bg-gradient-to-r from-primary/10 to-primary/5 border-primary/20">
+                      <CardHeader>
+                        <CardTitle className="text-primary flex items-center gap-2">
+                          <Trophy className="w-5 h-5" />
+                          Partner Pro Stripe Integration
+                        </CardTitle>
+                        <CardDescription>
+                          Sync Partner Pro subscription product with Stripe. This creates the product and price needed for Partner Pro subscriptions.
+                        </CardDescription>
+                      </CardHeader>
+                      <CardContent>
+                        <div className="flex items-center justify-between">
+                          <div>
+                            <p className="text-sm text-muted-foreground mb-1">
+                              Monthly Price: <span className="font-semibold text-foreground">$24.99</span>
+                            </p>
+                            <p className="text-xs text-muted-foreground">
+                              After syncing, set <code className="bg-muted px-1 py-0.5 rounded">STRIPE_PARTNER_PRO_PRICE_ID</code> environment variable with the returned price ID.
+                            </p>
+                          </div>
+                          <Button onClick={syncPartnerProStripe} className="bg-primary hover:bg-primary/90">
+                            <Settings className="w-4 h-4 mr-2" />
+                            Sync Partner Pro with Stripe
+                          </Button>
+                        </div>
+                      </CardContent>
+                    </Card>
+
+                    <div className="flex items-center justify-between mb-4">
+                      <div>
+                        <h3 className="text-lg font-semibold text-foreground">Automations</h3>
+                        <p className="text-sm text-muted-foreground">
+                          Manage all automation products and their Stripe integration
+                        </p>
+                      </div>
+                      <Button onClick={() => setShowAddAutomation(true)}>
+                        <Plus className="w-4 h-4 mr-2" />
+                        Add Automation
+                      </Button>
+                    </div>
+
                     {automations.length === 0 ? (
                       <div className="text-center py-8">
                         <p className="text-muted-foreground">No automations yet. Add one to get started!</p>
@@ -3292,6 +3429,163 @@ const AdminDashboard = () => {
                       </div>
                     </TabsContent>
                   </Tabs>
+                </TabsContent>
+
+                <TabsContent value="xp-management">
+                  <Card className="bg-card border-border">
+                    <CardHeader>
+                      <CardTitle className="flex items-center gap-2">
+                        <Trophy className="w-5 h-5" />
+                        Give XP to Partner
+                      </CardTitle>
+                      <CardDescription>
+                        Grant experience points to any partner. This will update their XP total and may trigger a rank up.
+                      </CardDescription>
+                    </CardHeader>
+                    <CardContent className="space-y-6">
+                      <div className="space-y-4">
+                        <div className="space-y-2">
+                          <Label htmlFor="seller-select">Select Partner</Label>
+                          <Popover open={xpSellerSearchOpen} onOpenChange={setXpSellerSearchOpen}>
+                            <PopoverTrigger asChild>
+                              <Button
+                                variant="outline"
+                                role="combobox"
+                                aria-expanded={xpSellerSearchOpen}
+                                className="w-full justify-between"
+                              >
+                                {selectedSellerForXP
+                                  ? sellers.find(s => s.id === selectedSellerForXP)?.business_name
+                                  : "Choose a partner..."}
+                                <Search className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                              </Button>
+                            </PopoverTrigger>
+                            <PopoverContent className="w-[400px] p-0" align="start">
+                              <Command>
+                                <CommandInput placeholder="Search partners..." />
+                                <CommandList>
+                                  <CommandEmpty>No partner found.</CommandEmpty>
+                                  <CommandGroup>
+                                    {sellers.map((seller) => (
+                                      <CommandItem
+                                        key={seller.id}
+                                        value={seller.business_name}
+                                        onSelect={() => {
+                                          setSelectedSellerForXP(seller.id === selectedSellerForXP ? "" : seller.id);
+                                          setXpSellerSearchOpen(false);
+                                        }}
+                                      >
+                                        <CheckCircle
+                                          className={cn(
+                                            "mr-2 h-4 w-4",
+                                            selectedSellerForXP === seller.id ? "opacity-100" : "opacity-0"
+                                          )}
+                                        />
+                                        <div className="flex flex-col">
+                                          <span>{seller.business_name}</span>
+                                          {seller.current_xp !== undefined && (
+                                            <span className="text-xs text-muted-foreground">
+                                              Current XP: {seller.current_xp} • Rank: {seller.current_rank || 'Recruit'}
+                                            </span>
+                                          )}
+                                        </div>
+                                      </CommandItem>
+                                    ))}
+                                  </CommandGroup>
+                                </CommandList>
+                              </Command>
+                            </PopoverContent>
+                          </Popover>
+                          {selectedSellerForXP && (
+                            <div className="text-sm text-muted-foreground">
+                              {(() => {
+                                const seller = sellers.find(s => s.id === selectedSellerForXP);
+                                return seller && seller.current_xp !== undefined ? (
+                                  <span>
+                                    Current: {seller.current_xp} XP • Rank: {seller.current_rank || 'Recruit'}
+                                  </span>
+                                ) : null;
+                              })()}
+                            </div>
+                          )}
+                        </div>
+
+                        <div className="space-y-2">
+                          <Label htmlFor="xp-amount">XP Amount</Label>
+                          <Input
+                            id="xp-amount"
+                            type="number"
+                            min="1"
+                            placeholder="Enter XP amount"
+                            value={xpAmount}
+                            onChange={(e) => setXpAmount(e.target.value)}
+                          />
+                          <p className="text-xs text-muted-foreground">
+                            Enter the amount of XP to grant. This will be added to their current total.
+                          </p>
+                        </div>
+
+                        <div className="space-y-2">
+                          <Label htmlFor="xp-description">Description (Optional)</Label>
+                          <Textarea
+                            id="xp-description"
+                            placeholder="Reason for granting XP (e.g., 'Bonus for exceptional performance')"
+                            value={xpDescription}
+                            onChange={(e) => setXpDescription(e.target.value)}
+                            rows={3}
+                          />
+                          <p className="text-xs text-muted-foreground">
+                            This description will be logged in the partner's activity log.
+                          </p>
+                        </div>
+
+                        <Button
+                          onClick={handleGiveXP}
+                          disabled={givingXP || !selectedSellerForXP || !xpAmount}
+                          className="w-full"
+                        >
+                          {givingXP ? (
+                            <>
+                              <Activity className="mr-2 h-4 w-4 animate-spin" />
+                              Granting XP...
+                            </>
+                          ) : (
+                            <>
+                              <Trophy className="mr-2 h-4 w-4" />
+                              Grant XP
+                            </>
+                          )}
+                        </Button>
+                      </div>
+
+                      {selectedSellerForXP && (() => {
+                        const seller = sellers.find(s => s.id === selectedSellerForXP);
+                        if (!seller || seller.current_xp === undefined) return null;
+                        const currentXP = seller.current_xp;
+                        const newXP = currentXP + (parseInt(xpAmount) || 0);
+                        return (
+                          <Card className="bg-muted/20">
+                            <CardContent className="pt-6">
+                              <div className="space-y-2">
+                                <div className="flex justify-between items-center">
+                                  <span className="text-sm text-muted-foreground">Current XP:</span>
+                                  <span className="font-semibold">{currentXP}</span>
+                                </div>
+                                <div className="flex justify-between items-center">
+                                  <span className="text-sm text-muted-foreground">XP to Add:</span>
+                                  <span className="font-semibold text-primary">+{xpAmount || 0}</span>
+                                </div>
+                                <div className="border-t pt-2 flex justify-between items-center">
+                                  <span className="text-sm font-medium">New Total:</span>
+                                  <span className="font-bold text-lg">{newXP}</span>
+                                </div>
+                              </div>
+                            </CardContent>
+                          </Card>
+                        );
+                      })()}
+                    </CardContent>
+                  </Card>
                 </TabsContent>
               </Tabs>
             </CardContent>

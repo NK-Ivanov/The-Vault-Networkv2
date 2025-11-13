@@ -40,6 +40,24 @@ const Partners = () => {
   const [isBusiness, setIsBusiness] = useState(false);
   const [website, setWebsite] = useState("");
   const [about, setAbout] = useState("");
+  const [referralCode, setReferralCode] = useState<string | null>(null);
+
+  // Check for referral code in URL
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const ref = params.get('ref');
+    if (ref) {
+      setReferralCode(ref);
+      // Store in localStorage for later use
+      localStorage.setItem("partner_referral_code", ref);
+    } else {
+      // Check localStorage for saved referral code
+      const savedRef = localStorage.getItem("partner_referral_code");
+      if (savedRef) {
+        setReferralCode(savedRef);
+      }
+    }
+  }, []);
 
   useEffect(() => {
     if (shouldAutoSubmit && user && !hasApplication && name && about) {
@@ -119,18 +137,41 @@ const Partners = () => {
 
     try {
       // Generate a unique referral code
-      const referralCode = `REF-${user.id.substring(0, 8).toUpperCase()}-${Math.random().toString(36).substring(2, 7).toUpperCase()}`;
+      const newReferralCode = `REF-${user.id.substring(0, 8).toUpperCase()}-${Math.random().toString(36).substring(2, 7).toUpperCase()}`;
       
-      const { error } = await supabase.from("sellers").insert({
+      // Look up referrer if referral code exists
+      let referredBySellerId: string | null = null;
+      if (referralCode) {
+        const { data: referrerSeller, error: referrerError } = await supabase
+          .from("sellers")
+          .select("id, referral_code, status")
+          .eq("referral_code", referralCode)
+          .eq("status", "approved")
+          .maybeSingle();
+        
+        if (referrerError) {
+          console.error("Error looking up referrer:", referrerError);
+        }
+        
+        if (referrerSeller) {
+          referredBySellerId = referrerSeller.id;
+        }
+      }
+      
+      const { data: newSeller, error } = await supabase.from("sellers").insert({
         user_id: user.id,
         business_name: name,
         website: website || null,
         about: about,
         status: "pending",
-        referral_code: referralCode,
-      });
+        referral_code: newReferralCode,
+        referred_by_seller_id: referredBySellerId,
+      }).select().single();
 
       if (error) throw error;
+
+      // XP will be awarded automatically via trigger when partner is approved
+      // No need to call award function here - it happens when status changes to 'approved'
 
       // Assign seller role
       const { error: roleError } = await supabase.from("user_roles").insert({
@@ -143,8 +184,9 @@ const Partners = () => {
         // Continue anyway - role might already exist
       }
 
-      // Clear saved form data
+      // Clear saved form data and referral code
       localStorage.removeItem("pending_partner_form");
+      localStorage.removeItem("partner_referral_code");
 
       toast({
         title: "Application Submitted!",
