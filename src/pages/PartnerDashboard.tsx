@@ -463,6 +463,12 @@ const PartnerDashboard = () => {
 
       setSellerData(seller);
 
+      // Check if user just reached Verified rank and show popup
+      if (seller.current_rank === 'Verified' && !localStorage.getItem('verified_rank_popup_seen')) {
+        setShowVerifiedRankPopup(true);
+        localStorage.setItem('verified_rank_popup_seen', 'true');
+      }
+
       const { data: clientsData, error: clientsError } = await supabase
         .from("clients")
         .select("*")

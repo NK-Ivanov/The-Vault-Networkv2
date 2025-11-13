@@ -14,7 +14,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
-import { CheckCircle, XCircle, Users, DollarSign, Package, Plus, Eye, Settings, Edit, Search, ArrowUpDown, TrendingUp, TrendingDown, BarChart3, PieChart, Activity, MessageSquare, AlertCircle, Send, LayoutDashboard, UserCog, Building2, Boxes, Link2, Ticket, Mail, HelpCircle, Trophy } from "lucide-react";
+import { CheckCircle, XCircle, Users, DollarSign, Package, Plus, Eye, Settings, Edit, Search, ArrowUpDown, TrendingUp, TrendingDown, BarChart3, PieChart, Activity, MessageSquare, AlertCircle, Send, LayoutDashboard, UserCog, Building2, Boxes, Link2, Ticket, Mail, HelpCircle, Trophy, Zap } from "lucide-react";
 import { ChartContainer, ChartTooltip, ChartTooltipContent } from "@/components/ui/chart";
 import { BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid, ResponsiveContainer, PieChart as RechartsPieChart, Cell } from "recharts";
 import { useToast } from "@/hooks/use-toast";
@@ -230,6 +230,7 @@ const AdminDashboard = () => {
   const [xpDescription, setXpDescription] = useState<string>("");
   const [givingXP, setGivingXP] = useState(false);
   const [xpSellerSearchOpen, setXpSellerSearchOpen] = useState(false);
+  const [bypassingToVerified, setBypassingToVerified] = useState(false);
   
   // Vault Network client management state
   const [vaultNetworkSellerId, setVaultNetworkSellerId] = useState<string | null>(null);
@@ -1549,6 +1550,149 @@ const AdminDashboard = () => {
       });
     } finally {
       setGivingXP(false);
+    }
+  };
+
+  const handleBypassToVerified = async () => {
+    if (!selectedSellerForXP) {
+      toast({
+        title: "Selection required",
+        description: "Please select a partner to bypass progression",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    const seller = sellers.find(s => s.id === selectedSellerForXP);
+    if (!seller) {
+      toast({
+        title: "Partner not found",
+        description: "Selected partner could not be found",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setBypassingToVerified(true);
+    try {
+      // Get all tasks for Verified rank
+      const verifiedTasks = [
+        'stage-1-recruit-3', // Complete Getting Started
+        'stage-2-apprentice-6', // Suggest New Automation
+        'stage-3-agent-9', // Create Sales Script
+        'stage-3-agent-10', // Log First Outreach
+        'stage-4-partner-12', // Add Demo Client
+        'stage-4-partner-13', // Assign Demo Automation
+        'stage-4-partner-14', // Pitch Reflection
+        'stage-4-partner-15', // Invite Friend
+        'stage-5-verified-17', // Invite First Real Client
+        'stage-5-verified-18', // Assign First Automation
+        'stage-5-verified-19', // Mark First Sale
+        'stage-5-verified-20', // Submit Case Summary
+      ];
+
+      // Check which tasks are already completed
+      const { data: existingCompletions } = await supabase
+        .from('partner_activity_log')
+        .select('metadata')
+        .eq('seller_id', selectedSellerForXP)
+        .in('event_type', ['task_completed', 'quiz_completed']);
+
+      const completedLessonIds = new Set(
+        existingCompletions?.map(c => c.metadata?.lesson_id).filter(Boolean) || []
+      );
+
+      // Mark all tasks as completed
+      const tasksToComplete = verifiedTasks.filter(taskId => !completedLessonIds.has(taskId));
+      
+      if (tasksToComplete.length > 0) {
+        const taskCompletions = tasksToComplete.map(taskId => ({
+          seller_id: selectedSellerForXP,
+          event_type: 'task_completed',
+          xp_value: 0, // XP will be awarded separately
+          description: `Admin bypass: Auto-completed task ${taskId}`,
+          metadata: {
+            lesson_id: taskId,
+            admin_bypass: true,
+            bypassed_by: user?.id,
+          },
+        }));
+
+        const { error: logError } = await supabase
+          .from('partner_activity_log')
+          .insert(taskCompletions);
+
+        if (logError) throw logError;
+      }
+
+      // Set XP to 7000 (Verified threshold) if current XP is less
+      const verifiedXpThreshold = 7000;
+      const currentXp = seller.current_xp || 0;
+      
+      if (currentXp < verifiedXpThreshold) {
+        const xpNeeded = verifiedXpThreshold - currentXp;
+        const { error: xpError } = await supabase.rpc('add_seller_xp', {
+          _seller_id: selectedSellerForXP,
+          _xp_amount: xpNeeded,
+          _event_type: 'admin_grant',
+          _description: `Admin bypass: Set to Verified rank threshold`,
+          _metadata: { 
+            granted_by: user?.id,
+            reason: 'Admin bypass to Verified',
+            bypass_progression: true
+          }
+        });
+
+        if (xpError) throw xpError;
+      }
+
+      // Update rank to Verified and commission rate to 40%
+      const { error: updateError } = await supabase
+        .from('sellers')
+        .update({
+          current_rank: 'Verified',
+          commission_rate: 40,
+          highest_rank: 'Verified',
+        })
+        .eq('id', selectedSellerForXP);
+
+      if (updateError) throw updateError;
+
+      // Log rank up
+      await supabase
+        .from('partner_activity_log')
+        .insert({
+          seller_id: selectedSellerForXP,
+          event_type: 'rank_up',
+          xp_value: 0,
+          description: 'Admin bypass: Ranked up to Verified',
+          metadata: {
+            old_rank: seller.current_rank || 'Recruit',
+            new_rank: 'Verified',
+            admin_bypass: true,
+            bypassed_by: user?.id,
+          },
+        });
+
+      toast({
+        title: "Progression Bypassed!",
+        description: `${seller.business_name} has been set to Verified rank with all tasks completed. They will see the Partner Pro popup on their next dashboard visit.`,
+      });
+
+      // Reset form
+      setSelectedSellerForXP("");
+      setXpSellerSearchOpen(false);
+
+      // Refresh seller data
+      fetchAdminData();
+    } catch (error: any) {
+      toast({
+        title: "Failed to bypass progression",
+        description: error.message,
+        variant: "destructive",
+      });
+    } finally {
+      setBypassingToVerified(false);
     }
   };
 
@@ -3432,6 +3576,7 @@ const AdminDashboard = () => {
                 </TabsContent>
 
                 <TabsContent value="xp-management">
+                  <div className="space-y-6">
                   <Card className="bg-card border-border">
                     <CardHeader>
                       <CardTitle className="flex items-center gap-2">
@@ -3586,6 +3731,61 @@ const AdminDashboard = () => {
                       })()}
                     </CardContent>
                   </Card>
+
+                  {/* Testing: Bypass to Verified */}
+                  <Card className="bg-gradient-to-r from-primary/10 to-primary/5 border-primary/20">
+                    <CardHeader>
+                      <CardTitle className="flex items-center gap-2 text-primary">
+                        <Zap className="w-5 h-5" />
+                        Testing: Bypass to Verified
+                      </CardTitle>
+                      <CardDescription>
+                        For testing purposes only. This will set a partner to Verified rank, complete all tasks, and set XP to 7000. They will see the Partner Pro popup on their next dashboard visit.
+                      </CardDescription>
+                    </CardHeader>
+                    <CardContent className="space-y-4">
+                      <div className="p-3 bg-primary/10 border border-primary/20 rounded-lg">
+                        <p className="text-sm text-muted-foreground mb-2">
+                          <strong className="text-primary">Selected Partner:</strong>{' '}
+                          {selectedSellerForXP ? (
+                            <span className="text-foreground">
+                              {sellers.find(s => s.id === selectedSellerForXP)?.business_name || 'Unknown'}
+                            </span>
+                          ) : (
+                            <span className="text-muted-foreground">Select a partner from above</span>
+                          )}
+                        </p>
+                        {selectedSellerForXP && (
+                          <div className="text-xs text-muted-foreground space-y-1 mt-2">
+                            <p>• Will be set to <strong className="text-primary">Verified</strong> rank</p>
+                            <p>• XP will be set to <strong className="text-primary">7000</strong> (if below threshold)</p>
+                            <p>• All <strong className="text-primary">12 tasks</strong> will be auto-completed</p>
+                            <p>• Commission rate will be set to <strong className="text-primary">40%</strong></p>
+                            <p>• Partner Pro popup will appear on next dashboard visit</p>
+                          </div>
+                        )}
+                      </div>
+                      <Button
+                        onClick={handleBypassToVerified}
+                        disabled={bypassingToVerified || !selectedSellerForXP}
+                        className="w-full bg-primary hover:bg-primary/90 text-primary-foreground"
+                        variant="default"
+                      >
+                        {bypassingToVerified ? (
+                          <>
+                            <Activity className="w-4 h-4 mr-2 animate-spin" />
+                            Bypassing Progression...
+                          </>
+                        ) : (
+                          <>
+                            <Zap className="w-4 h-4 mr-2" />
+                            Bypass to Verified Rank
+                          </>
+                        )}
+                      </Button>
+                    </CardContent>
+                  </Card>
+                  </div>
                 </TabsContent>
               </Tabs>
             </CardContent>
