@@ -1,4 +1,4 @@
-import { useEffect, useState, useRef } from "react";
+import { useEffect, useState, useRef, useCallback } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import Navigation from "@/components/Navigation";
 import Footer from "@/components/Footer";
@@ -11,7 +11,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { DollarSign, Users, TrendingUp, Package, Copy, Check, CheckCircle, XCircle, MessageSquare, AlertCircle, HelpCircle, Send, RefreshCw, LayoutDashboard, Building2, Boxes, CreditCard, Ticket, Mail, Trophy, MessageCircle, Phone, Zap } from "lucide-react";
+import { DollarSign, Users, TrendingUp, Package, Copy, Check, CheckCircle, XCircle, MessageSquare, AlertCircle, HelpCircle, Send, RefreshCw, LayoutDashboard, Building2, Boxes, CreditCard, Ticket, Mail, Trophy, MessageCircle, Phone, Zap, Bookmark, BookmarkCheck, FileText } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -21,7 +21,7 @@ import { Label } from "@/components/ui/label";
 import { isTabUnlocked, getTabUnlockRequirement, calculateProgressToNextRank, getNextRank, getRankInfo, RANK_INFO, getTasksForRank, type PartnerRank } from "@/lib/partner-progression";
 import { getWeeklyChallenges, getCurrentWeek, type WeeklyChallenge } from "@/lib/weekly-challenges";
 import { getLessonsForRank, type PartnerLesson as HardcodedLesson } from "@/lib/partner-lessons";
-import { BookOpen, Target, FileText, Lock } from "lucide-react";
+import { BookOpen, Target, Lock } from "lucide-react";
 import { Progress } from "@/components/ui/progress";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -32,8 +32,23 @@ const markdownToHtml = (markdown: string): string => {
   
   let html = markdown;
   
-  // Process lists first (before headers/paragraphs)
-  // Match list items and wrap them
+  // Process numbered lists first (before bullet lists and headers)
+  html = html.replace(/((?:^\d+\. .*$(?:\n|$))+)/gm, (match) => {
+    const items = match
+      .split('\n')
+      .filter(line => line.trim().match(/^\d+\. /))
+      .map(line => line.replace(/^\d+\. /, '').trim())
+      .filter(item => item.length > 0)
+      .map(item => {
+        // Process bold text within list items first
+        let processed = item.replace(/\*\*(.*?)\*\*/g, '<strong class="font-semibold text-primary">$1</strong>');
+        return `<li class="text-sm text-foreground mb-2 leading-relaxed ml-4">${processed}</li>`;
+      })
+      .join('\n');
+    return items ? `<ol class="list-decimal list-inside mb-4 space-y-2 ml-4">${items}</ol>` : match;
+  });
+  
+  // Process bullet lists (after numbered lists)
   html = html.replace(/((?:^[-*] .*$(?:\n|$))+)/gm, (match) => {
     const items = match
       .split('\n')
@@ -42,8 +57,8 @@ const markdownToHtml = (markdown: string): string => {
       .filter(item => item.length > 0)
       .map(item => {
         // Process bold text within list items
-        const processed = item.replace(/\*\*(.*?)\*\*/g, '<strong class="font-semibold text-primary">$1</strong>');
-        return `<li class="text-sm text-muted-foreground mb-2 leading-relaxed">${processed}</li>`;
+        let processed = item.replace(/\*\*(.*?)\*\*/g, '<strong class="font-semibold text-primary">$1</strong>');
+        return `<li class="text-sm text-foreground mb-2 leading-relaxed ml-4">${processed}</li>`;
       })
       .join('\n');
     return items ? `<ul class="list-disc list-inside mb-4 space-y-2 ml-4">${items}</ul>` : match;
@@ -54,7 +69,7 @@ const markdownToHtml = (markdown: string): string => {
   html = html.replace(/^## (.*)$/gim, '<h2 class="text-lg font-semibold mb-4 mt-8 text-primary border-b border-primary/20 pb-2 first:mt-0">$1</h2>');
   html = html.replace(/^# (.*)$/gim, '<h1 class="text-xl font-bold mb-4 mt-8 text-primary first:mt-0">$1</h1>');
   
-  // Bold with primary color (Vault yellow)
+  // Bold with primary color (Vault yellow) - process after lists to handle bold in lists
   html = html.replace(/\*\*(.*?)\*\*/g, '<strong class="font-semibold text-primary">$1</strong>');
   
   // Italic (only single asterisks that aren't part of bold)
@@ -209,8 +224,8 @@ interface SellerMessageData {
 interface LeaderboardEntry {
   rank: number;
   business_name: string;
-  total_sales: number;
-  total_commission: number;
+  current_xp: number;
+  current_rank: string;
   isCurrentUser: boolean;
 }
 
@@ -319,6 +334,7 @@ const PartnerDashboard = () => {
   const [selectedTicket, setSelectedTicket] = useState<TicketData | null>(null);
   const [ticketMessages, setTicketMessages] = useState<TicketMessageData[]>([]);
   const ticketMessagesEndRef = useRef<HTMLDivElement>(null);
+  const taskCompletionRef = useRef<Set<string>>(new Set());
   const [newTicketMessage, setNewTicketMessage] = useState("");
   const [sendingTicketMessage, setSendingTicketMessage] = useState(false);
   const [showTicketDialog, setShowTicketDialog] = useState(false);
@@ -350,6 +366,13 @@ const PartnerDashboard = () => {
   const [submittingQuiz, setSubmittingQuiz] = useState(false);
   const [xpNotification, setXpNotification] = useState<{ xp: number; message: string } | null>(null);
   const [viewedAutomations, setViewedAutomations] = useState<Set<string>>(new Set());
+  const [bookmarkedAutomations, setBookmarkedAutomations] = useState<Set<string>>(new Set());
+  const [automationsWithPricingViewed, setAutomationsWithPricingViewed] = useState<Set<string>>(new Set());
+  const [fullyReadAutomations, setFullyReadAutomations] = useState<Set<string>>(new Set());
+  const [showAutomationBrief, setShowAutomationBrief] = useState(false);
+  const [selectedAutomationBrief, setSelectedAutomationBrief] = useState<AutomationData | null>(null);
+  const [automationBriefData, setAutomationBriefData] = useState<any>(null);
+  const [briefViewStartTime, setBriefViewStartTime] = useState<number | null>(null);
   const [showRanksDialog, setShowRanksDialog] = useState(false);
   const [showVerifiedRankPopup, setShowVerifiedRankPopup] = useState(false);
   const [showPartnerProWelcomePopup, setShowPartnerProWelcomePopup] = useState(false);
@@ -399,6 +422,10 @@ const PartnerDashboard = () => {
   const [submittingPitchReflection, setSubmittingPitchReflection] = useState(false);
   const [checkingReferrals, setCheckingReferrals] = useState(false);
   
+  // One-sentence pitch state
+  const [oneSentencePitch, setOneSentencePitch] = useState<string>("");
+  const [submittingPitch, setSubmittingPitch] = useState(false);
+  
   // Challenges and badges state
   const [activeChallenges, setActiveChallenges] = useState<PartnerChallenge[]>([]);
   const [earnedBadges, setEarnedBadges] = useState<BadgeEarning[]>([]);
@@ -415,6 +442,209 @@ const PartnerDashboard = () => {
       fetchSellerData();
     }
   }, [user]);
+
+  // Auto-complete "View 3 Automation Cards" task once 3+ automations are viewed
+  useEffect(() => {
+    if (!sellerData?.id || lessons.length === 0) return;
+
+    const automationPreviewLesson = lessons.find(
+      (l) => l.title === 'View 3 Automation Cards' && l.rank_required === 'Recruit'
+    );
+
+    if (!automationPreviewLesson) return;
+    if (completedLessons.has(automationPreviewLesson.id)) return;
+    if (viewedAutomations.size < 3) return;
+
+    (async () => {
+      try {
+        await addXP(
+          automationPreviewLesson.xp_reward,
+          'task_completed',
+          `Completed: ${automationPreviewLesson.title}`,
+          { lesson_id: automationPreviewLesson.id }
+        );
+        setCompletedLessons((prev) => new Set([...prev, automationPreviewLesson.id]));
+      } catch (error) {
+        console.error('Error auto-completing Automation Preview task from effect:', error);
+      }
+    })();
+  }, [sellerData?.id, lessons, completedLessons, viewedAutomations]);
+
+  // Auto-complete bookmark tasks when bookmarks are added
+  useEffect(() => {
+    if (!sellerData?.id || lessons.length === 0) return;
+
+    // Check for "Bookmark 1 Automation" (Recruit Plus)
+    const bookmark1Lesson = lessons.find(l => l.title === 'Bookmark 1 Automation' && l.rank_required === 'Recruit Plus');
+    if (bookmark1Lesson && !completedLessons.has(bookmark1Lesson.id) && !taskCompletionRef.current.has(bookmark1Lesson.id) && bookmarkedAutomations.size >= 1) {
+      (async () => {
+        // Mark as processing to prevent duplicate completions
+        taskCompletionRef.current.add(bookmark1Lesson.id);
+        try {
+          // Check if already completed in activity log
+          const { data: existingCompletion } = await supabase
+            .from("partner_activity_log")
+            .select("id")
+            .eq("seller_id", sellerData.id)
+            .eq("event_type", "task_completed")
+            .eq("metadata->>lesson_id", bookmark1Lesson.id)
+            .maybeSingle();
+          
+          if (!existingCompletion) {
+            // Update completedLessons immediately to prevent re-triggering
+            setCompletedLessons(prev => new Set([...prev, bookmark1Lesson.id]));
+            await addXP(bookmark1Lesson.xp_reward, 'task_completed', `Completed: ${bookmark1Lesson.title}`, { 
+              lesson_id: bookmark1Lesson.id 
+            });
+          } else {
+            // Already completed, remove from ref
+            taskCompletionRef.current.delete(bookmark1Lesson.id);
+          }
+        } catch (error) {
+          console.error('Error auto-completing Bookmark 1 task from effect:', error);
+          taskCompletionRef.current.delete(bookmark1Lesson.id);
+        }
+      })();
+    }
+
+    // Check for "Bookmark or Favourite Two Automations" (Apprentice Plus)
+    const bookmark2Lesson = lessons.find(l => l.title === 'Bookmark or Favourite Two Automations' && l.rank_required === 'Apprentice Plus');
+    if (bookmark2Lesson && !completedLessons.has(bookmark2Lesson.id) && !taskCompletionRef.current.has(bookmark2Lesson.id) && bookmarkedAutomations.size >= 2) {
+      (async () => {
+        // Mark as processing to prevent duplicate completions
+        taskCompletionRef.current.add(bookmark2Lesson.id);
+        try {
+          // Check if already completed in activity log
+          const { data: existingCompletion } = await supabase
+            .from("partner_activity_log")
+            .select("id")
+            .eq("seller_id", sellerData.id)
+            .eq("event_type", "task_completed")
+            .eq("metadata->>lesson_id", bookmark2Lesson.id)
+            .maybeSingle();
+          
+          if (!existingCompletion) {
+            // Update completedLessons immediately to prevent re-triggering
+            setCompletedLessons(prev => new Set([...prev, bookmark2Lesson.id]));
+            await addXP(bookmark2Lesson.xp_reward, 'task_completed', `Completed: ${bookmark2Lesson.title}`, { 
+              lesson_id: bookmark2Lesson.id 
+            });
+            toast({
+              title: "Task Completed! 🎉",
+              description: `You've bookmarked 2 automations and earned ${bookmark2Lesson.xp_reward} XP!`,
+            });
+          } else {
+            // Already completed, remove from ref
+            taskCompletionRef.current.delete(bookmark2Lesson.id);
+          }
+        } catch (error) {
+          console.error('Error auto-completing Bookmark 2 task from effect:', error);
+          taskCompletionRef.current.delete(bookmark2Lesson.id);
+        }
+      })();
+    }
+
+    // Check for "Explore Five Automations" (Apprentice Plus)
+    const exploreFiveLesson = lessons.find(l => l.title === 'Explore Five Automations' && l.rank_required === 'Apprentice Plus');
+    if (exploreFiveLesson && !completedLessons.has(exploreFiveLesson.id) && !taskCompletionRef.current.has(exploreFiveLesson.id) && automationsWithPricingViewed.size >= 5) {
+      (async () => {
+        // Mark as processing to prevent duplicate completions
+        taskCompletionRef.current.add(exploreFiveLesson.id);
+        try {
+          // Check if already completed in activity log
+          const { data: existingCompletion } = await supabase
+            .from("partner_activity_log")
+            .select("id")
+            .eq("seller_id", sellerData.id)
+            .eq("event_type", "task_completed")
+            .eq("metadata->>lesson_id", exploreFiveLesson.id)
+            .maybeSingle();
+          
+          if (!existingCompletion) {
+            // Update completedLessons immediately to prevent re-triggering
+            setCompletedLessons(prev => new Set([...prev, exploreFiveLesson.id]));
+            await addXP(exploreFiveLesson.xp_reward, 'task_completed', `Completed: ${exploreFiveLesson.title}`, { 
+              lesson_id: exploreFiveLesson.id 
+            });
+            toast({
+              title: "Task Completed! 🎉",
+              description: `You've explored 5 automations and earned ${exploreFiveLesson.xp_reward} XP!`,
+            });
+          } else {
+            // Already completed, remove from ref
+            taskCompletionRef.current.delete(exploreFiveLesson.id);
+          }
+        } catch (error) {
+          console.error('Error auto-completing Explore Five task from effect:', error);
+          taskCompletionRef.current.delete(exploreFiveLesson.id);
+        }
+      })();
+    }
+  }, [sellerData?.id, lessons.length, bookmarkedAutomations.size, automationsWithPricingViewed.size]);
+
+  // Auto-complete "Read One Automation in Full" task when an automation is fully read
+  useEffect(() => {
+    if (!sellerData?.id || lessons.length === 0 || fullyReadAutomations.size === 0) return;
+
+    // Check if at least one automation has been fully read
+    const readAutomationId = Array.from(fullyReadAutomations)[0];
+    if (!readAutomationId) return;
+
+    const readFullLesson = lessons.find(l => l.title === 'Read One Automation in Full (Details + Features)' && l.rank_required === 'Apprentice Plus');
+    if (readFullLesson && !completedLessons.has(readFullLesson.id) && !taskCompletionRef.current.has(readFullLesson.id)) {
+      (async () => {
+        // Mark as processing to prevent duplicate completions
+        taskCompletionRef.current.add(readFullLesson.id);
+        try {
+          // Check if already completed in activity log
+          const { data: existingCompletion } = await supabase
+            .from("partner_activity_log")
+            .select("id")
+            .eq("seller_id", sellerData.id)
+            .eq("event_type", "task_completed")
+            .eq("metadata->>lesson_id", readFullLesson.id)
+            .maybeSingle();
+          
+          if (!existingCompletion) {
+            // Update completedLessons immediately to prevent re-triggering
+            setCompletedLessons(prev => new Set([...prev, readFullLesson.id]));
+            await addXP(readFullLesson.xp_reward, 'task_completed', `Completed: ${readFullLesson.title}`, { 
+              lesson_id: readFullLesson.id 
+            });
+            toast({
+              title: "Task Completed! 🎉",
+              description: `You've read a full automation and earned ${readFullLesson.xp_reward} XP!`,
+            });
+          } else {
+            // Already completed, remove from ref
+            taskCompletionRef.current.delete(readFullLesson.id);
+          }
+        } catch (error) {
+          console.error('Error auto-completing Read One Automation task from effect:', error);
+          taskCompletionRef.current.delete(readFullLesson.id);
+        }
+      })();
+    }
+  }, [sellerData?.id, lessons.length, fullyReadAutomations.size]);
+
+  // Track "Open Overview Tab" task completion
+  useEffect(() => {
+    if (activeTab === 'overview' && sellerData?.id && lessons.length > 0) {
+      const overviewLesson = lessons.find(l => l.title === 'Open Overview Tab' && l.rank_required === 'Recruit');
+      if (overviewLesson && !completedLessons.has(overviewLesson.id)) {
+        addXP(overviewLesson.xp_reward, 'task_completed', `Completed: ${overviewLesson.title}`, { 
+          lesson_id: overviewLesson.id 
+        }).then(() => {
+          setCompletedLessons(prev => new Set([...prev, overviewLesson.id]));
+          if (sellerData?.id) {
+            fetchProgressionData(sellerData.id);
+          }
+        }).catch((error: any) => {
+          console.error("Error completing overview tab task:", error);
+        });
+      }
+    }
+  }, [activeTab, sellerData?.id, lessons.length]);
 
   const fetchSellerData = async () => {
     try {
@@ -462,6 +692,118 @@ const PartnerDashboard = () => {
       }
 
       setSellerData(seller);
+
+      // Update login streak and track unique login days
+      if (seller.id) {
+        try {
+          // Call update_login_streak to update streak
+          await supabase.rpc('update_login_streak', {
+            _seller_id: seller.id
+          });
+
+          // Check if today is a new login day by checking activity log
+          const today = new Date().toISOString().split('T')[0]; // Get date in YYYY-MM-DD format
+          const { data: todayLogin } = await supabase
+            .from("partner_activity_log")
+            .select("id")
+            .eq("seller_id", seller.id)
+            .eq("event_type", "login_day")
+            .eq("metadata->>login_date", today)
+            .maybeSingle();
+
+          // If no login recorded for today, record it
+          if (!todayLogin) {
+            await supabase.from("partner_activity_log").insert({
+              seller_id: seller.id,
+              event_type: "login_day",
+              xp_value: 0,
+              description: `Logged in on ${today}`,
+              metadata: { login_date: today }
+            });
+
+            // Check unique login days count
+            const { data: loginDays } = await supabase
+              .from("partner_activity_log")
+              .select("metadata")
+              .eq("seller_id", seller.id)
+              .eq("event_type", "login_day");
+
+            if (loginDays) {
+              // Get unique login dates
+              const uniqueDates = new Set(
+                loginDays.map((log: any) => log.metadata?.login_date).filter(Boolean)
+              );
+
+              // Check if this completes the "Log In on 2 Different Days" task
+              if (uniqueDates.size >= 2 && lessons.length > 0) {
+                const loginDaysLesson = lessons.find(l => l.title === 'Log In on 2 Different Days' && l.rank_required === 'Apprentice Plus');
+                if (loginDaysLesson && !completedLessons.has(loginDaysLesson.id)) {
+                  // Check if already completed
+                  const { data: existingCompletion } = await supabase
+                    .from("partner_activity_log")
+                    .select("id")
+                    .eq("seller_id", seller.id)
+                    .eq("event_type", "task_completed")
+                    .eq("metadata->>lesson_id", loginDaysLesson.id)
+                    .maybeSingle();
+
+                  if (!existingCompletion) {
+                    await addXP(loginDaysLesson.xp_reward, 'task_completed', `Completed: ${loginDaysLesson.title}`, { 
+                      lesson_id: loginDaysLesson.id 
+                    });
+                    setCompletedLessons(prev => new Set([...prev, loginDaysLesson.id]));
+                    toast({
+                      title: "Task Completed! 🎉",
+                      description: `You've logged in on 2 different days and earned ${loginDaysLesson.xp_reward} XP!`,
+                    });
+                    // Refresh progression data
+                    await fetchProgressionData(seller.id);
+                  }
+                }
+              }
+            }
+            
+            // Check if this completes the "Log In on 3 Consecutive Days" task
+            // Get the current login streak from seller data (refresh after update_login_streak)
+            const { data: updatedSeller } = await supabase
+              .from("sellers")
+              .select("login_streak")
+              .eq("id", seller.id)
+              .single();
+            
+            const currentStreak = updatedSeller?.login_streak || seller.login_streak || 0;
+            if (currentStreak >= 3 && lessons.length > 0) {
+              const loginStreakLesson = lessons.find(l => l.title === 'Log In on 3 Consecutive Days' && l.rank_required === 'Agent Plus');
+              if (loginStreakLesson && !completedLessons.has(loginStreakLesson.id)) {
+                // Check if already completed
+                const { data: existingCompletion } = await supabase
+                  .from("partner_activity_log")
+                  .select("id")
+                  .eq("seller_id", seller.id)
+                  .eq("event_type", "task_completed")
+                  .eq("metadata->>lesson_id", loginStreakLesson.id)
+                  .maybeSingle();
+
+                if (!existingCompletion) {
+                  await addXP(loginStreakLesson.xp_reward, 'task_completed', `Completed: ${loginStreakLesson.title}`, { 
+                    lesson_id: loginStreakLesson.id 
+                  });
+                  setCompletedLessons(prev => new Set([...prev, loginStreakLesson.id]));
+                  toast({
+                    title: "Task Completed! 🎉",
+                    description: `You've logged in on 3 consecutive days and earned ${loginStreakLesson.xp_reward} XP!`,
+                  });
+                  // Refresh progression data
+                  await fetchProgressionData(seller.id);
+                }
+              }
+            }
+          }
+        } catch (error) {
+          console.error('Error updating login tracking:', error);
+          // Don't block dashboard load if login tracking fails
+        }
+      }
 
       // Check if user just reached Verified rank and show popup
       if (seller.current_rank === 'Verified' && !localStorage.getItem('verified_rank_popup_seen')) {
@@ -746,6 +1088,18 @@ const PartnerDashboard = () => {
   };
 
   const handleUpdateReferralCode = async () => {
+    // Only allow editing referral code at Verified rank or higher (Verified unlocks referral_link)
+    const currentRank = sellerData?.current_rank || 'Recruit';
+    const allowedRanks: PartnerRank[] = ['Verified', 'Verified Plus', 'Partner', 'Partner Plus', 'Partner Pro'];
+    if (!allowedRanks.includes(currentRank)) {
+      toast({
+        title: "Referral code locked",
+        description: "You can only edit your referral code once you reach Verified rank.",
+        variant: "destructive",
+      });
+      return;
+    }
+
     if (!newReferralCode.trim()) {
       toast({
         title: "Referral code required",
@@ -798,7 +1152,7 @@ const PartnerDashboard = () => {
     }
   };
 
-  const copyReferralLink = (type: 'client' | 'partner') => {
+  const copyReferralLink = async (type: 'client' | 'partner') => {
     const link = type === 'client' 
       ? `${window.location.origin}/for-businesses?ref=${sellerData?.referral_code}`
       : `${window.location.origin}/partners?ref=${sellerData?.referral_code}`;
@@ -811,6 +1165,24 @@ const PartnerDashboard = () => {
         : "Share this link with potential partners",
     });
     setTimeout(() => setCopied(false), 2000);
+
+    // Track "Copy Your Referral Link" task completion
+    if (type === 'client' && sellerData?.id) {
+      const copyLinkLesson = lessons.find(l => l.title === 'Copy Your Referral Link' && l.rank_required === 'Recruit');
+      if (copyLinkLesson && !completedLessons.has(copyLinkLesson.id)) {
+        try {
+          await addXP(copyLinkLesson.xp_reward, 'task_completed', `Completed: ${copyLinkLesson.title}`, { 
+            lesson_id: copyLinkLesson.id 
+          });
+          setCompletedLessons(prev => new Set([...prev, copyLinkLesson.id]));
+          if (sellerData?.id) {
+            await fetchProgressionData(sellerData.id);
+          }
+        } catch (error: any) {
+          console.error("Error completing copy link task:", error);
+        }
+      }
+    }
   };
 
   const [loadingLessons, setLoadingLessons] = useState(true);
@@ -842,7 +1214,7 @@ const PartnerDashboard = () => {
       setLessons(lessonsData);
 
       // Store lessonsData for referral check (before async operations)
-      const inviteTaskLessonData = lessonsData.find((l: any) => l.title === 'Invite a Friend' && l.rank_required === 'Partner');
+      const inviteTaskLessonData = lessonsData.find((l: any) => l.title === 'Invite a Friend' && l.rank_required === 'Verified');
 
       // Fetch quiz results and completions from activity log (using hardcoded lesson IDs)
       const { data: quizResultsData, error: quizResultsError } = await supabase
@@ -866,15 +1238,64 @@ const PartnerDashboard = () => {
         console.warn("Error fetching task completions:", taskCompletionsError);
       }
       
+      // Fetch seller's current data to check if they have a saved script
+      const { data: sellerDataCheck } = await supabase
+        .from("sellers")
+        .select("custom_sales_script")
+        .eq("id", sellerId)
+        .maybeSingle();
+      
+      // Check if seller has any demo clients (for "Add Demo Client" task verification)
+      const { data: demoClientsData } = await supabase
+        .from("clients")
+        .select("id")
+        .eq("seller_id", sellerId)
+        .eq("is_demo", true)
+        .limit(1);
+      
+      const hasDemoClient = (demoClientsData && demoClientsData.length > 0) || false;
+      
       // Combine quiz results and task completions (using lesson_id from metadata)
       const quizCompletedIds = new Set(
         (quizResultsData || [])
           .map((qr: any) => qr.metadata?.lesson_id)
           .filter((id: any) => id) // Filter out null/undefined
       );
+      
+      // Filter task completions: "Create Your Sales Script" should only be marked complete if script actually exists
+      // "Add Demo Client" should only be marked complete if a demo client actually exists
       const taskCompletedIds = new Set(
         (taskCompletionsData || [])
-          .map((tc: any) => tc.metadata?.lesson_id)
+          .map((tc: any) => {
+            const lessonId = tc.metadata?.lesson_id;
+            if (!lessonId) return null;
+            
+            // Special check for "Create Your Sales Script" task (stage-3-agent-9)
+            // Only mark as completed if the user actually has a saved script
+            if (lessonId === 'stage-3-agent-9') {
+              // Check if script was saved by looking at metadata or if seller has custom_sales_script
+              const wasAdminBypass = tc.metadata?.admin_bypass === true;
+              const hasSavedScript = sellerDataCheck?.custom_sales_script && sellerDataCheck.custom_sales_script.trim().length > 0;
+              
+              // Only count as completed if not admin bypass OR if script actually exists
+              if (wasAdminBypass && !hasSavedScript) {
+                return null; // Don't count admin bypass if no script saved
+              }
+            }
+            
+            // Special check for "Add Demo Client" task (stage-4-partner-12)
+            // Only mark as completed if the user actually has a demo client
+            if (lessonId === 'stage-4-partner-12') {
+              const wasAdminBypass = tc.metadata?.admin_bypass === true;
+              
+              // Only count as completed if not admin bypass OR if demo client actually exists
+              if (wasAdminBypass && !hasDemoClient) {
+                return null; // Don't count admin bypass if no demo client exists
+              }
+            }
+            
+            return lessonId;
+          })
           .filter((id: any) => id) // Filter out null/undefined
       );
       
@@ -901,17 +1322,24 @@ const PartnerDashboard = () => {
 
       // Automatically check for referred partners if "Invite a Friend" task is available
       // This ensures the task gets marked as completed if someone has already signed up
-      if (inviteTaskLessonData && rank === 'Partner' && sellerId) {
+      // Only check on initial load, not after every task completion
+      // Use a ref to track if we've already checked on this page load
+      if (inviteTaskLessonData && rank === 'Verified' && sellerId) {
         // Check if task is not already completed
         const inviteTaskCompleted = fetchedCompleted.has(inviteTaskLessonData.id);
         if (!inviteTaskCompleted) {
-          // Check for referred partners in the background (don't await to avoid blocking)
-          // We'll check after a short delay to ensure state is updated
-          setTimeout(() => {
-            checkReferredPartners().catch(err => {
-              console.log("Background referral check failed (non-critical):", err);
-            });
-          }, 500);
+          // Only check once on initial load - use a flag to prevent repeated checks
+          const hasCheckedReferrals = sessionStorage.getItem('referral_check_done');
+          if (!hasCheckedReferrals) {
+            sessionStorage.setItem('referral_check_done', 'true');
+            // Check for referred partners in the background (don't await to avoid blocking)
+            // We'll check after a short delay to ensure state is updated
+            setTimeout(() => {
+              checkReferredPartners(true).catch(err => {
+                console.log("Background referral check failed (non-critical):", err);
+              });
+            }, 500);
+          }
         }
       }
 
@@ -976,7 +1404,7 @@ const PartnerDashboard = () => {
       if (earnedBadgesError) throw earnedBadgesError;
       setEarnedBadges(earnedBadgesData || []);
 
-      // Fetch viewed automations for Automation Preview task tracking
+      // Fetch viewed automations for \"View 3 Automation Cards\" task tracking
       // Use partner_activity_log with event_type 'automation_view' and metadata containing automation_id
       const { data: automationViewsData, error: automationViewsError } = await supabase
         .from("partner_activity_log")
@@ -984,19 +1412,64 @@ const PartnerDashboard = () => {
         .eq("seller_id", sellerId)
         .eq("event_type", "automation_view");
 
+      let viewedIdsSet = new Set<string>();
       if (automationViewsError) {
         // If error, just log it and continue - this is not critical
         console.warn("Error fetching automation views:", automationViewsError);
         setViewedAutomations(new Set());
       } else {
-        const viewedIds = new Set(
+        viewedIdsSet = new Set<string>(
           (automationViewsData || [])
             .map((av: any) => av.metadata?.automation_id)
             .filter((id: any) => id) // Filter out null/undefined
         );
-        setViewedAutomations(viewedIds);
+        setViewedAutomations(viewedIdsSet);
+        
+        // Also set pricing viewed for these automations (for "Explore Five Automations" task)
+        setAutomationsWithPricingViewed(new Set(viewedIdsSet));
+      }
+
+      // Fetch bookmarked automations
+      const { data: bookmarksData, error: bookmarksError } = await supabase
+        .from("automation_bookmarks")
+        .select("automation_id")
+        .eq("seller_id", sellerId);
+
+      if (bookmarksError) {
+        console.warn("Error fetching bookmarks:", bookmarksError);
+        setBookmarkedAutomations(new Set());
+      } else {
+        const bookmarkIds = new Set(
+          (bookmarksData || []).map((b: any) => b.automation_id).filter((id: any) => id)
+        );
+        setBookmarkedAutomations(bookmarkIds);
+        
+        // Note: Auto-completion of bookmark tasks is handled by useEffect
+        // to avoid infinite loops. Don't auto-complete here.
       }
       
+      // Note: Auto-completion of "Explore Five Automations" is handled by useEffect
+      // to avoid infinite loops. Don't auto-complete here.
+
+      // Fetch fully read automations for "Read One Automation in Full" task tracking
+      const { data: fullyReadData, error: fullyReadError } = await supabase
+        .from("partner_activity_log")
+        .select("metadata")
+        .eq("seller_id", sellerId)
+        .eq("event_type", "automation_fully_read");
+
+      if (fullyReadError) {
+        console.warn("Error fetching fully read automations:", fullyReadError);
+        setFullyReadAutomations(new Set());
+      } else {
+        const readIds = new Set<string>(
+          (fullyReadData || [])
+            .map((a: any) => a.metadata?.automation_id)
+            .filter((id: any) => id)
+        );
+        setFullyReadAutomations(readIds);
+      }
+
       setLoadingLessons(false);
     } catch (error: any) {
       console.error("Error fetching progression data:", error);
@@ -1007,12 +1480,12 @@ const PartnerDashboard = () => {
   const fetchLeaderboard = async (currentSellerId: string) => {
     setLoadingLeaderboard(true);
     try {
-      // Fetch top sellers by total_sales (excluding "The Vault Network")
+      // Fetch top sellers by current_xp (excluding "The Vault Network")
       const { data: sellers, error } = await supabase
         .from("sellers")
-        .select("id, business_name, total_sales, total_commission")
+        .select("id, business_name, current_xp, current_rank")
         .neq("business_name", "The Vault Network")
-        .order("total_sales", { ascending: false })
+        .order("current_xp", { ascending: false })
         .limit(10);
 
       if (error) throw error;
@@ -1021,8 +1494,8 @@ const PartnerDashboard = () => {
       const entries: LeaderboardEntry[] = (sellers || []).map((seller, index) => ({
         rank: index + 1,
         business_name: seller.business_name,
-        total_sales: seller.total_sales || 0,
-        total_commission: seller.total_commission || 0,
+        current_xp: seller.current_xp || 0,
+        current_rank: seller.current_rank || 'Recruit',
         isCurrentUser: seller.id === currentSellerId,
       }));
 
@@ -1229,6 +1702,7 @@ const PartnerDashboard = () => {
 
       if (error) {
         const errorData = error as any;
+        console.error("Rank up error:", errorData);
         if (errorData.message) {
           toast({
             title: "Cannot advance rank",
@@ -1251,9 +1725,60 @@ const PartnerDashboard = () => {
           description: `Congratulations! You've advanced to ${data.new_rank}!`,
         });
         
+        // Send Discord webhook announcement
+        try {
+          const businessName = sellerData.business_name || 'A partner';
+          const discordWebhookUrl = 'https://discord.com/api/webhooks/1439757043941642261/f3TP8LhMrMufCABBef0mhDjUH-49Nk6o9hL9gb-c7C6SvyVnURcpxOVL2Hl7-J4443wT';
+          
+          const embed = {
+            title: "🎉 Rank Up!",
+            description: `**${businessName}** has ranked up to **${data.new_rank}**!`,
+            color: 0x00ff00, // Green color
+            fields: [
+              {
+                name: "Previous Rank",
+                value: data.old_rank || 'N/A',
+                inline: true
+              },
+              {
+                name: "New Rank",
+                value: data.new_rank,
+                inline: true
+              },
+              {
+                name: "Current XP",
+                value: sellerData.current_xp?.toString() || '0',
+                inline: true
+              }
+            ],
+            timestamp: new Date().toISOString(),
+            footer: {
+              text: "The Vault Network Partner Progression"
+            }
+          };
+
+          await fetch(discordWebhookUrl, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              embeds: [embed]
+            })
+          });
+        } catch (error) {
+          console.error('Error sending Discord webhook:', error);
+          // Don't show error to user - webhook failure shouldn't affect rank up
+        }
+        
         // Refresh seller data to get updated rank
         await fetchSellerData();
-        await fetchProgressionData(sellerData.id, data.new_rank as PartnerRank);
+        // Wait a moment for seller data to update, then refresh progression
+        setTimeout(async () => {
+          if (sellerData?.id) {
+            await fetchProgressionData(sellerData.id, data.new_rank as PartnerRank);
+          }
+        }, 500);
         
         // Show Verified rank popup if user just reached Verified
         if (data.new_rank === 'Verified') {
@@ -1265,6 +1790,11 @@ const PartnerDashboard = () => {
           }
         }
       } else if (data && !data.success) {
+        console.error("Rank up failed:", data);
+        // Log missing tasks if available
+        if (data.missing_tasks && Array.isArray(data.missing_tasks)) {
+          console.log("Missing tasks:", data.missing_tasks);
+        }
         toast({
           title: "Cannot advance rank",
           description: data.message || "Requirements not met",
@@ -1363,12 +1893,12 @@ const PartnerDashboard = () => {
     }
   };
 
-  // Handle completing a lesson/task
+  // Handle completing a lesson/task/quiz
   const handleCompleteLesson = async (lesson: PartnerLesson) => {
     if (!sellerData?.id || completedLessons.has(lesson.id)) return;
 
     try {
-      if (lesson.lesson_type === 'course' && lesson.quiz_questions) {
+      if ((lesson.lesson_type === 'course' || lesson.lesson_type === 'quiz') && lesson.quiz_questions) {
         // Open quiz dialog - reset all quiz state
         setSelectedLesson(lesson);
         setQuizAnswers({});
@@ -1424,6 +1954,23 @@ const PartnerDashboard = () => {
 
       const score = Math.round((correctCount / questions.length) * 100);
 
+      // Check if this quiz requires ≥80% to pass
+      const isVaultBasicsQuiz = selectedLesson.title === 'Vault Basics Quiz';
+      const isSalesFoundations = selectedLesson.title === 'Sales Foundations';
+      const isOutreachProcess = selectedLesson.title === 'The Outreach Process';
+      const minScoreRequired = (isVaultBasicsQuiz || isSalesFoundations || isOutreachProcess) ? 80 : 0;
+
+      if ((isVaultBasicsQuiz || isSalesFoundations || isOutreachProcess) && score < minScoreRequired) {
+        const quizName = isVaultBasicsQuiz ? 'Vault Basics Quiz' : isSalesFoundations ? 'Sales Foundations' : 'The Outreach Process';
+        toast({
+          title: "Quiz Not Passed",
+          description: `You scored ${score}%. You need at least ${minScoreRequired}% to pass ${quizName}. Please try again!`,
+          variant: "destructive",
+        });
+        setSubmittingQuiz(false);
+        return;
+      }
+
       // Award XP (this will also create an activity_log entry via the RPC function)
       // addXP already refreshes seller data and progression data, so no need to refresh again
       await addXP(selectedLesson.xp_reward, 'quiz_completed', `Completed quiz: ${selectedLesson.title}`, {
@@ -1459,6 +2006,179 @@ const PartnerDashboard = () => {
     }
   };
 
+  // Handle bookmark toggle
+  const handleToggleBookmark = async (automationId: string) => {
+    if (!sellerData?.id) return;
+
+    try {
+      const isBookmarked = bookmarkedAutomations.has(automationId);
+      
+      if (isBookmarked) {
+        // Remove bookmark
+        const { error } = await supabase
+          .from("automation_bookmarks")
+          .delete()
+          .eq("seller_id", sellerData.id)
+          .eq("automation_id", automationId);
+
+        if (error) throw error;
+
+        const updated = new Set(bookmarkedAutomations);
+        updated.delete(automationId);
+        setBookmarkedAutomations(updated);
+
+        toast({
+          title: "Bookmark Removed",
+          description: "Automation removed from bookmarks",
+        });
+      } else {
+        // Add bookmark
+        const { error } = await supabase
+          .from("automation_bookmarks")
+          .insert({
+            seller_id: sellerData.id,
+            automation_id: automationId,
+          });
+
+        if (error) throw error;
+
+        const updated = new Set(bookmarkedAutomations);
+        updated.add(automationId);
+        setBookmarkedAutomations(updated);
+
+        toast({
+          title: "Bookmarked! ✓",
+          description: "Automation added to your bookmarks",
+        });
+
+        // Check if this completes the Bookmark tasks
+        // Check for "Bookmark 1 Automation" (Recruit Plus)
+        const bookmark1Lesson = lessons.find(l => l.title === 'Bookmark 1 Automation' && l.rank_required === 'Recruit Plus');
+        if (bookmark1Lesson && !completedLessons.has(bookmark1Lesson.id) && updated.size >= 1) {
+          try {
+            await addXP(bookmark1Lesson.xp_reward, 'task_completed', `Completed: ${bookmark1Lesson.title}`, { 
+              lesson_id: bookmark1Lesson.id 
+            });
+            setCompletedLessons(prev => new Set([...prev, bookmark1Lesson.id]));
+            if (sellerData?.id) {
+              await fetchProgressionData(sellerData.id);
+            }
+          } catch (error: any) {
+            console.error("Error completing bookmark task:", error);
+          }
+        }
+        
+        // Check for "Bookmark or Favourite Two Automations" (Apprentice Plus)
+        const bookmark2Lesson = lessons.find(l => l.title === 'Bookmark or Favourite Two Automations' && l.rank_required === 'Apprentice Plus');
+        if (bookmark2Lesson && !completedLessons.has(bookmark2Lesson.id) && updated.size >= 2) {
+          try {
+            await addXP(bookmark2Lesson.xp_reward, 'task_completed', `Completed: ${bookmark2Lesson.title}`, { 
+              lesson_id: bookmark2Lesson.id 
+            });
+            setCompletedLessons(prev => new Set([...prev, bookmark2Lesson.id]));
+            if (sellerData?.id) {
+              await fetchProgressionData(sellerData.id);
+            }
+            toast({
+              title: "Task Completed!",
+              description: `You earned ${bookmark2Lesson.xp_reward} XP for bookmarking two automations!`,
+            });
+          } catch (error: any) {
+            console.error("Error completing bookmark 2 task:", error);
+          }
+        }
+      }
+    } catch (error: any) {
+      toast({
+        title: "Error",
+        description: error.message || "Failed to update bookmark",
+        variant: "destructive",
+      });
+    }
+  };
+
+  // Handle viewing automation brief
+  const handleViewBrief = async (automation: AutomationData) => {
+    setSelectedAutomationBrief(automation);
+    
+    // Fetch brief data
+    try {
+      const { data: briefData, error: briefError } = await supabase
+        .from("automation_briefs")
+        .select("*")
+        .eq("automation_id", automation.id)
+        .maybeSingle();
+
+      if (briefError && briefError.code !== 'PGRST116') { // PGRST116 is "not found"
+        console.warn("Error fetching brief:", briefError);
+      }
+
+      setAutomationBriefData(briefData);
+      setShowAutomationBrief(true);
+      setBriefViewStartTime(Date.now());
+
+      // Check if this completes the Read Brief task (Recruit Plus)
+      const briefLesson = lessons.find(l => l.title === 'Read One Full Automation Brief' && l.rank_required === 'Recruit Plus');
+      if (briefLesson && !completedLessons.has(briefLesson.id)) {
+        // Track that brief was opened - will complete when closed after being viewed
+        // This will be handled in the dialog close handler
+      }
+    } catch (error: any) {
+      console.error("Error viewing brief:", error);
+      // Still show the brief dialog even if there's no brief data
+      setShowAutomationBrief(true);
+      setBriefViewStartTime(Date.now());
+    }
+  };
+  
+  // Handle brief dialog close - check if it was read fully
+  const handleBriefDialogClose = async (open: boolean) => {
+    if (!open && briefViewStartTime && selectedAutomationBrief) {
+      const viewDuration = Date.now() - briefViewStartTime;
+      // If brief was open for at least 5 seconds, consider it read
+      if (viewDuration >= 5000) {
+        // Check for "Read One Full Automation Brief" (Recruit Plus)
+        const briefLesson = lessons.find(l => l.title === 'Read One Full Automation Brief' && l.rank_required === 'Recruit Plus');
+        if (briefLesson && !completedLessons.has(briefLesson.id) && !fullyReadAutomations.has(selectedAutomationBrief.id)) {
+          try {
+            await addXP(briefLesson.xp_reward, 'task_completed', `Completed: ${briefLesson.title}`, { 
+              lesson_id: briefLesson.id 
+            });
+            setCompletedLessons(prev => new Set([...prev, briefLesson.id]));
+            setFullyReadAutomations(prev => new Set([...prev, selectedAutomationBrief.id]));
+            if (sellerData?.id) {
+              await fetchProgressionData(sellerData.id);
+            }
+          } catch (error: any) {
+            console.error("Error completing brief task:", error);
+          }
+        }
+        
+        // Check for "Read One Automation in Full (Details + Features)" (Apprentice Plus)
+        const readFullLesson = lessons.find(l => l.title === 'Read One Automation in Full (Details + Features)' && l.rank_required === 'Apprentice Plus');
+        if (readFullLesson && !completedLessons.has(readFullLesson.id) && !fullyReadAutomations.has(selectedAutomationBrief.id)) {
+          try {
+            await addXP(readFullLesson.xp_reward, 'task_completed', `Completed: ${readFullLesson.title}`, { 
+              lesson_id: readFullLesson.id 
+            });
+            setCompletedLessons(prev => new Set([...prev, readFullLesson.id]));
+            if (sellerData?.id) {
+              await fetchProgressionData(sellerData.id);
+            }
+            toast({
+              title: "Task Completed!",
+              description: `You earned ${readFullLesson.xp_reward} XP for reading a full automation!`,
+            });
+          } catch (error: any) {
+            console.error("Error completing read full task:", error);
+          }
+        }
+      }
+      setBriefViewStartTime(null);
+    }
+    setShowAutomationBrief(open);
+  };
+
   // Handle saving sales script
   const handleSaveSalesScript = async () => {
     if (!sellerData?.id || !customScript.trim()) {
@@ -1484,17 +2204,28 @@ const PartnerDashboard = () => {
         description: "Your sales script has been saved successfully.",
       });
 
-      // Award XP if this is first time (Task 5)
-      // addXP already refreshes seller data and progression data
+      // Award XP only if script was actually saved for the first time
+      // Check if task was already completed before marking as done
       const task5Lesson = lessons.find(l => l.title === 'Create Your Sales Script');
       if (task5Lesson && !completedLessons.has(task5Lesson.id)) {
+        // Double-check activity log to ensure it wasn't already completed
         try {
-          await addXP(task5Lesson.xp_reward, 'task_completed', `Completed: ${task5Lesson.title}`, { lesson_id: task5Lesson.id });
-          setCompletedLessons(prev => new Set([...prev, task5Lesson.id]));
-          toast({
-            title: "Task Completed!",
-            description: `You earned ${task5Lesson.xp_reward} XP for creating your sales script!`,
-          });
+          const { data: existingCompletion } = await supabase
+            .from("partner_activity_log")
+            .select("id")
+            .eq("seller_id", sellerData.id)
+            .eq("event_type", "task_completed")
+            .eq("metadata->>lesson_id", task5Lesson.id)
+            .maybeSingle();
+
+          if (!existingCompletion) {
+            await addXP(task5Lesson.xp_reward, 'task_completed', `Completed: ${task5Lesson.title}`, { lesson_id: task5Lesson.id });
+            setCompletedLessons(prev => new Set([...prev, task5Lesson.id]));
+            toast({
+              title: "Task Completed!",
+              description: `You earned ${task5Lesson.xp_reward} XP for creating your sales script!`,
+            });
+          }
         } catch (error) {
           console.error("Error awarding XP for sales script:", error);
         }
@@ -1719,7 +2450,7 @@ const PartnerDashboard = () => {
       });
 
       // Award XP (Task 7)
-      const task7Lesson = lessons.find(l => l.title === 'Add Demo Client' && l.rank_required === 'Partner');
+      const task7Lesson = lessons.find(l => l.title === 'Add Demo Client' && l.rank_required === 'Verified');
       if (task7Lesson && !completedLessons.has(task7Lesson.id)) {
         await addXP(task7Lesson.xp_reward, 'task_completed', `Completed: ${task7Lesson.title}`, { lesson_id: task7Lesson.id });
         setCompletedLessons(prev => new Set([...prev, task7Lesson.id]));
@@ -1747,6 +2478,66 @@ const PartnerDashboard = () => {
     }
   };
 
+  // Handle submitting one-sentence pitch
+  const handleSubmitOneSentencePitch = async () => {
+    if (!sellerData?.id || !oneSentencePitch.trim()) {
+      toast({
+        title: "Pitch required",
+        description: "Please write your one-sentence pitch",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setSubmittingPitch(true);
+    try {
+      // Get lesson first
+      const pitchLesson = lessons.find(l => l.title === 'Write a One-Sentence Pitch');
+      
+      // Store pitch in activity log
+      const { error } = await supabase
+        .from("partner_activity_log")
+        .insert({
+          seller_id: sellerData.id,
+          event_type: "task_completed",
+          description: oneSentencePitch.trim(),
+          metadata: { task: "One-Sentence Pitch", lesson_id: pitchLesson?.id },
+        });
+
+      if (error) throw error;
+
+      toast({
+        title: "Pitch Submitted!",
+        description: "Thank you for your pitch!",
+      });
+
+      // Award XP
+      if (pitchLesson && !completedLessons.has(pitchLesson.id)) {
+        try {
+          await addXP(pitchLesson.xp_reward, 'task_completed', `Completed: ${pitchLesson.title}`, { lesson_id: pitchLesson.id });
+          setCompletedLessons(prev => new Set([...prev, pitchLesson.id]));
+          toast({
+            title: "Task Completed!",
+            description: `You earned ${pitchLesson.xp_reward} XP for your pitch!`,
+          });
+        } catch (error) {
+          console.error("Error awarding XP for pitch:", error);
+        }
+      }
+
+      // Reset form
+      setOneSentencePitch("");
+    } catch (error: any) {
+      toast({
+        title: "Error submitting pitch",
+        description: error.message,
+        variant: "destructive",
+      });
+    } finally {
+      setSubmittingPitch(false);
+    }
+  };
+
   // Handle submitting pitch reflection
   const handleSubmitPitchReflection = async () => {
     if (!sellerData?.id || !pitchReflection.trim()) {
@@ -1761,7 +2552,7 @@ const PartnerDashboard = () => {
     setSubmittingPitchReflection(true);
     try {
       // Award XP (Task 9) - get lesson first
-      const task9Lesson = lessons.find(l => l.title === 'Pitch Reflection' && l.rank_required === 'Partner');
+      const task9Lesson = lessons.find(l => l.title === 'Pitch Reflection' && l.rank_required === 'Verified');
       
       // Store reflection in activity log
       const { error } = await supabase
@@ -1808,13 +2599,13 @@ const PartnerDashboard = () => {
   };
 
   // Check for referred partners and complete "Invite a Friend" task if applicable
-  const checkReferredPartners = async () => {
+  const checkReferredPartners = async (silent: boolean = false) => {
     if (!sellerData?.id) return;
 
     setCheckingReferrals(true);
     try {
       // Find the "Invite a Friend" task
-      const inviteTaskLesson = lessons.find(l => l.title === 'Invite a Friend' && l.rank_required === 'Partner');
+      const inviteTaskLesson = lessons.find(l => l.title === 'Invite a Friend' && l.rank_required === 'Verified');
       if (!inviteTaskLesson) {
         setCheckingReferrals(false);
         return;
@@ -1822,10 +2613,12 @@ const PartnerDashboard = () => {
 
       // Check if task is already completed
       if (completedLessons.has(inviteTaskLesson.id)) {
-        toast({
-          title: "Task Already Completed",
-          description: "You've already completed the 'Invite a Friend' task!",
-        });
+        if (!silent) {
+          toast({
+            title: "Task Already Completed",
+            description: "You've already completed the 'Invite a Friend' task!",
+          });
+        }
         setCheckingReferrals(false);
         return;
       }
@@ -1908,16 +2701,21 @@ const PartnerDashboard = () => {
             });
           }
         } else {
-          toast({
-            title: "Task Already Completed",
-            description: "You've already completed the 'Invite a Friend' task!",
-          });
+          if (!silent) {
+            toast({
+              title: "Task Already Completed",
+              description: "You've already completed the 'Invite a Friend' task!",
+            });
+          }
         }
       } else {
-        toast({
-          title: "No Referrals Found",
-          description: "No approved partners have signed up using your referral code yet. Keep sharing your link!",
-        });
+        // Only show toast if not a silent check (i.e., user explicitly clicked "Check Status")
+        if (!silent) {
+          toast({
+            title: "No Referrals Found",
+            description: "No approved partners have signed up using your referral code yet. Keep sharing your link!",
+          });
+        }
       }
     } catch (error: any) {
       console.error("Error checking referred partners:", error);
@@ -2035,7 +2833,7 @@ const PartnerDashboard = () => {
 
       // Track task completion for demo automation assignment
       if (isDemoClient) {
-        const assignDemoLesson = lessons.find(l => l.title === 'Assign Demo Automation' && l.rank_required === 'Partner');
+        const assignDemoLesson = lessons.find(l => l.title === 'Assign Demo Automation' && l.rank_required === 'Verified');
         if (assignDemoLesson && !completedLessons.has(assignDemoLesson.id)) {
           await addXP(assignDemoLesson.xp_reward, 'task_completed', `Completed: ${assignDemoLesson.title}`, { lesson_id: assignDemoLesson.id });
           setCompletedLessons(prev => new Set([...prev, assignDemoLesson.id]));
@@ -2133,6 +2931,129 @@ const PartnerDashboard = () => {
       
       return { ...msg, senderName, senderType };
     });
+  };
+
+  // Scroll to top when course slide changes
+  useEffect(() => {
+    if (showCourseDialog && (selectedCourse?.title === 'Sales Foundations' || selectedCourse?.title === 'The Outreach Process')) {
+      // Find the ScrollArea viewport and scroll to top
+      const timeoutId = setTimeout(() => {
+        const viewport = document.querySelector('[data-radix-scroll-area-viewport]');
+        if (viewport) {
+          viewport.scrollTop = 0;
+        }
+      }, 100);
+      return () => clearTimeout(timeoutId);
+    }
+  }, [currentCourseSlide, showCourseDialog, selectedCourse?.title]);
+
+  // Save course progress to localStorage
+  useEffect(() => {
+    if (selectedCourse?.id && currentCourseSlide > 0) {
+      localStorage.setItem(`course_progress_${selectedCourse.id}`, currentCourseSlide.toString());
+    }
+  }, [currentCourseSlide, selectedCourse?.id]);
+
+  // Load course progress from localStorage when course opens
+  useEffect(() => {
+    if (showCourseDialog && selectedCourse?.id) {
+      const savedProgress = localStorage.getItem(`course_progress_${selectedCourse.id}`);
+      if (savedProgress) {
+        const savedSlide = parseInt(savedProgress, 10);
+        if (!isNaN(savedSlide) && savedSlide > 0) {
+          setCurrentCourseSlide(savedSlide);
+        }
+      }
+    }
+  }, [showCourseDialog, selectedCourse?.id]);
+
+  // Helper function to render course slides with custom visual elements
+  const renderCourseSlide = (slideIndex: number, slideContent: string, courseTitle: string, moduleInfo?: { number: number; title: string }) => {
+    // Parse slide content to extract title and body
+    const titleMatch = slideContent.match(/##\s*Slide\s*\d+:\s*(.+)/);
+    const title = titleMatch ? titleMatch[1].trim() : '';
+    const body = slideContent.replace(/##\s*Slide\s*\d+:\s*.+/, '').trim();
+    
+    // Determine which module based on slide index and course
+    let moduleNum = 1;
+    let moduleTitle = '';
+    
+    if (courseTitle === 'Sales Foundations') {
+      if (slideIndex > 10 && slideIndex <= 20) {
+        moduleNum = 2;
+        moduleTitle = 'Framing the Offer';
+      } else if (slideIndex > 20 && slideIndex <= 30) {
+        moduleNum = 3;
+        moduleTitle = 'Avoiding Tech Talk';
+      } else if (slideIndex > 30) {
+        moduleNum = 4;
+        moduleTitle = 'Building Trust and Momentum';
+      } else {
+        moduleTitle = 'Understanding Your Buyer';
+      }
+    } else if (courseTitle === 'The Outreach Process') {
+      if (moduleInfo) {
+        moduleNum = moduleInfo.number;
+        moduleTitle = moduleInfo.title;
+      } else {
+        // Fallback to slide index-based detection
+        if (slideIndex > 10 && slideIndex <= 20) {
+          moduleNum = 2;
+          moduleTitle = 'Crafting Effective Messages';
+        } else if (slideIndex > 20 && slideIndex <= 30) {
+          moduleNum = 3;
+          moduleTitle = 'Managing Conversations and Follow-Ups';
+        } else if (slideIndex > 30) {
+          moduleNum = 4;
+          moduleTitle = 'Closing and Maintaining Relationships';
+        } else {
+          moduleTitle = 'Preparing for Outreach';
+        }
+      }
+    } else {
+      moduleTitle = 'Course Content';
+    }
+    
+    return (
+      <div className="py-6 space-y-6 pb-8">
+        {/* Module Header Card */}
+        <Card className="bg-gradient-to-r from-primary/20 to-primary/10 border-primary/30 flex-shrink-0">
+          <CardContent className="pt-6 pb-6">
+            <div className="flex items-center gap-3">
+              <div className="px-4 py-2 bg-primary/20 rounded-lg border border-primary/30">
+                <span className="text-2xl font-bold text-primary">Module {moduleNum}</span>
+              </div>
+              <div>
+                <h2 className="text-xl font-semibold text-primary">{moduleTitle}</h2>
+                <p className="text-sm text-muted-foreground">{courseTitle} Course</p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+        
+        {/* Slide Content Card */}
+        <Card className="border-primary/20">
+          <CardHeader className="pb-4">
+            <CardTitle className="text-2xl text-primary flex items-center gap-2">
+              <Target className="w-6 h-6 text-primary flex-shrink-0" />
+              {title}
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4 pb-6">
+            <div 
+              className="prose prose-lg dark:prose-invert max-w-none text-foreground"
+              style={{ 
+                '--tw-prose-headings': 'rgb(var(--primary))',
+                '--tw-prose-bold': 'rgb(var(--primary))',
+              } as React.CSSProperties}
+              dangerouslySetInnerHTML={{
+                __html: markdownToHtml(body)
+              }}
+            />
+          </CardContent>
+        </Card>
+      </div>
+    );
   };
 
   const fetchTicketMessages = async (ticket: TicketData) => {
@@ -2255,6 +3176,22 @@ const PartnerDashboard = () => {
         title: "Message Sent!",
         description: "Your message has been sent to The Vault Network team.",
       });
+
+      // Track "Send Message to Vault Network" task completion
+      const sendMessageLesson = lessons.find(l => l.title === 'Send Message to Vault Network' && l.rank_required === 'Recruit Plus');
+      if (sendMessageLesson && !completedLessons.has(sendMessageLesson.id)) {
+        try {
+          await addXP(sendMessageLesson.xp_reward, 'task_completed', `Completed: ${sendMessageLesson.title}`, { 
+            lesson_id: sendMessageLesson.id 
+          });
+          setCompletedLessons(prev => new Set([...prev, sendMessageLesson.id]));
+          if (sellerData?.id) {
+            await fetchProgressionData(sellerData.id);
+          }
+        } catch (error: any) {
+          console.error("Error completing send message task:", error);
+        }
+      }
 
       setNewSellerMessageSubject("");
       setNewSellerMessageBody("");
@@ -2480,12 +3417,12 @@ const PartnerDashboard = () => {
                         <h3 className="text-lg font-bold text-primary">
                           Rank: {sellerData.partner_pro_subscription_status === 'active' ? 'Partner Pro' : sellerData.current_rank} • {sellerData.current_xp} XP
                         </h3>
-                        <p className="text-sm text-muted-foreground">
-                          Commission Rate: {sellerData.commission_rate}%
+                        <div className="text-sm text-muted-foreground flex items-center flex-wrap gap-1">
+                          <span>Commission Rate: {sellerData.commission_rate}%</span>
                           {sellerData.partner_pro_subscription_status === 'active' && (
                             <Badge className="ml-2 bg-primary/20 text-primary border-primary/30">Partner Pro</Badge>
                           )}
-                        </p>
+                        </div>
                       </div>
                     </div>
                     {(() => {
@@ -2493,10 +3430,10 @@ const PartnerDashboard = () => {
                       const hasPartnerPro = sellerData.partner_pro_subscription_status === 'active';
                       const effectiveRank = hasPartnerPro ? 'Partner Pro' : sellerData.current_rank;
                       const nextRank = getNextRank(sellerData.current_rank);
-                      const isVerifiedRank = sellerData.current_rank === 'Verified';
-                      const showPartnerProUpgrade = isVerifiedRank && !hasPartnerPro;
+                      const isPartnerPlusRank = sellerData.current_rank === 'Partner Plus';
+                      const showPartnerProUpgrade = isPartnerPlusRank && !hasPartnerPro;
                       
-                      // For Verified rank, Partner Pro is a paid upgrade, not free
+                      // For Partner Plus rank, Partner Pro is a paid upgrade, not free
                       if (showPartnerProUpgrade) {
                         return (
                           <div className="mt-3 p-3 bg-primary/10 border border-primary/20 rounded-lg">
@@ -2547,10 +3484,22 @@ const PartnerDashboard = () => {
                       // For other ranks, show normal progression
                       if (!nextRank) return null;
                       
-                      const progress = calculateProgressToNextRank(sellerData.current_xp || 0, sellerData.current_rank);
-                      const requiredTasks = getTasksForRank(sellerData.current_rank);
-                      const completedTasks = requiredTasks.filter(taskId => completedLessons.has(taskId));
-                      const allTasksCompleted = requiredTasks.length === 0 || completedTasks.length === requiredTasks.length;
+                      // Safety check: ensure current rank exists in RANK_INFO
+                      if (!RANK_INFO[sellerData.current_rank as PartnerRank]) {
+                        console.warn(`Invalid rank: ${sellerData.current_rank}`);
+                        return null;
+                      }
+                      
+                      const progress = calculateProgressToNextRank(sellerData.current_xp || 0, sellerData.current_rank as PartnerRank);
+                      // Get tasks required for the NEXT rank (what user needs to complete to advance)
+                      const allRequiredTasks = getTasksForRank(nextRank);
+                      // Filter to only count tasks for the NEXT rank (not previous ranks)
+                      const nextRankTasks = allRequiredTasks.filter(taskId => {
+                        const lesson = lessons.find(l => l.id === taskId);
+                        return lesson && lesson.rank_required === nextRank;
+                      });
+                      const completedTasks = nextRankTasks.filter(taskId => completedLessons.has(taskId));
+                      const allTasksCompleted = nextRankTasks.length === 0 || completedTasks.length === nextRankTasks.length;
                       const nextRankThreshold = nextRank ? getRankInfo(nextRank).xpThreshold : 0;
                       const xpThresholdMet = (sellerData.current_xp || 0) >= nextRankThreshold;
                       const canAdvance = allTasksCompleted && xpThresholdMet;
@@ -2560,7 +3509,7 @@ const PartnerDashboard = () => {
                           <Progress value={progress.percentage} className="h-2 mb-1" />
                           <div className="flex items-center justify-between mb-2">
                             <p className="text-xs text-muted-foreground">
-                              {sellerData?.current_rank === 'Verified' && nextRank === 'Partner Pro' 
+                              {sellerData?.current_rank === 'Partner Plus' && nextRank === 'Partner Pro' 
                                 ? 'Ready to upgrade to Partner Pro' 
                                 : `${progress.current} / ${progress.next} XP to ${nextRank}`}
                             </p>
@@ -2601,10 +3550,10 @@ const PartnerDashboard = () => {
                                     Complete all tasks to advance
                                   </p>
                                   <p className="text-xs text-muted-foreground">
-                                    You have enough XP, but you need to complete all {requiredTasks.length} task{requiredTasks.length !== 1 ? 's' : ''} for {sellerData.current_rank} rank before advancing to {nextRank}.
+                                    You have enough XP, but you need to complete all {nextRankTasks.length} task{nextRankTasks.length !== 1 ? 's' : ''} for {nextRank} rank before advancing.
                                   </p>
                                   <p className="text-xs text-muted-foreground mt-1">
-                                    Completed: {completedTasks.length} / {requiredTasks.length} tasks
+                                    Completed: {completedTasks.length} / {nextRankTasks.length} tasks
                                   </p>
                                 </div>
                               </div>
@@ -2626,12 +3575,12 @@ const PartnerDashboard = () => {
                                 </div>
                               </div>
                               <Button
-                                onClick={sellerData?.current_rank === 'Verified' && nextRank === 'Partner Pro' ? handlePartnerProCheckout : handleManualRankUp}
+                                onClick={sellerData?.current_rank === 'Partner Plus' && nextRank === 'Partner Pro' ? handlePartnerProCheckout : handleManualRankUp}
                                 className="w-full bg-primary hover:bg-primary/90 text-primary-foreground"
                                 size="sm"
                               >
                                 <Trophy className="w-4 h-4 mr-2" />
-                                {sellerData?.current_rank === 'Verified' && nextRank === 'Partner Pro' ? 'Upgrade to Partner Pro - $24.99/month' : `Advance to ${nextRank}`}
+                                {sellerData?.current_rank === 'Partner Plus' && nextRank === 'Partner Pro' ? 'Upgrade to Partner Pro - $24.99/month' : `Advance to ${nextRank}`}
                               </Button>
                             </div>
                           )}
@@ -2760,117 +3709,158 @@ const PartnerDashboard = () => {
               </DialogHeader>
               <ScrollArea className="max-h-[70vh] pr-4">
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 py-2">
-                  {(['Recruit', 'Apprentice', 'Agent', 'Partner', 'Verified', 'Partner Pro'] as PartnerRank[]).map((rank, index) => {
-                    const rankInfo = RANK_INFO[rank];
-                    const hasPartnerPro = sellerData?.partner_pro_subscription_status === 'active';
-                    const isCurrentRank = rank === 'Partner Pro' ? hasPartnerPro : sellerData?.current_rank === rank;
-                    const isUnlocked = rank === 'Partner Pro' ? hasPartnerPro : (sellerData?.current_xp || 0) >= rankInfo.xpThreshold;
-                    const nextRank = index < 5 ? (['Recruit', 'Apprentice', 'Agent', 'Partner', 'Verified', 'Partner Pro'] as PartnerRank[])[index + 1] : null;
-                    const xpToNext = nextRank ? RANK_INFO[nextRank].xpThreshold - rankInfo.xpThreshold : 0;
+                  {(() => {
+                    // Base ranks only (excluding Plus variants)
+                    const baseRanks: { base: PartnerRank; plus?: PartnerRank }[] = [
+                      { base: 'Recruit', plus: 'Recruit Plus' },
+                      { base: 'Apprentice', plus: 'Apprentice Plus' },
+                      { base: 'Agent', plus: 'Agent Plus' },
+                      { base: 'Verified', plus: 'Verified Plus' },
+                      { base: 'Partner', plus: 'Partner Plus' },
+                      { base: 'Partner Pro' }
+                    ];
                     
-                    return (
-                      <Card 
-                        key={rank} 
-                        className={`relative border-2 transition-all hover:shadow-lg ${
-                          isCurrentRank 
-                            ? 'border-primary bg-gradient-to-br from-primary/20 to-primary/10 shadow-primary/20 shadow-lg' 
-                            : isUnlocked 
-                              ? 'border-green-500/50 bg-gradient-to-br from-green-500/10 to-green-500/5' 
-                              : 'border-border bg-muted/20 opacity-75'
-                        }`}
-                      >
-                        <CardContent className="p-5">
-                          {/* Rank Header */}
-                          <div className="flex items-start justify-between mb-4">
-                            <div className="flex items-center gap-2">
-                              <div className={`p-2 rounded-lg ${
-                                isCurrentRank 
-                                  ? 'bg-primary/20' 
-                                  : isUnlocked 
-                                    ? 'bg-green-500/20' 
-                                    : 'bg-muted'
-                              }`}>
-                                <Trophy className={`w-5 h-5 ${
+                    const allRanks: PartnerRank[] = ['Recruit', 'Recruit Plus', 'Apprentice', 'Apprentice Plus', 'Agent', 'Agent Plus', 'Verified', 'Verified Plus', 'Partner', 'Partner Plus', 'Partner Pro'];
+                    
+                    return baseRanks.map(({ base, plus }, index) => {
+                      const baseRankInfo = RANK_INFO[base];
+                      const plusRankInfo = plus ? RANK_INFO[plus] : null;
+                      const hasPartnerPro = sellerData?.partner_pro_subscription_status === 'active';
+                      
+                      // Check if user is at base rank or Plus variant
+                      const isCurrentBaseRank = base === 'Partner Pro' ? hasPartnerPro : sellerData?.current_rank === base;
+                      const isCurrentPlusRank = plus ? sellerData?.current_rank === plus : false;
+                      const isCurrentRank = isCurrentBaseRank || isCurrentPlusRank;
+                      
+                      // Check if unlocked (base rank or Plus variant)
+                      const isBaseUnlocked = base === 'Partner Pro' ? hasPartnerPro : (sellerData?.current_xp || 0) >= baseRankInfo.xpThreshold;
+                      const isPlusUnlocked = plus ? (sellerData?.current_xp || 0) >= (plusRankInfo?.xpThreshold || 0) : false;
+                      const isUnlocked = isBaseUnlocked || isPlusUnlocked;
+                      
+                      // Get next base rank
+                      const nextBaseRank = index < baseRanks.length - 1 ? baseRanks[index + 1].base : null;
+                      const xpToNext = nextBaseRank ? RANK_INFO[nextBaseRank].xpThreshold - baseRankInfo.xpThreshold : 0;
+                    
+                      return (
+                        <Card 
+                          key={base} 
+                          className={`relative border-2 transition-all hover:shadow-lg ${
+                            isCurrentRank 
+                              ? 'border-primary bg-gradient-to-br from-primary/20 to-primary/10 shadow-primary/20 shadow-lg' 
+                              : isUnlocked 
+                                ? 'border-green-500/50 bg-gradient-to-br from-green-500/10 to-green-500/5' 
+                                : 'border-border bg-muted/20 opacity-75'
+                          }`}
+                        >
+                          <CardContent className="p-5">
+                            {/* Rank Header */}
+                            <div className="flex items-start justify-between mb-4">
+                              <div className="flex items-center gap-2 flex-1">
+                                <div className={`p-2 rounded-lg ${
                                   isCurrentRank 
-                                    ? 'text-primary' 
+                                    ? 'bg-primary/20' 
                                     : isUnlocked 
-                                      ? 'text-green-500' 
-                                      : 'text-muted-foreground'
-                                }`} />
-                              </div>
-                              <div>
-                                <h3 className={`text-lg font-bold ${
-                                  isCurrentRank 
-                                    ? 'text-primary' 
-                                    : isUnlocked 
-                                      ? 'text-green-500' 
-                                      : 'text-muted-foreground'
+                                      ? 'bg-green-500/20' 
+                                      : 'bg-muted'
                                 }`}>
-                                  {rank}
-                                </h3>
-                                {isCurrentRank && (
-                                  <Badge variant="default" className="mt-1 text-xs bg-primary text-primary-foreground">
-                                    {rank === 'Partner Pro' ? 'Active Subscription' : 'Current Rank'}
-                                  </Badge>
-                                )}
-                                {isUnlocked && !isCurrentRank && (
-                                  <Badge variant="outline" className="mt-1 text-xs text-green-500 border-green-500">Unlocked</Badge>
-                                )}
-                              </div>
-                            </div>
-                            {index < 5 && (
-                              <div className="text-right">
-                                <div className="text-xs text-muted-foreground mb-1">Next Rank</div>
-                                <div className="text-lg font-bold text-primary">{xpToNext.toLocaleString()} XP</div>
-                              </div>
-                            )}
-                          </div>
-
-                          {/* Rank Details */}
-                          <div className="space-y-3">
-                            <div className="flex items-center justify-between p-2 bg-background/50 rounded-lg">
-                              <span className="text-sm text-muted-foreground">XP Required</span>
-                              <span className="text-sm font-semibold text-foreground">{rankInfo.xpThreshold.toLocaleString()} XP</span>
-                            </div>
-                            
-                            <div className="flex items-center justify-between p-2 bg-background/50 rounded-lg">
-                              <span className="text-sm text-muted-foreground">Commission</span>
-                              <span className="text-sm font-bold text-primary">{rankInfo.commissionRate}%</span>
-                            </div>
-
-                            {rankInfo.unlocks.length > 0 && (
-                              <div className="pt-2 border-t border-border">
-                                <p className="text-xs font-semibold text-muted-foreground mb-2">Unlocks:</p>
-                                <div className="flex flex-wrap gap-1.5">
-                                  {rankInfo.unlocks.map((unlock) => (
-                                    <Badge 
-                                      key={unlock} 
-                                      variant="secondary" 
-                                      className="text-xs px-2 py-0.5"
-                                    >
-                                      {unlock.replace(/_/g, ' ')}
+                                  <Trophy className={`w-5 h-5 ${
+                                    isCurrentRank 
+                                      ? 'text-primary' 
+                                      : isUnlocked 
+                                        ? 'text-green-500' 
+                                        : 'text-muted-foreground'
+                                  }`} />
+                                </div>
+                                <div className="flex-1">
+                                  <div className="flex items-center gap-2 flex-wrap">
+                                    <h3 className={`text-lg font-bold ${
+                                      isCurrentRank 
+                                        ? 'text-primary' 
+                                        : isUnlocked 
+                                          ? 'text-green-500' 
+                                          : 'text-muted-foreground'
+                                    }`}>
+                                      {base}
+                                    </h3>
+                                    {plus && (
+                                      <Badge 
+                                        variant="outline" 
+                                        className={`text-xs ${
+                                          isCurrentPlusRank 
+                                            ? 'border-primary text-primary bg-primary/10' 
+                                            : isPlusUnlocked 
+                                              ? 'border-purple-500 text-purple-500 bg-purple-500/10' 
+                                              : 'border-muted-foreground text-muted-foreground'
+                                        }`}
+                                      >
+                                        Plus
+                                      </Badge>
+                                    )}
+                                  </div>
+                                  {isCurrentRank && (
+                                    <Badge variant="default" className="mt-1 text-xs bg-primary text-primary-foreground">
+                                      {base === 'Partner Pro' ? 'Active Subscription' : 'Current Rank'}
                                     </Badge>
-                                  ))}
+                                  )}
+                                  {isUnlocked && !isCurrentRank && (
+                                    <Badge variant="outline" className="mt-1 text-xs text-green-500 border-green-500">Unlocked</Badge>
+                                  )}
+                                </div>
+                              </div>
+                              {nextBaseRank && (
+                                <div className="text-right">
+                                  <div className="text-xs text-muted-foreground mb-1">Next Rank</div>
+                                  <div className="text-lg font-bold text-primary">{xpToNext > 0 ? `+${xpToNext.toLocaleString()}` : xpToNext < 0 ? xpToNext.toLocaleString() : '0'} XP</div>
+                                </div>
+                              )}
+                            </div>
+
+                            {/* Rank Details */}
+                            <div className="space-y-3">
+                              <div className="flex items-center justify-between p-2 bg-background/50 rounded-lg">
+                                <span className="text-sm text-muted-foreground">XP Required</span>
+                                <span className="text-sm font-semibold text-foreground">{baseRankInfo.xpThreshold.toLocaleString()} XP</span>
+                              </div>
+                              
+                              <div className="flex items-center justify-between p-2 bg-background/50 rounded-lg">
+                                <span className="text-sm text-muted-foreground">Commission</span>
+                                <span className="text-sm font-bold text-primary">{baseRankInfo.commissionRate}%</span>
+                              </div>
+
+                              {baseRankInfo.unlocks.length > 0 && (
+                                <div className="pt-2 border-t border-border">
+                                  <p className="text-xs font-semibold text-muted-foreground mb-2">Unlocks:</p>
+                                  <div className="flex flex-wrap gap-1.5">
+                                    {baseRankInfo.unlocks.map((unlock) => (
+                                      <Badge 
+                                        key={unlock} 
+                                        variant="secondary" 
+                                        className="text-xs px-2 py-0.5"
+                                      >
+                                        {unlock.replace(/_/g, ' ')}
+                                      </Badge>
+                                    ))}
+                                  </div>
+                                </div>
+                              )}
+                            </div>
+
+                            {/* Progress Indicator */}
+                            {nextBaseRank && (
+                              <div className="mt-4 pt-4 border-t border-border">
+                                <div className="flex items-center justify-center gap-2 text-xs text-muted-foreground">
+                                  <span>Progress to</span>
+                                  <span className="font-semibold text-foreground">
+                                    {nextBaseRank}
+                                  </span>
                                 </div>
                               </div>
                             )}
-                          </div>
-
-                          {/* Progress Indicator */}
-                          {index < 5 && (
-                            <div className="mt-4 pt-4 border-t border-border">
-                              <div className="flex items-center justify-center gap-2 text-xs text-muted-foreground">
-                                <span>Progress to</span>
-                                <span className="font-semibold text-foreground">
-                                  {(['Recruit', 'Apprentice', 'Agent', 'Partner', 'Verified', 'Partner Pro'] as PartnerRank[])[index + 1]}
-                                </span>
-                              </div>
-                            </div>
-                          )}
-                        </CardContent>
-                      </Card>
-                    );
-                  })}
+                          </CardContent>
+                        </Card>
+                      );
+                    });
+                  })()}
                 </div>
               </ScrollArea>
             </DialogContent>
@@ -3234,15 +4224,11 @@ const PartnerDashboard = () => {
                           No lessons available
                         </div>
                       ) : (() => {
-                        // Filter lessons to only show current rank and next rank
+                        // Filter lessons to only show current rank (don't show next rank tasks - they unlock when you reach that rank)
                         const currentRank = sellerData?.current_rank || 'Recruit';
-                        const rankOrder = ['Recruit', 'Apprentice', 'Agent', 'Partner', 'Verified', 'Partner Pro'];
-                        const currentRankIndex = rankOrder.indexOf(currentRank);
-                        const nextRank = currentRankIndex < rankOrder.length - 1 ? rankOrder[currentRankIndex + 1] : null;
                         
                         const filteredLessons = lessons.filter(lesson => 
-                          lesson.rank_required === currentRank || 
-                          (nextRank && lesson.rank_required === nextRank)
+                          lesson.rank_required === currentRank
                         );
                         
                         // Group by stage
@@ -3271,13 +4257,40 @@ const PartnerDashboard = () => {
                                 >
                                   {stageLessons.map((lesson) => {
                                     const isCompleted = completedLessons.has(lesson.id);
-                                    const canAccess = sellerData?.current_rank === lesson.rank_required || 
-                                      (sellerData?.current_xp || 0) >= (lesson.rank_required === 'Recruit' ? 0 : 
-                                      lesson.rank_required === 'Apprentice' ? 1000 :
-                                      lesson.rank_required === 'Agent' ? 2500 :
-                                      lesson.rank_required === 'Partner' ? 4500 :
-                                      lesson.rank_required === 'Verified' ? 7000 : 10000);
                                     
+                                    // Check if user can access this lesson based on rank or XP
+                                    const ranks: PartnerRank[] = ['Recruit', 'Recruit Plus', 'Apprentice', 'Apprentice Plus', 'Agent', 'Agent Plus', 'Verified', 'Verified Plus', 'Partner', 'Partner Plus', 'Partner Pro'];
+                                    const currentRankIndex = ranks.indexOf(sellerData?.current_rank as PartnerRank);
+                                    const requiredRankIndex = ranks.indexOf(lesson.rank_required as PartnerRank);
+                                    const hasRankAccess = currentRankIndex >= requiredRankIndex;
+                                    
+                                    // Also check XP thresholds as fallback
+                                    const xpThresholds: Record<string, number> = {
+                                      'Recruit': 0,
+                                      'Recruit Plus': 0,
+                                      'Apprentice': 1000,
+                                      'Apprentice Plus': 1000,
+                                      'Agent': 2500,
+                                      'Agent Plus': 2500,
+                                      'Verified': 4500,
+                                      'Verified Plus': 4500,
+                                      'Partner': 7000,
+                                      'Partner Plus': 7000,
+                                      'Partner Pro': 10000
+                                    };
+                                    const hasXpAccess = (sellerData?.current_xp || 0) >= (xpThresholds[lesson.rank_required] || 0);
+                                    
+                                    const canAccess = hasRankAccess || hasXpAccess;
+                                    
+                                    // Hide completed Recruit tasks once user reaches Recruit Plus (micro-stage separation)
+                                    if (
+                                      sellerData?.current_rank === 'Recruit Plus' &&
+                                      lesson.rank_required === 'Recruit' &&
+                                      lesson.lesson_type === 'task'
+                                    ) {
+                                      return null;
+                                    }
+
                                     // Don't show lessons from future ranks
                                     if (!canAccess && sellerData?.current_rank !== lesson.rank_required) {
                                       return null;
@@ -3312,8 +4325,11 @@ const PartnerDashboard = () => {
                                         </AccordionTrigger>
                                         <AccordionContent>
                                           <div className="pt-4 space-y-4">
-                                            {/* Only show content if it's NOT a popup-style course */}
-                                            {lesson.content && !(lesson.title === 'Understanding Automations' || lesson.title === 'The 6 Default Automations' || lesson.title === 'Sales Basics for Automation Partners' || lesson.title === 'How to Manage Clients') && (
+                                            {/* Only show content if it's NOT a popup-style course, NOT a quiz, and NOT a task (quizzes and tasks have their own sections) */}
+                                            {lesson.content && 
+                                             lesson.lesson_type !== 'quiz' &&
+                                             lesson.lesson_type !== 'task' &&
+                                             !(lesson.title === 'Understanding Automations' || lesson.title === 'The 6 Default Automations' || lesson.title === 'Sales Basics for Automation Partners' || lesson.title === 'How to Manage Clients' || lesson.title === 'Sales Foundations' || lesson.title === 'The Outreach Process') && (
                                               <div 
                                                 className="prose prose-sm dark:prose-invert max-w-none text-foreground"
                                                 style={{ 
@@ -3331,6 +4347,24 @@ const PartnerDashboard = () => {
                                               <div className="p-4 bg-muted/50 rounded-lg">
                                                 <p className="text-sm text-muted-foreground mb-2">
                                                   Master the art of selling automations! Learn how to handle objections, position ROI, and craft effective outreach messages. Click "View Course" to start the interactive course.
+                                                </p>
+                                              </div>
+                                            )}
+                                            
+                                            {/* Show preview text for Sales Foundations course */}
+                                            {lesson.content && lesson.title === 'Sales Foundations' && (
+                                              <div className="p-4 bg-muted/50 rounded-lg">
+                                                <p className="text-sm text-muted-foreground mb-2">
+                                                  Master sales fundamentals! This comprehensive course covers understanding buyers, framing offers, avoiding tech talk, and building trust. Complete all 4 modules (40 slides) and pass the quiz with 80% to earn 600 XP. Click "View Course" to start the interactive course.
+                                                </p>
+                                              </div>
+                                            )}
+                                            
+                                            {/* Show preview text for The Outreach Process course */}
+                                            {lesson.content && lesson.title === 'The Outreach Process' && (
+                                              <div className="p-4 bg-muted/50 rounded-lg">
+                                                <p className="text-sm text-muted-foreground mb-2">
+                                                  Master the outreach process! This comprehensive course covers preparing for outreach, crafting effective messages, managing conversations and follow-ups, and closing deals. Complete all 4 modules (40 slides) and pass the quiz with 80% to earn 500 XP. Click "View Course" to start the interactive course.
                                                 </p>
                                               </div>
                                             )}
@@ -3355,13 +4389,28 @@ const PartnerDashboard = () => {
                                             
                                             {lesson.lesson_type === 'course' && (
                                               <div className="space-y-2">
-                                                {lesson.title === 'Understanding Automations' || lesson.title === 'The 6 Default Automations' || lesson.title === 'Sales Basics for Automation Partners' || lesson.title === 'How to Manage Clients' ? (
+                                                {lesson.title === 'Understanding Automations' || lesson.title === 'The 6 Default Automations' || lesson.title === 'Sales Basics for Automation Partners' || lesson.title === 'How to Manage Clients' || lesson.title === 'Sales Foundations' || lesson.title === 'The Outreach Process' ? (
                                                   <>
                                                     <Button
-                                                      onClick={() => {
+                                                      onClick={async () => {
                                                         setSelectedCourse(lesson);
                                                         setCurrentCourseSlide(0);
                                                         setShowCourseDialog(true);
+                                                        
+                                                        // Track course opened
+                                                        if (sellerData?.id && lesson.id) {
+                                                          try {
+                                                            await supabase.from("partner_activity_log").insert({
+                                                              seller_id: sellerData.id,
+                                                              event_type: "course_opened",
+                                                              xp_value: 0,
+                                                              description: `Opened course: ${lesson.title}`,
+                                                              metadata: { lesson_id: lesson.id }
+                                                            });
+                                                          } catch (error) {
+                                                            console.error("Error tracking course open:", error);
+                                                          }
+                                                        }
                                                       }}
                                                       disabled={!canAccess}
                                                       className="w-full"
@@ -3370,7 +4419,7 @@ const PartnerDashboard = () => {
                                                       <BookOpen className="w-4 h-4 mr-2" />
                                                       View Course
                                                     </Button>
-                                                    {lesson.quiz_questions && (
+                                                    {(lesson.quiz_questions || lesson.title === 'Vault Basics Quiz') && (
                                                       <Button
                                                         onClick={() => handleCompleteLesson(lesson)}
                                                         disabled={isCompleted || !canAccess}
@@ -3408,15 +4457,176 @@ const PartnerDashboard = () => {
                                               </div>
                                             )}
                                             
+                                            {lesson.lesson_type === 'quiz' && (
+                                              <div className="space-y-4">
+                                                {lesson.content && (
+                                                  <div 
+                                                    className="prose prose-sm dark:prose-invert max-w-none text-foreground mb-6 p-4 bg-muted/30 rounded-lg border border-border/50"
+                                                    style={{ 
+                                                      '--tw-prose-headings': 'rgb(var(--primary))',
+                                                      '--tw-prose-bold': 'rgb(var(--primary))',
+                                                    } as React.CSSProperties}
+                                                    dangerouslySetInnerHTML={{
+                                                      __html: markdownToHtml(typeof lesson.content === 'string' ? lesson.content : String(lesson.content || ''))
+                                                    }}
+                                                  />
+                                                )}
+                                                {lesson.quiz_questions && (
+                                                  <Button
+                                                    onClick={() => handleCompleteLesson(lesson)}
+                                                    disabled={isCompleted || !canAccess}
+                                                    className="w-full"
+                                                    size="lg"
+                                                  >
+                                                    {isCompleted ? 'Quiz Completed' : 'Take Quiz'}
+                                                  </Button>
+                                                )}
+                                              </div>
+                                            )}
+                                            
                                             {lesson.lesson_type === 'task' && (
                                               <div className="space-y-4">
+                                                {/* All tasks now have custom components - no markdown rendering */}
+                                                
+                                                {lesson.title === 'Open Overview Tab' && (
+                                          <div className="p-4 bg-muted/50 rounded-lg">
+                                            <p className="text-sm text-muted-foreground mb-2">
+                                              Navigate to the Overview tab after signup to familiarize yourself with your dashboard. This is your home base where you'll see your key metrics, referral link, and quick stats.
+                                            </p>
+                                            <p className="text-xs text-muted-foreground mb-3">
+                                              <strong className="text-primary">Why:</strong> Understanding your dashboard layout helps you navigate efficiently as you progress through your partner journey.
+                                            </p>
+                                            <Button
+                                              onClick={() => {
+                                                setActiveTab('overview');
+                                                setExpandedLessonId(undefined);
+                                              }}
+                                              variant="outline"
+                                              size="sm"
+                                              disabled={isCompleted || !canAccess}
+                                              className="w-full"
+                                            >
+                                              {isCompleted ? 'Task Completed' : 'Go to Overview Tab'}
+                                            </Button>
+                                          </div>
+                                        )}
+                                        
+                                                {lesson.title === 'Copy Your Referral Link' && (
+                                          <div className="p-4 bg-muted/50 rounded-lg space-y-3">
+                                            <p className="text-sm text-muted-foreground mb-2">
+                                              Copy your personalized referral link from the Overview tab. Your referral link is how you'll invite clients and earn commissions.
+                                            </p>
+                                            <div className="space-y-2">
+                                              <Label>Your Referral Link</Label>
+                                              <div className="p-3 bg-background rounded-lg border border-border font-mono text-xs overflow-x-auto">
+                                                {window.location.origin}/for-businesses?ref={sellerData?.referral_code || "YOUR-CODE"}
+                                              </div>
+                                              <Button
+                                                onClick={() => {
+                                                  copyReferralLink('client');
+                                                }}
+                                                variant="outline"
+                                                size="sm"
+                                                disabled={isCompleted || !canAccess}
+                                                className="w-full"
+                                              >
+                                                <Copy className="w-4 h-4 mr-2" />
+                                                {isCompleted ? 'Link Copied' : 'Copy Referral Link'}
+                                              </Button>
+                                            </div>
+                                          </div>
+                                        )}
+                                        
+                                                {lesson.title === 'Bookmark 1 Automation' && (
+                                          <div className="p-4 bg-muted/50 rounded-lg">
+                                            <p className="text-sm text-muted-foreground mb-2">
+                                              Bookmark an automation that interests you for easy access later. Bookmarking helps you quickly access automations you're interested in selling to clients.
+                                            </p>
+                                            <Button
+                                              onClick={() => {
+                                                if (isTabUnlocked('automations_view', sellerData?.current_rank || 'Recruit')) {
+                                                  setActiveTab('automations');
+                                                } else {
+                                                  toast({
+                                                    title: "Locked",
+                                                    description: "Complete previous lessons to unlock automations",
+                                                    variant: "destructive",
+                                                  });
+                                                }
+                                              }}
+                                              variant="outline"
+                                              size="sm"
+                                              disabled={!isTabUnlocked('automations_view', sellerData?.current_rank || 'Recruit') || isCompleted || !canAccess}
+                                              className="w-full"
+                                            >
+                                              {isCompleted ? 'Task Completed' : 'Go to Automations'}
+                                            </Button>
+                                          </div>
+                                        )}
+                                        
+                                                {lesson.title === 'Send Message to Vault Network' && (
+                                          <div className="p-4 bg-muted/50 rounded-lg">
+                                            <p className="text-sm text-muted-foreground mb-2">
+                                              Visit the Support tab and send a message to The Vault Network team. This helps you get familiar with the support system and opens a communication channel.
+                                            </p>
+                                            <Button
+                                              onClick={() => {
+                                                setActiveTab('support');
+                                              }}
+                                              variant="outline"
+                                              size="sm"
+                                              disabled={isCompleted || !canAccess}
+                                              className="w-full"
+                                            >
+                                              {isCompleted ? 'Task Completed' : 'Go to Support Tab'}
+                                            </Button>
+                                          </div>
+                                        )}
+                                        
+                                                {lesson.title === 'Read One Full Automation Brief' && (
+                                          <div className="p-4 bg-muted/50 rounded-lg">
+                                            <p className="text-sm text-muted-foreground mb-2">
+                                              Read a complete automation brief to understand detailed information about an automation. Understanding automation details helps you sell them effectively to clients.
+                                            </p>
+                                            <p className="text-xs text-muted-foreground mb-3">
+                                              Read through the full brief including: Full description, Use cases, Features detail, Implementation timeline, Technical requirements, Pricing details, FAQ
+                                            </p>
+                                            <Button
+                                              onClick={() => {
+                                                if (isTabUnlocked('automations_view', sellerData?.current_rank || 'Recruit')) {
+                                                  setActiveTab('automations');
+                                                } else {
+                                                  toast({
+                                                    title: "Locked",
+                                                    description: "Complete previous lessons to unlock automations",
+                                                    variant: "destructive",
+                                                  });
+                                                }
+                                              }}
+                                              variant="outline"
+                                              size="sm"
+                                              disabled={!isTabUnlocked('automations_view', sellerData?.current_rank || 'Recruit') || isCompleted || !canAccess}
+                                              className="w-full"
+                                            >
+                                              {isCompleted ? 'Task Completed' : 'Go to Automations'}
+                                            </Button>
+                                          </div>
+                                        )}
+                                        
                                                 {lesson.title === 'Automation Matching Game' && (
                                           <div className="p-4 bg-muted/50 rounded-lg space-y-4">
                                             {/* Only show instruction if not in content */}
                                             {lesson.content && !lesson.content.includes('Match each automation') && (
-                                              <p className="text-sm text-muted-foreground mb-4">
-                                                {lesson.content}
-                                              </p>
+                                              <div 
+                                                className="prose prose-sm dark:prose-invert max-w-none text-foreground mb-4"
+                                                style={{ 
+                                                  '--tw-prose-headings': 'rgb(var(--primary))',
+                                                  '--tw-prose-bold': 'rgb(var(--primary))',
+                                                } as React.CSSProperties}
+                                                dangerouslySetInnerHTML={{
+                                                  __html: markdownToHtml(typeof lesson.content === 'string' ? lesson.content : String(lesson.content || ''))
+                                                }}
+                                              />
                                             )}
                                             {lesson.quiz_questions && Array.isArray(lesson.quiz_questions) ? (
                                               <div className="space-y-6">
@@ -3540,7 +4750,7 @@ const PartnerDashboard = () => {
                                           </div>
                                         )}
                                         
-                                                {lesson.title === 'Automation Preview' && (
+                                                {lesson.title === 'View 3 Automation Cards' && (
                                           <div className="p-4 bg-muted/50 rounded-lg space-y-3">
                                             <div>
                                               <p className="text-sm text-muted-foreground mb-1">
@@ -3786,6 +4996,185 @@ const PartnerDashboard = () => {
                                           </div>
                                         )}
                                         
+                                                {lesson.title === 'Write a One-Sentence Pitch' && (
+                                          <div className="space-y-3">
+                                            <div className="space-y-2">
+                                              <Label>Your One-Sentence Pitch *</Label>
+                                              <Textarea
+                                                value={oneSentencePitch}
+                                                onChange={(e) => setOneSentencePitch(e.target.value)}
+                                                placeholder="Describe in one sentence how one chosen automation helps a business..."
+                                                rows={3}
+                                              />
+                                            </div>
+                                            <Button
+                                              onClick={handleSubmitOneSentencePitch}
+                                              disabled={submittingPitch || !oneSentencePitch.trim() || isCompleted || !canAccess}
+                                              className="w-full"
+                                            >
+                                              {submittingPitch ? 'Submitting...' : isCompleted ? 'Submitted' : `Submit Pitch & Earn ${lesson.xp_reward} XP`}
+                                            </Button>
+                                          </div>
+                                        )}
+                                        
+                                                {lesson.title === 'Check the Partner Leaderboard' && (
+                                          <div className="p-4 bg-muted/50 rounded-lg">
+                                            <p className="text-sm text-muted-foreground mb-2">
+                                              Visit the leaderboard under Overview to see how partners rank and where you are. Earn {lesson.xp_reward} XP when you view it.
+                                            </p>
+                                            <Button
+                                              onClick={() => {
+                                                setActiveTab('overview');
+                                                // Auto-complete task when overview tab is opened
+                                                if (!completedLessons.has(lesson.id)) {
+                                                  setTimeout(() => {
+                                                    addXP(lesson.xp_reward, 'task_completed', `Completed: ${lesson.title}`, { lesson_id: lesson.id }).then(() => {
+                                                      fetchProgressionData(sellerData?.id || '');
+                                                    }).catch((error: any) => {
+                                                      console.error("Error completing leaderboard task:", error);
+                                                    });
+                                                  }, 1000);
+                                                }
+                                              }}
+                                              variant="outline"
+                                              size="sm"
+                                              disabled={isCompleted || !canAccess}
+                                            >
+                                              {isCompleted ? 'Task Completed' : 'Go to Overview'}
+                                            </Button>
+                                          </div>
+                                        )}
+                                        
+                                                {lesson.title === 'Explore Five Automations' && (
+                                          <div className="p-4 bg-muted/50 rounded-lg space-y-3">
+                                            <div>
+                                              <p className="text-sm text-muted-foreground mb-1">
+                                                Open five different automation cards in the Automations tab and scroll to their pricing sections. Earn {lesson.xp_reward} XP when you complete this.
+                                              </p>
+                                              <div className="flex items-center gap-2 mt-2">
+                                                <Progress 
+                                                  value={(automationsWithPricingViewed.size / 5) * 100} 
+                                                  className="h-2 flex-1"
+                                                />
+                                                <span className="text-xs font-semibold text-primary whitespace-nowrap">
+                                                  {automationsWithPricingViewed.size} / 5 explored
+                                                </span>
+                                              </div>
+                                            </div>
+                                            <Button
+                                              onClick={() => {
+                                                if (isTabUnlocked('automations_view', sellerData?.current_rank || 'Recruit')) {
+                                                  setActiveTab('automations');
+                                                  setExpandedLessonId(undefined);
+                                                } else {
+                                                  toast({
+                                                    title: "Locked",
+                                                    description: "Complete previous lessons to unlock automations",
+                                                    variant: "destructive",
+                                                  });
+                                                }
+                                              }}
+                                              variant="outline"
+                                              size="sm"
+                                              disabled={!isTabUnlocked('automations_view', sellerData?.current_rank || 'Recruit') || isCompleted || !canAccess}
+                                              className="w-full"
+                                            >
+                                              {isCompleted ? 'Task Completed' : 'Go to Automations'}
+                                            </Button>
+                                          </div>
+                                        )}
+                                        
+                                                {lesson.title === 'Bookmark or Favourite Two Automations' && (
+                                          <div className="p-4 bg-muted/50 rounded-lg space-y-3">
+                                            <div>
+                                              <p className="text-sm text-muted-foreground mb-1">
+                                                Pick two automations you'd be excited to sell later — mark them as favourites. Earn {lesson.xp_reward} XP when you bookmark two automations.
+                                              </p>
+                                              <div className="flex items-center gap-2 mt-2">
+                                                <Progress 
+                                                  value={(bookmarkedAutomations.size / 2) * 100} 
+                                                  className="h-2 flex-1"
+                                                />
+                                                <span className="text-xs font-semibold text-primary whitespace-nowrap">
+                                                  {bookmarkedAutomations.size} / 2 bookmarked
+                                                </span>
+                                              </div>
+                                            </div>
+                                            <Button
+                                              onClick={() => {
+                                                if (isTabUnlocked('automations_view', sellerData?.current_rank || 'Recruit')) {
+                                                  setActiveTab('automations');
+                                                  setExpandedLessonId(undefined);
+                                                } else {
+                                                  toast({
+                                                    title: "Locked",
+                                                    description: "Complete previous lessons to unlock automations",
+                                                    variant: "destructive",
+                                                  });
+                                                }
+                                              }}
+                                              variant="outline"
+                                              size="sm"
+                                              disabled={!isTabUnlocked('automations_view', sellerData?.current_rank || 'Recruit') || isCompleted || !canAccess}
+                                              className="w-full"
+                                            >
+                                              {isCompleted ? 'Task Completed' : 'Go to Automations'}
+                                            </Button>
+                                          </div>
+                                        )}
+                                        
+                                                {lesson.title === 'Read One Automation in Full (Details + Features)' && (
+                                          <div className="p-4 bg-muted/50 rounded-lg space-y-3">
+                                            <div>
+                                              <p className="text-sm text-muted-foreground mb-1">
+                                                Read any automation's full description to the end (ensures product familiarity). Earn {lesson.xp_reward} XP when you read a full automation.
+                                              </p>
+                                              <p className="text-xs text-muted-foreground mb-2">
+                                                <strong className="text-primary">How to complete:</strong> Go to Automations tab, click "View Brief" or "View Page" on any automation, and read through the full description (this task auto-completes after viewing for 5+ seconds).
+                                              </p>
+                                              {fullyReadAutomations.size > 0 && (
+                                                <div className="flex items-center gap-2 mt-2">
+                                                  <CheckCircle className="w-4 h-4 text-green-500" />
+                                                  <span className="text-xs text-muted-foreground">
+                                                    {fullyReadAutomations.size} automation{fullyReadAutomations.size !== 1 ? 's' : ''} read
+                                                  </span>
+                                                </div>
+                                              )}
+                                            </div>
+                                            <Button
+                                              onClick={() => {
+                                                if (isTabUnlocked('automations_view', sellerData?.current_rank || 'Recruit')) {
+                                                  setActiveTab('automations');
+                                                  setExpandedLessonId(undefined);
+                                                } else {
+                                                  toast({
+                                                    title: "Locked",
+                                                    description: "Complete previous lessons to unlock automations",
+                                                    variant: "destructive",
+                                                  });
+                                                }
+                                              }}
+                                              variant="outline"
+                                              size="sm"
+                                              disabled={!isTabUnlocked('automations_view', sellerData?.current_rank || 'Recruit') || isCompleted || !canAccess}
+                                              className="w-full"
+                                            >
+                                              {isCompleted ? 'Task Completed' : 'Go to Automations'}
+                                            </Button>
+                                          </div>
+                                        )}
+                                        
+                                                {lesson.title === 'Log In on 2 Different Days' && (
+                                          <div className="p-4 bg-muted/50 rounded-lg">
+                                            <p className="text-sm text-muted-foreground mb-2">
+                                              Simply log in to your Partner Dashboard on 2 different days. Your login will be tracked automatically. Earn {lesson.xp_reward} XP when you complete this.
+                                            </p>
+                                            <p className="text-xs text-muted-foreground">
+                                              This task will be automatically completed when you log in on 2 different days.
+                                            </p>
+                                          </div>
+                                        )}
+                                        
                                                 {lesson.title === 'Invite a Friend' && (
                                           <div className="p-4 bg-muted/50 rounded-lg">
                                             <p className="text-sm text-muted-foreground mb-2">
@@ -3887,11 +5276,11 @@ const PartnerDashboard = () => {
                                 {(() => {
                                   const currentRank = sellerData?.current_rank || 'Recruit';
                                   const hasPartnerPro = sellerData?.partner_pro_subscription_status === 'active';
-                                  const isVerifiedRank = currentRank === 'Verified';
-                                  const showPartnerProUpgrade = isVerifiedRank && !hasPartnerPro;
+                                  const isPartnerPlusRank = currentRank === 'Partner Plus';
+                                  const showPartnerProUpgrade = isPartnerPlusRank && !hasPartnerPro;
                                   const nextRank = getNextRank(currentRank);
                                   
-                                  // Show Partner Pro upgrade for Verified rank
+                                  // Show Partner Pro upgrade for Partner Plus rank
                                   if (showPartnerProUpgrade) {
                                     return (
                                       <div className="mt-6 pt-6 border-t border-border">
@@ -3966,9 +5355,15 @@ const PartnerDashboard = () => {
                                   // For other ranks, show normal progression
                                   if (!nextRank) return null;
                                   
-                                  const requiredTasks = getTasksForRank(currentRank);
-                                  const completedTasks = requiredTasks.filter(taskId => completedLessons.has(taskId));
-                                  const allTasksCompleted = requiredTasks.length === 0 || completedTasks.length === requiredTasks.length;
+                                  // Get all tasks needed for current rank (includes previous ranks' tasks)
+                                  const allRequiredTasks = getTasksForRank(currentRank);
+                                  // Filter to only count tasks for the current rank (not previous ranks)
+                                  const currentRankTasks = allRequiredTasks.filter(taskId => {
+                                    const lesson = lessons.find(l => l.id === taskId);
+                                    return lesson && lesson.rank_required === currentRank;
+                                  });
+                                  const completedCurrentRankTasks = currentRankTasks.filter(taskId => completedLessons.has(taskId));
+                                  const allTasksCompleted = currentRankTasks.length === 0 || completedCurrentRankTasks.length === currentRankTasks.length;
                                   const nextRankThreshold = nextRank ? getRankInfo(nextRank).xpThreshold : 0;
                                   const xpThresholdMet = (sellerData?.current_xp || 0) >= nextRankThreshold;
                                   const canAdvance = allTasksCompleted && xpThresholdMet;
@@ -3981,7 +5376,7 @@ const PartnerDashboard = () => {
                                             <Trophy className={`w-5 h-5 flex-shrink-0 mt-0.5 ${canAdvance ? 'text-primary' : 'text-muted-foreground'}`} />
                                             <div className="flex-1">
                                               <h3 className={`text-base font-semibold mb-2 ${canAdvance ? 'text-primary' : 'text-foreground'}`}>
-                                                {currentRank === 'Verified' && nextRank === 'Partner Pro' ? 'Upgrade to Partner Pro' : `Advance to ${nextRank}`}
+                                                {currentRank === 'Partner Plus' && nextRank === 'Partner Pro' ? 'Upgrade to Partner Pro' : `Advance to ${nextRank}`}
                                               </h3>
                                               
                                               {/* XP Requirement Check */}
@@ -4002,11 +5397,11 @@ const PartnerDashboard = () => {
                                                   <div className="flex items-start gap-2 mb-2">
                                                     <AlertCircle className="w-4 h-4 text-accent flex-shrink-0 mt-0.5" />
                                                     <p className="text-sm text-muted-foreground">
-                                                      <strong className="text-accent">Complete all tasks:</strong> You have enough XP, but you need to complete all {requiredTasks.length} task{requiredTasks.length !== 1 ? 's' : ''} for {currentRank} rank.
+                                                      <strong className="text-accent">Complete all tasks:</strong> You have enough XP, but you need to complete all {currentRankTasks.length} task{currentRankTasks.length !== 1 ? 's' : ''} for {currentRank} rank.
                                                     </p>
                                                   </div>
                                                   <p className="text-xs text-muted-foreground ml-6">
-                                                    Completed: {completedTasks.length} / {requiredTasks.length} tasks
+                                                    Completed: {completedCurrentRankTasks.length} / {currentRankTasks.length} tasks
                                                   </p>
                                                 </div>
                                               )}
@@ -4015,12 +5410,12 @@ const PartnerDashboard = () => {
                                               {canAdvance && (
                                                 <div className="mt-4">
                                                   <Button
-                                                    onClick={currentRank === 'Verified' && nextRank === 'Partner Pro' ? handlePartnerProCheckout : handleManualRankUp}
+                                                    onClick={currentRank === 'Partner Plus' && nextRank === 'Partner Pro' ? handlePartnerProCheckout : handleManualRankUp}
                                                     className="w-full bg-primary hover:bg-primary/90 text-primary-foreground"
                                                     size="lg"
                                                   >
                                                     <Trophy className="w-5 h-5 mr-2" />
-                                                    {currentRank === 'Verified' && nextRank === 'Partner Pro' ? 'Upgrade to Partner Pro - $24.99/month' : `Advance to ${nextRank}`}
+                                                    {currentRank === 'Partner Plus' && nextRank === 'Partner Pro' ? 'Upgrade to Partner Pro - $24.99/month' : `Advance to ${nextRank}`}
                                                   </Button>
                                                 </div>
                                               )}
@@ -4100,17 +5495,19 @@ const PartnerDashboard = () => {
                               <p className="text-xs sm:text-sm text-muted-foreground">
                                 Your referral code: <span className="font-bold text-primary">{sellerData?.referral_code || "Not set"}</span>
                               </p>
-                              <Button 
-                                onClick={() => {
-                                  setEditingReferralCode(true);
-                                  setNewReferralCode(sellerData?.referral_code || "");
-                                }}
-                                variant="outline"
-                                size="sm"
-                                className="w-full sm:w-auto"
-                              >
-                                Edit Code
-                              </Button>
+                              {(['Partner', 'Verified', 'Partner Pro'] as PartnerRank[]).includes(sellerData?.current_rank || 'Recruit') && (
+                                <Button 
+                                  onClick={() => {
+                                    setEditingReferralCode(true);
+                                    setNewReferralCode(sellerData?.referral_code || "");
+                                  }}
+                                  variant="outline"
+                                  size="sm"
+                                  className="w-full sm:w-auto"
+                                >
+                                  Edit Code
+                                </Button>
+                              )}
                             </div>
                           ) : (
                             <div className="space-y-2">
@@ -4351,16 +5748,16 @@ const PartnerDashboard = () => {
                                     )}
                                   </div>
                                   <div className="text-xs text-muted-foreground mt-0.5">
-                                    ${entry.total_sales.toFixed(2)} sales
+                                    {entry.current_rank}
                                   </div>
                                 </div>
                               </div>
                               <div className="text-right flex-shrink-0 ml-2">
                                 <div className="text-xs sm:text-sm font-bold text-primary">
-                                  ${entry.total_sales.toFixed(2)}
+                                  {entry.current_xp.toLocaleString()}
                                 </div>
                                 <div className="text-xs text-muted-foreground">
-                                  revenue
+                                  XP
                                 </div>
                               </div>
                             </div>
@@ -4556,11 +5953,40 @@ const PartnerDashboard = () => {
                                       </p>
                                     )}
                                   </div>
-                                  {!viewedAutomations.has(automation.id) && (
+                                  <div className="flex flex-col sm:flex-row gap-2 shrink-0">
+                                    <Button
+                                      variant="ghost"
+                                      size="sm"
+                                      onClick={() => handleToggleBookmark(automation.id)}
+                                      title={bookmarkedAutomations.has(automation.id) ? "Remove bookmark" : "Bookmark"}
+                                    >
+                                      {bookmarkedAutomations.has(automation.id) ? (
+                                        <BookmarkCheck className="w-4 h-4 text-primary" />
+                                      ) : (
+                                        <Bookmark className="w-4 h-4" />
+                                      )}
+                                    </Button>
                                     <Button
                                       variant="outline"
                                       size="sm"
-                                      onClick={async () => {
+                                      onClick={() => handleViewBrief(automation)}
+                                    >
+                                      <FileText className="w-4 h-4 mr-2" />
+                                      View Brief
+                                    </Button>
+                                    <Button
+                                      variant="default"
+                                      size="sm"
+                                      onClick={() => navigate(`/automation/${automation.id}`)}
+                                    >
+                                      <FileText className="w-4 h-4 mr-2" />
+                                      View Page
+                                    </Button>
+                                    {!viewedAutomations.has(automation.id) && (
+                                      <Button
+                                        variant="outline"
+                                        size="sm"
+                                        onClick={async () => {
                                         if (!sellerData?.id) {
                                           toast({
                                             title: "Error",
@@ -4606,7 +6032,15 @@ const PartnerDashboard = () => {
                                           updatedViewed.add(automation.id);
                                           setViewedAutomations(updatedViewed);
                                           
+                                          // Also mark pricing as viewed (for "Explore Five Automations" task)
+                                          const updatedPricingViewed = new Set(automationsWithPricingViewed);
+                                          updatedPricingViewed.add(automation.id);
+                                          setAutomationsWithPricingViewed(updatedPricingViewed);
+                                          
                                           console.log("Automation marked as viewed:", automation.id, "Total viewed:", updatedViewed.size);
+                                          
+                                          // Note: "Explore Five Automations" task completion is handled by useEffect
+                                          // to avoid infinite loops. Don't complete here.
                                           
                                           // Check if this completes the Automation Preview task
                                           const automationPreviewLesson = lessons.find(l => l.title === 'Automation Preview' && l.rank_required === 'Recruit');
@@ -4657,12 +6091,12 @@ const PartnerDashboard = () => {
                                           });
                                         }
                                       }}
-                                      className="shrink-0"
-                                    >
-                                      <CheckCircle className="w-4 h-4 mr-2" />
-                                      Mark as Viewed
-                                    </Button>
-                                  )}
+                                      >
+                                        <CheckCircle className="w-4 h-4 mr-2" />
+                                        Mark as Viewed
+                                      </Button>
+                                    )}
+                                  </div>
                                 </div>
                               </CardContent>
                             </Card>
@@ -4681,7 +6115,7 @@ const PartnerDashboard = () => {
                               Automations will be assigned to you as you progress through your partner journey.
                             </p>
                             <p className="text-xs text-muted-foreground mt-2">
-                              Complete the "Automation Preview" task in your Learning Journey to get started!
+                              Complete the "View 3 Automation Cards" task in your Learning Journey to get started!
                             </p>
                           </div>
                         </div>
@@ -5710,6 +7144,188 @@ const PartnerDashboard = () => {
 
           {/* Course Dialog for Popup-Style Courses (Slide-Based) */}
           {showCourseDialog && selectedCourse && (() => {
+            // Special handling for Sales Foundations and The Outreach Process - module-based courses
+            if (selectedCourse.title === 'Sales Foundations' || selectedCourse.title === 'The Outreach Process') {
+              // Module-based structure
+              let modules: Array<{ number: number; title: string; slides: number; startSlide: number }>;
+              let totalSlides: number;
+              
+              if (selectedCourse.title === 'Sales Foundations') {
+                modules = [
+                  { number: 1, title: 'Understanding Your Buyer', slides: 10, startSlide: 0 },
+                  { number: 2, title: 'Framing the Offer', slides: 10, startSlide: 10 },
+                  { number: 3, title: 'Avoiding Tech Talk', slides: 10, startSlide: 20 },
+                  { number: 4, title: 'Building Trust and Momentum', slides: 10, startSlide: 30 }
+                ];
+                totalSlides = 40;
+              } else {
+                // The Outreach Process
+                modules = [
+                  { number: 1, title: 'Preparing for Outreach', slides: 10, startSlide: 0 },
+                  { number: 2, title: 'Crafting Effective Messages', slides: 10, startSlide: 10 },
+                  { number: 3, title: 'Managing Conversations and Follow-Ups', slides: 10, startSlide: 20 },
+                  { number: 4, title: 'Closing and Maintaining Relationships', slides: 10, startSlide: 30 }
+                ];
+                totalSlides = 40;
+              }
+              
+              const currentModule = modules.find(m => currentCourseSlide >= m.startSlide && currentCourseSlide < m.startSlide + m.slides) || modules[0];
+              const slideInModule = currentCourseSlide - currentModule.startSlide + 1;
+              
+              // Parse slides
+              const content = typeof selectedCourse.content === 'string' ? selectedCourse.content : String(selectedCourse.content || '');
+              const slides: string[] = [];
+              
+              if (content.includes('##')) {
+                const sections = content.split(/(?=##)/);
+                sections.forEach(section => {
+                  if (section.trim()) {
+                    slides.push(section.trim());
+                  }
+                });
+              }
+              
+              if (slides.length === 0) {
+                slides.push(content);
+              }
+              
+              const currentSlideContent = slides[currentCourseSlide] || slides[0];
+              
+              return (
+                <Dialog open={showCourseDialog} onOpenChange={(open) => {
+                  setShowCourseDialog(open);
+                  if (!open) {
+                    // Don't reset slide - keep progress saved
+                  }
+                }}>
+                  <DialogContent className="max-w-5xl h-[90vh] flex flex-col overflow-hidden p-0">
+                    <div className="flex-shrink-0 px-6 pt-6 pb-4">
+                      <DialogHeader>
+                        <DialogTitle className="text-3xl font-bold text-primary">{selectedCourse.title}</DialogTitle>
+                        <DialogDescription className="text-base">
+                          Stage {selectedCourse.stage} • {selectedCourse.rank_required} • {selectedCourse.xp_reward} XP Reward
+                        </DialogDescription>
+                        <div className="flex items-center gap-4 mt-3">
+                          <Badge variant="outline" className="text-sm px-3 py-1">
+                            Module {currentModule.number}: {currentModule.title}
+                          </Badge>
+                          <div className="flex-1">
+                            <div className="flex items-center gap-2 mb-1">
+                              <span className="text-xs text-muted-foreground">Slide {currentCourseSlide + 1} of {totalSlides}</span>
+                              <span className="text-xs text-muted-foreground">•</span>
+                              <span className="text-xs text-muted-foreground">Module {currentModule.number}, Slide {slideInModule} of {currentModule.slides}</span>
+                            </div>
+                            <Progress 
+                              value={((currentCourseSlide + 1) / totalSlides) * 100} 
+                              className="h-2"
+                            />
+                          </div>
+                        </div>
+                      </DialogHeader>
+                    </div>
+                    <ScrollArea 
+                      className="flex-1 min-h-0 px-6" 
+                      style={{ height: 'calc(90vh - 200px)' }}
+                    >
+                      <div className="pr-4">
+                        {/* Custom renderer for course slides */}
+                        {(() => {
+                          const slideIndex = currentCourseSlide + 1;
+                          return renderCourseSlide(slideIndex, currentSlideContent, selectedCourse.title, currentModule);
+                        })()}
+                      </div>
+                    </ScrollArea>
+                    <div className="flex-shrink-0 flex gap-2 pt-4 pb-6 px-6 border-t">
+                      <Button
+                        variant="outline"
+                        onClick={() => {
+                          setShowCourseDialog(false);
+                          // Don't reset slide - progress is saved
+                        }}
+                      >
+                        Close
+                      </Button>
+                      <div className="flex gap-2 flex-1">
+                        <Button
+                          variant="outline"
+                          onClick={() => {
+                            if (currentCourseSlide > 0) {
+                              setCurrentCourseSlide(currentCourseSlide - 1);
+                            }
+                          }}
+                          disabled={currentCourseSlide === 0}
+                        >
+                          Back
+                        </Button>
+                        {currentCourseSlide < totalSlides - 1 ? (
+                          <Button
+                            onClick={async () => {
+                              if (currentCourseSlide < totalSlides - 1) {
+                                if (sellerData?.id && selectedCourse?.id) {
+                                  try {
+                                    await supabase.from("partner_activity_log").insert({
+                                      seller_id: sellerData.id,
+                                      event_type: "course_slide_viewed",
+                                      xp_value: 0,
+                                      description: `Viewed slide ${currentCourseSlide + 1} of ${totalSlides} in ${selectedCourse.title}`,
+                                      metadata: { 
+                                        lesson_id: selectedCourse.id,
+                                        slide_number: currentCourseSlide,
+                                        total_slides: totalSlides
+                                      }
+                                    });
+                                  } catch (error) {
+                                    console.error("Error tracking slide view:", error);
+                                  }
+                                }
+                                setCurrentCourseSlide(currentCourseSlide + 1);
+                              }
+                            }}
+                            className="flex-1"
+                          >
+                            Next
+                          </Button>
+                        ) : (
+                          selectedCourse.quiz_questions && (
+                            <Button
+                              onClick={async () => {
+                                if (sellerData?.id && selectedCourse?.id) {
+                                  try {
+                                    await supabase.from("partner_activity_log").insert({
+                                      seller_id: sellerData.id,
+                                      event_type: "course_slide_viewed",
+                                      xp_value: 0,
+                                      description: `Viewed all ${totalSlides} slides in ${selectedCourse.title}`,
+                                      metadata: { 
+                                        lesson_id: selectedCourse.id,
+                                        slide_number: currentCourseSlide,
+                                        total_slides: totalSlides,
+                                        all_slides_viewed: true
+                                      }
+                                    });
+                                  } catch (error) {
+                                    console.error("Error tracking final slide view:", error);
+                                  }
+                                }
+                                setShowCourseDialog(false);
+                                setCurrentCourseSlide(0);
+                                handleCompleteLesson(selectedCourse);
+                              }}
+                              disabled={completedLessons.has(selectedCourse.id)}
+                              className="flex-1"
+                            >
+                              {completedLessons.has(selectedCourse.id) ? 'Quiz Completed' : 'Take Quiz'}
+                            </Button>
+                          )
+                        )}
+                      </div>
+                    </div>
+                  </DialogContent>
+                </Dialog>
+              );
+            }
+            
+            // Standard course parsing for other courses
             // Parse course content into slides
             const content = typeof selectedCourse.content === 'string' ? selectedCourse.content : String(selectedCourse.content || '');
             const slides: string[] = [];
@@ -6505,8 +8121,27 @@ const PartnerDashboard = () => {
                           </Button>
                           {currentCourseSlide < totalSlides - 1 ? (
                             <Button
-                              onClick={() => {
+                              onClick={async () => {
                                 if (currentCourseSlide < totalSlides - 1) {
+                                  // Track slide view when advancing
+                                  if (sellerData?.id && selectedCourse?.id) {
+                                    try {
+                                      await supabase.from("partner_activity_log").insert({
+                                        seller_id: sellerData.id,
+                                        event_type: "course_slide_viewed",
+                                        xp_value: 0,
+                                        description: `Viewed slide ${currentCourseSlide + 1} of ${totalSlides} in ${selectedCourse.title}`,
+                                        metadata: { 
+                                          lesson_id: selectedCourse.id,
+                                          slide_number: currentCourseSlide,
+                                          total_slides: totalSlides
+                                        }
+                                      });
+                                    } catch (error) {
+                                      // Don't block slide navigation if tracking fails
+                                      console.error("Error tracking slide view:", error);
+                                    }
+                                  }
                                   setCurrentCourseSlide(currentCourseSlide + 1);
                                 }
                               }}
@@ -6517,7 +8152,26 @@ const PartnerDashboard = () => {
                           ) : (
                             selectedCourse.quiz_questions && (
                               <Button
-                                onClick={() => {
+                                onClick={async () => {
+                                  // Track final slide view before quiz
+                                  if (sellerData?.id && selectedCourse?.id) {
+                                    try {
+                                      await supabase.from("partner_activity_log").insert({
+                                        seller_id: sellerData.id,
+                                        event_type: "course_slide_viewed",
+                                        xp_value: 0,
+                                        description: `Viewed all ${totalSlides} slides in ${selectedCourse.title}`,
+                                        metadata: { 
+                                          lesson_id: selectedCourse.id,
+                                          slide_number: currentCourseSlide,
+                                          total_slides: totalSlides,
+                                          all_slides_viewed: true
+                                        }
+                                      });
+                                    } catch (error) {
+                                      console.error("Error tracking final slide view:", error);
+                                    }
+                                  }
                                   setShowCourseDialog(false);
                                   setCurrentCourseSlide(0);
                                   handleCompleteLesson(selectedCourse);
@@ -6550,6 +8204,119 @@ const PartnerDashboard = () => {
               </Dialog>
             );
           })()}
+
+          {/* Automation Brief Dialog */}
+          <Dialog open={showAutomationBrief} onOpenChange={handleBriefDialogClose}>
+            <DialogContent className="max-w-4xl max-h-[90vh] flex flex-col">
+              <DialogHeader>
+                <DialogTitle>{selectedAutomationBrief?.name || "Automation Brief"}</DialogTitle>
+                <DialogDescription>
+                  Detailed information about this automation
+                </DialogDescription>
+              </DialogHeader>
+              <ScrollArea className="flex-1 pr-4">
+                <div className="space-y-6">
+                  {selectedAutomationBrief && (
+                    <>
+                      {selectedAutomationBrief.image_url && (
+                        <div className="w-full h-64 overflow-hidden rounded-lg">
+                          <img
+                            src={selectedAutomationBrief.image_url}
+                            alt={selectedAutomationBrief.name}
+                            className="w-full h-full object-cover"
+                          />
+                        </div>
+                      )}
+                      
+                      <div>
+                        <h3 className="text-lg font-semibold mb-2">Description</h3>
+                        <p className="text-sm text-muted-foreground">
+                          {automationBriefData?.full_description || selectedAutomationBrief.description || "No detailed description available."}
+                        </p>
+                      </div>
+
+                      {automationBriefData?.use_cases && Array.isArray(automationBriefData.use_cases) && automationBriefData.use_cases.length > 0 && (
+                        <div>
+                          <h3 className="text-lg font-semibold mb-2">Use Cases</h3>
+                          <ul className="list-disc list-inside space-y-2 text-sm text-muted-foreground">
+                            {automationBriefData.use_cases.map((useCase: any, index: number) => (
+                              <li key={index}>{typeof useCase === 'string' ? useCase : useCase.title || useCase.description}</li>
+                            ))}
+                          </ul>
+                        </div>
+                      )}
+
+                      {automationBriefData?.features_detail && Array.isArray(automationBriefData.features_detail) && automationBriefData.features_detail.length > 0 && (
+                        <div>
+                          <h3 className="text-lg font-semibold mb-2">Features</h3>
+                          <ul className="list-disc list-inside space-y-2 text-sm text-muted-foreground">
+                            {automationBriefData.features_detail.map((feature: any, index: number) => (
+                              <li key={index}>{typeof feature === 'string' ? feature : feature.name || feature.description}</li>
+                            ))}
+                          </ul>
+                        </div>
+                      )}
+
+                      {automationBriefData?.implementation_timeline && (
+                        <div>
+                          <h3 className="text-lg font-semibold mb-2">Implementation Timeline</h3>
+                          <p className="text-sm text-muted-foreground">{automationBriefData.implementation_timeline}</p>
+                        </div>
+                      )}
+
+                      {automationBriefData?.technical_requirements && (
+                        <div>
+                          <h3 className="text-lg font-semibold mb-2">Technical Requirements</h3>
+                          <p className="text-sm text-muted-foreground">{automationBriefData.technical_requirements}</p>
+                        </div>
+                      )}
+
+                      {automationBriefData?.pricing_details && (
+                        <div>
+                          <h3 className="text-lg font-semibold mb-2">Pricing Details</h3>
+                          <p className="text-sm text-muted-foreground">{automationBriefData.pricing_details}</p>
+                        </div>
+                      )}
+
+                      {automationBriefData?.faq && Array.isArray(automationBriefData.faq) && automationBriefData.faq.length > 0 && (
+                        <div>
+                          <h3 className="text-lg font-semibold mb-2">Frequently Asked Questions</h3>
+                          <div className="space-y-4">
+                            {automationBriefData.faq.map((faq: any, index: number) => (
+                              <div key={index} className="border-b border-border pb-3">
+                                <h4 className="font-semibold text-sm mb-1">{typeof faq === 'string' ? faq : faq.question}</h4>
+                                {typeof faq === 'object' && faq.answer && (
+                                  <p className="text-sm text-muted-foreground">{faq.answer}</p>
+                                )}
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
+                      <div className="border-t border-border pt-4">
+                        <div className="grid grid-cols-2 gap-4 text-sm">
+                          <div>
+                            <span className="text-muted-foreground">Setup Price:</span>
+                            <span className="font-bold ml-2">${selectedAutomationBrief.setup_price}</span>
+                          </div>
+                          <div>
+                            <span className="text-muted-foreground">Monthly Price:</span>
+                            <span className="font-bold text-primary ml-2">${selectedAutomationBrief.monthly_price}/mo</span>
+                          </div>
+                        </div>
+                      </div>
+                    </>
+                  )}
+                </div>
+              </ScrollArea>
+              <div className="flex justify-end gap-2 pt-4 border-t">
+                <Button variant="outline" onClick={() => handleBriefDialogClose(false)}>
+                  Close
+                </Button>
+              </div>
+            </DialogContent>
+          </Dialog>
         </div>
       </section>
 

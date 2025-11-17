@@ -147,6 +147,23 @@ ALTER TABLE public.community_feed ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.vault_settings ENABLE ROW LEVEL SECURITY;
 
 -- RLS Policies
+-- Drop policies if they exist to make migration idempotent
+DROP POLICY IF EXISTS "Sellers can view their own season stats" ON public.partner_season_stats;
+DROP POLICY IF EXISTS "Sellers can view active challenges" ON public.partner_challenges;
+DROP POLICY IF EXISTS "Sellers can view their own challenge progress" ON public.partner_challenge_progress;
+DROP POLICY IF EXISTS "Sellers can view active quests" ON public.partner_quests;
+DROP POLICY IF EXISTS "Sellers can view their own quest progress" ON public.partner_quest_progress;
+DROP POLICY IF EXISTS "Sellers can view all badges" ON public.partner_badges;
+DROP POLICY IF EXISTS "Sellers can view their own badge earnings" ON public.partner_badge_earnings;
+DROP POLICY IF EXISTS "Sellers can view community feed" ON public.community_feed;
+DROP POLICY IF EXISTS "Sellers can view vault settings" ON public.vault_settings;
+DROP POLICY IF EXISTS "Admins can manage all retention systems" ON public.partner_season_stats;
+DROP POLICY IF EXISTS "Admins can manage challenges" ON public.partner_challenges;
+DROP POLICY IF EXISTS "Admins can manage quests" ON public.partner_quests;
+DROP POLICY IF EXISTS "Admins can manage badges" ON public.partner_badges;
+DROP POLICY IF EXISTS "Admins can manage community feed" ON public.community_feed;
+DROP POLICY IF EXISTS "Admins can manage vault settings" ON public.vault_settings;
+
 CREATE POLICY "Sellers can view their own season stats"
   ON public.partner_season_stats FOR SELECT
   USING (
@@ -267,7 +284,8 @@ $$;
 CREATE OR REPLACE FUNCTION public.get_xp_multiplier(
   _seller_id UUID,
   _event_type TEXT,
-  _days_lookback INTEGER DEFAULT 7
+  _days_lookback INTEGER DEFAULT 7,
+  _metadata JSONB DEFAULT NULL
 )
 RETURNS DECIMAL(3,2)
 LANGUAGE plpgsql
@@ -275,20 +293,35 @@ STABLE
 AS $$
 DECLARE
   repetition_count INTEGER;
+  lesson_id_val TEXT;
 BEGIN
-  -- Count how many times this event occurred in the last N days
-  SELECT COUNT(*) INTO repetition_count
-  FROM public.partner_activity_log
-  WHERE seller_id = _seller_id
-    AND event_type = _event_type
-    AND created_at >= NOW() - (_days_lookback || ' days')::INTERVAL;
+  -- Extract lesson_id from metadata if available (as TEXT to support both UUID and string IDs)
+  lesson_id_val := _metadata->>'lesson_id';
+  
+  -- If we have a lesson_id, check repetitions for that specific lesson
+  -- Otherwise, fall back to event_type checking (for non-lesson activities)
+  IF lesson_id_val IS NOT NULL AND lesson_id_val != '' THEN
+    -- Count how many times THIS SPECIFIC LESSON was completed in the last N days
+    SELECT COUNT(*) INTO repetition_count
+    FROM public.partner_activity_log
+    WHERE seller_id = _seller_id
+      AND metadata->>'lesson_id' = lesson_id_val
+      AND created_at >= NOW() - (_days_lookback || ' days')::INTERVAL;
+  ELSE
+    -- For non-lesson activities (like login streaks, referrals, etc.), use event_type
+    SELECT COUNT(*) INTO repetition_count
+    FROM public.partner_activity_log
+    WHERE seller_id = _seller_id
+      AND event_type = _event_type
+      AND created_at >= NOW() - (_days_lookback || ' days')::INTERVAL;
+  END IF;
 
   -- Apply diminishing returns
   CASE
-    WHEN repetition_count = 0 THEN RETURN 1.00; -- 100%
-    WHEN repetition_count <= 2 THEN RETURN 0.75; -- 75%
-    WHEN repetition_count <= 4 THEN RETURN 0.50; -- 50%
-    ELSE RETURN 0.25; -- 25%
+    WHEN repetition_count = 0 THEN RETURN 1.00; -- 100% (first time)
+    WHEN repetition_count <= 2 THEN RETURN 0.75; -- 75% (2nd-3rd time)
+    WHEN repetition_count <= 4 THEN RETURN 0.50; -- 50% (4th-5th time)
+    ELSE RETURN 0.25; -- 25% (6+ times)
   END CASE;
 END;
 $$;
@@ -336,8 +369,6 @@ SET search_path = public
 AS $$
 DECLARE
   new_xp INTEGER;
-  current_rank_val TEXT;
-  new_rank_val TEXT;
   final_xp_amount INTEGER;
   xp_multiplier DECIMAL(3,2);
   global_multiplier DECIMAL(3,2);
@@ -369,25 +400,52 @@ BEGIN
     RETURN (SELECT current_xp FROM public.sellers WHERE id = _seller_id);
   END IF;
 
-  -- Get global XP multiplier from vault_settings
-  SELECT COALESCE((setting_value->>'multiplier')::DECIMAL(3,2), 1.0) INTO global_multiplier
-  FROM public.vault_settings
-  WHERE setting_key = 'xp_multiplier'
-  LIMIT 1;
+  -- Get global XP multiplier from vault_settings (default to 1.0 if not found or table doesn't exist)
+  BEGIN
+    SELECT COALESCE((setting_value->>'multiplier')::DECIMAL(3,2), 1.0) INTO global_multiplier
+    FROM public.vault_settings
+    WHERE setting_key = 'xp_multiplier'
+    LIMIT 1;
+    
+    -- If no setting found or query returned NULL, default to 1.0
+    IF global_multiplier IS NULL THEN
+      global_multiplier := 1.0;
+    END IF;
+  EXCEPTION WHEN undefined_table OR OTHERS THEN
+    -- If vault_settings table doesn't exist, default to 1.0
+    global_multiplier := 1.0;
+  END;
 
-  -- Get diminishing returns multiplier
-  xp_multiplier := public.get_xp_multiplier(_seller_id, _event_type);
+  -- Get XP multiplier based on lesson/event type
+  -- Admin grants bypass multipliers
+  IF _event_type = 'admin_grant' THEN
+    xp_multiplier := 1.00; -- Admin grants always give 100% XP
+  ELSE
+    xp_multiplier := public.get_xp_multiplier(_seller_id, _event_type, 7, _metadata);
+  END IF;
 
   -- Calculate final XP amount
-  final_xp_amount := ROUND(_xp_amount * xp_multiplier * global_multiplier);
+  final_xp_amount := ROUND(_xp_amount * xp_multiplier * global_multiplier)::INTEGER;
+
+  -- Admin grants bypass multipliers and always give full XP
+  IF _event_type = 'admin_grant' THEN
+    final_xp_amount := _xp_amount;
+  END IF;
 
   -- Update seller XP and weekly XP
-  UPDATE public.sellers
-  SET current_xp = current_xp + final_xp_amount,
-      weekly_xp = weekly_xp + final_xp_amount,
-      season_xp = season_xp + final_xp_amount
-  WHERE id = _seller_id
-  RETURNING current_xp, current_rank INTO new_xp, current_rank_val;
+  IF _event_type = 'admin_grant' THEN
+    UPDATE public.sellers
+    SET current_xp = current_xp + final_xp_amount
+    WHERE id = _seller_id
+    RETURNING current_xp INTO new_xp;
+  ELSE
+    UPDATE public.sellers
+    SET current_xp = current_xp + final_xp_amount,
+        weekly_xp = COALESCE(weekly_xp, 0) + final_xp_amount,
+        season_xp = COALESCE(season_xp, 0) + final_xp_amount
+    WHERE id = _seller_id
+    RETURNING current_xp INTO new_xp;
+  END IF;
 
   -- Log the activity
   INSERT INTO public.partner_activity_log (
@@ -404,50 +462,8 @@ BEGIN
     _metadata
   );
 
-  -- Check for rank up
-  new_rank_val := public.calculate_seller_rank(new_xp);
-  
-  IF new_rank_val != current_rank_val THEN
-    -- Rank up!
-    UPDATE public.sellers
-    SET current_rank = new_rank_val,
-        commission_rate = public.get_rank_commission_rate(new_rank_val),
-        highest_rank = CASE 
-          WHEN new_rank_val > highest_rank THEN new_rank_val 
-          ELSE highest_rank 
-        END
-    WHERE id = _seller_id;
-
-    -- Log rank up
-    INSERT INTO public.partner_activity_log (
-      seller_id,
-      event_type,
-      xp_value,
-      description,
-      metadata
-    ) VALUES (
-      _seller_id,
-      'rank_up',
-      0,
-      'Ranked up to ' || new_rank_val,
-      jsonb_build_object('old_rank', current_rank_val, 'new_rank', new_rank_val)
-    );
-
-    -- Post to community feed
-    INSERT INTO public.community_feed (
-      event_type,
-      seller_id,
-      title,
-      description,
-      metadata
-    ) VALUES (
-      'rank_up',
-      _seller_id,
-      (SELECT business_name FROM public.sellers WHERE id = _seller_id) || ' reached ' || new_rank_val,
-      'Congratulations on ranking up!',
-      jsonb_build_object('old_rank', current_rank_val, 'new_rank', new_rank_val)
-    );
-  END IF;
+  -- NO AUTOMATIC RANK UP - User must manually advance via manual_rank_up() function
+  -- Rank advancement is now handled by manual_rank_up() function which requires both XP and task completion
 
   RETURN new_xp;
 END;
@@ -522,6 +538,8 @@ ON CONFLICT (setting_key) DO NOTHING;
 INSERT INTO public.vault_settings (setting_key, setting_value)
 VALUES ('current_season', '{"season_number": 1, "start_date": "2025-01-01", "end_date": "2025-03-31"}'::jsonb)
 ON CONFLICT (setting_key) DO NOTHING;
+
+
 
 
 

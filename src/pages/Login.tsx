@@ -62,11 +62,12 @@ const Login = () => {
 
       const userRoles = roles?.map(r => r.role) || [];
 
-      // If no roles found, check for client/seller records as fallback
+      // If no roles found, check for client/seller/learner records as fallback
       if (userRoles.length === 0) {
-        const [clientCheck, sellerCheck] = await Promise.all([
+        const [clientCheck, sellerCheck, learnerCheck] = await Promise.all([
           supabase.from("clients").select("id").eq("user_id", data.user.id).maybeSingle(),
           supabase.from("sellers").select("id").eq("user_id", data.user.id).maybeSingle(),
+          supabase.from("learners").select("id").eq("user_id", data.user.id).maybeSingle(),
         ]);
 
         // Assign roles based on existing records
@@ -82,6 +83,12 @@ const Login = () => {
             role: "seller",
           });
           userRoles.push("seller");
+        } else if (learnerCheck.data) {
+          await supabase.from("user_roles").insert({
+            user_id: data.user.id,
+            role: "learner",
+          });
+          userRoles.push("learner");
         }
       }
 
@@ -103,13 +110,15 @@ const Login = () => {
         return;
       }
       
-      // Redirect based on role priority: admin > seller > client
+      // Redirect based on role priority: admin > seller > client > learner
       if (userRoles.includes("admin")) {
         navigate("/admin-dashboard");
       } else if (userRoles.includes("seller")) {
         navigate("/partner-dashboard");
       } else if (userRoles.includes("client")) {
         navigate("/client-dashboard");
+      } else if (userRoles.includes("learner")) {
+        navigate("/learner-dashboard");
       } else {
         // No role assigned yet - redirect to for-businesses if referral code exists
         if (referralCode) {
@@ -267,6 +276,8 @@ const Login = () => {
           navigate("/partner-dashboard");
         } else if (userRoles.includes("client")) {
           navigate("/client-dashboard");
+        } else if (userRoles.includes("learner")) {
+          navigate("/learner-dashboard");
         } else {
           // No role assigned yet - redirect to for-businesses if referral code exists
           if (referralCode) {

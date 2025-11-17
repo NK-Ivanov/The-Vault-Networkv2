@@ -6,8 +6,14 @@ ALTER TABLE public.sellers
 ADD COLUMN IF NOT EXISTS current_xp INTEGER DEFAULT 0,
 ADD COLUMN IF NOT EXISTS current_rank TEXT DEFAULT 'Recruit';
 
--- Create rank enum
-CREATE TYPE public.partner_rank AS ENUM ('Recruit', 'Apprentice', 'Agent', 'Partner', 'Verified', 'Seller Pro');
+-- Create rank enum (if not exists)
+-- Note: PostgreSQL doesn't support CREATE TYPE IF NOT EXISTS, so we use DO block
+DO $$ 
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'partner_rank') THEN
+    CREATE TYPE public.partner_rank AS ENUM ('Recruit', 'Recruit Plus', 'Apprentice', 'Apprentice Plus', 'Agent', 'Agent Plus', 'Verified', 'Verified Plus', 'Partner', 'Partner Plus', 'Partner Pro');
+  END IF;
+END $$;
 
 -- Update sellers table to use rank enum (if needed, we'll keep TEXT for flexibility)
 -- We'll keep TEXT for now to allow easier updates
@@ -103,11 +109,13 @@ ALTER TABLE public.partner_case_studies ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.deal_tracking ENABLE ROW LEVEL SECURITY;
 
 -- RLS Policies for partner_lessons (public read for sellers)
+DROP POLICY IF EXISTS "Sellers can view all lessons" ON public.partner_lessons;
 CREATE POLICY "Sellers can view all lessons"
   ON public.partner_lessons FOR SELECT
   USING (true);
 
 -- RLS Policies for partner_quiz_results
+DROP POLICY IF EXISTS "Sellers can view their own quiz results" ON public.partner_quiz_results;
 CREATE POLICY "Sellers can view their own quiz results"
   ON public.partner_quiz_results FOR SELECT
   USING (
@@ -118,6 +126,7 @@ CREATE POLICY "Sellers can view their own quiz results"
     )
   );
 
+DROP POLICY IF EXISTS "Sellers can insert their own quiz results" ON public.partner_quiz_results;
 CREATE POLICY "Sellers can insert their own quiz results"
   ON public.partner_quiz_results FOR INSERT
   WITH CHECK (
@@ -129,6 +138,7 @@ CREATE POLICY "Sellers can insert their own quiz results"
   );
 
 -- RLS Policies for partner_activity_log
+DROP POLICY IF EXISTS "Sellers can view their own activity log" ON public.partner_activity_log;
 CREATE POLICY "Sellers can view their own activity log"
   ON public.partner_activity_log FOR SELECT
   USING (
@@ -139,6 +149,7 @@ CREATE POLICY "Sellers can view their own activity log"
     )
   );
 
+DROP POLICY IF EXISTS "Sellers can insert their own activity log" ON public.partner_activity_log;
 CREATE POLICY "Sellers can insert their own activity log"
   ON public.partner_activity_log FOR INSERT
   WITH CHECK (
@@ -150,6 +161,7 @@ CREATE POLICY "Sellers can insert their own activity log"
   );
 
 -- RLS Policies for automation_suggestions
+DROP POLICY IF EXISTS "Sellers can view their own suggestions" ON public.automation_suggestions;
 CREATE POLICY "Sellers can view their own suggestions"
   ON public.automation_suggestions FOR SELECT
   USING (
@@ -160,6 +172,7 @@ CREATE POLICY "Sellers can view their own suggestions"
     )
   );
 
+DROP POLICY IF EXISTS "Sellers can insert their own suggestions" ON public.automation_suggestions;
 CREATE POLICY "Sellers can insert their own suggestions"
   ON public.automation_suggestions FOR INSERT
   WITH CHECK (
@@ -171,6 +184,7 @@ CREATE POLICY "Sellers can insert their own suggestions"
   );
 
 -- RLS Policies for partner_case_studies
+DROP POLICY IF EXISTS "Sellers can manage their own case studies" ON public.partner_case_studies;
 CREATE POLICY "Sellers can manage their own case studies"
   ON public.partner_case_studies FOR ALL
   USING (
@@ -182,6 +196,7 @@ CREATE POLICY "Sellers can manage their own case studies"
   );
 
 -- RLS Policies for deal_tracking
+DROP POLICY IF EXISTS "Sellers can manage their own deal tracking" ON public.deal_tracking;
 CREATE POLICY "Sellers can manage their own deal tracking"
   ON public.deal_tracking FOR ALL
   USING (
@@ -193,22 +208,27 @@ CREATE POLICY "Sellers can manage their own deal tracking"
   );
 
 -- Admins can manage everything
+DROP POLICY IF EXISTS "Admins can manage partner_quiz_results" ON public.partner_quiz_results;
 CREATE POLICY "Admins can manage partner_quiz_results"
   ON public.partner_quiz_results FOR ALL
   USING (public.has_role(auth.uid(), 'admin'));
 
+DROP POLICY IF EXISTS "Admins can manage partner_activity_log" ON public.partner_activity_log;
 CREATE POLICY "Admins can manage partner_activity_log"
   ON public.partner_activity_log FOR ALL
   USING (public.has_role(auth.uid(), 'admin'));
 
+DROP POLICY IF EXISTS "Admins can manage automation_suggestions" ON public.automation_suggestions;
 CREATE POLICY "Admins can manage automation_suggestions"
   ON public.automation_suggestions FOR ALL
   USING (public.has_role(auth.uid(), 'admin'));
 
+DROP POLICY IF EXISTS "Admins can manage partner_case_studies" ON public.partner_case_studies;
 CREATE POLICY "Admins can manage partner_case_studies"
   ON public.partner_case_studies FOR ALL
   USING (public.has_role(auth.uid(), 'admin'));
 
+DROP POLICY IF EXISTS "Admins can manage deal_tracking" ON public.deal_tracking;
 CREATE POLICY "Admins can manage deal_tracking"
   ON public.deal_tracking FOR ALL
   USING (public.has_role(auth.uid(), 'admin'));
@@ -314,10 +334,16 @@ AS $$
 BEGIN
   CASE _rank
     WHEN 'Recruit' THEN RETURN 25.00;
+    WHEN 'Recruit Plus' THEN RETURN 25.00;
     WHEN 'Apprentice' THEN RETURN 30.00;
+    WHEN 'Apprentice Plus' THEN RETURN 30.00;
     WHEN 'Agent' THEN RETURN 33.00;
-    WHEN 'Partner' THEN RETURN 36.00;
-    WHEN 'Verified' THEN RETURN 40.00;
+    WHEN 'Agent Plus' THEN RETURN 33.00;
+    WHEN 'Verified' THEN RETURN 36.00;
+    WHEN 'Verified Plus' THEN RETURN 36.00;
+    WHEN 'Partner' THEN RETURN 40.00;
+    WHEN 'Partner Plus' THEN RETURN 40.00;
+    WHEN 'Partner Pro' THEN RETURN 45.00;
     WHEN 'Seller Pro' THEN RETURN 45.00;
     ELSE RETURN 25.00;
   END CASE;
@@ -355,6 +381,7 @@ BEGIN
 END;
 $$;
 
+DROP TRIGGER IF EXISTS first_sale_xp_trigger ON public.transactions;
 CREATE TRIGGER first_sale_xp_trigger
   AFTER INSERT ON public.transactions
   FOR EACH ROW
@@ -402,6 +429,7 @@ BEGIN
 END;
 $$;
 
+DROP TRIGGER IF EXISTS referral_client_xp_trigger ON public.clients;
 CREATE TRIGGER referral_client_xp_trigger
   AFTER INSERT ON public.clients
   FOR EACH ROW
@@ -460,6 +488,7 @@ BEGIN
 END;
 $$;
 
+DROP TRIGGER IF EXISTS automation_assignment_xp_trigger ON public.client_automations;
 CREATE TRIGGER automation_assignment_xp_trigger
   AFTER INSERT ON public.client_automations
   FOR EACH ROW

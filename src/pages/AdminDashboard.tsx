@@ -14,11 +14,12 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
-import { CheckCircle, XCircle, Users, DollarSign, Package, Plus, Eye, Settings, Edit, Search, ArrowUpDown, TrendingUp, TrendingDown, BarChart3, PieChart, Activity, MessageSquare, AlertCircle, Send, LayoutDashboard, UserCog, Building2, Boxes, Link2, Ticket, Mail, HelpCircle, Trophy, Zap } from "lucide-react";
+import { CheckCircle, XCircle, Users, DollarSign, Package, Plus, Eye, Settings, Edit, Search, ArrowUpDown, TrendingUp, TrendingDown, BarChart3, PieChart, Activity, MessageSquare, AlertCircle, Send, LayoutDashboard, UserCog, Building2, Boxes, Link2, Ticket, Mail, HelpCircle, Trophy, Zap, BookOpen, Copy, Trash2 } from "lucide-react";
 import { ChartContainer, ChartTooltip, ChartTooltipContent } from "@/components/ui/chart";
 import { BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid, ResponsiveContainer, PieChart as RechartsPieChart, Cell } from "recharts";
 import { useToast } from "@/hooks/use-toast";
 import { callNetlifyFunction } from "@/lib/netlify-functions";
+import { getNextRank, getPreviousRank, getRankInfo, getTasksForRank, type PartnerRank } from "@/lib/partner-progression";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
@@ -231,6 +232,24 @@ const AdminDashboard = () => {
   const [givingXP, setGivingXP] = useState(false);
   const [xpSellerSearchOpen, setXpSellerSearchOpen] = useState(false);
   const [bypassingToVerified, setBypassingToVerified] = useState(false);
+  const [advancingRank, setAdvancingRank] = useState(false);
+  const [demotingRank, setDemotingRank] = useState(false);
+  const [selectedTargetRank, setSelectedTargetRank] = useState<PartnerRank | "">("");
+  const [settingRank, setSettingRank] = useState(false);
+  
+  // Module management state
+  const [moduleTokens, setModuleTokens] = useState<any[]>([]);
+  const [loadingModules, setLoadingModules] = useState(false);
+  const [newModuleToken, setNewModuleToken] = useState({
+    module_id: "",
+    module_title: "",
+    module_description: "",
+    module_content_html: "",
+    expires_at: "",
+    max_uses: "",
+  });
+  const [creatingModule, setCreatingModule] = useState(false);
+  const [moduleHTMLPreview, setModuleHTMLPreview] = useState("");
   
   // Vault Network client management state
   const [vaultNetworkSellerId, setVaultNetworkSellerId] = useState<string | null>(null);
@@ -313,6 +332,7 @@ const AdminDashboard = () => {
       setIsAdmin(true);
       fetchAdminData();
       fetchAnalyticsData();
+      fetchModuleTokens();
     } catch (error: any) {
       toast({
         title: "Error checking permissions",
@@ -479,6 +499,99 @@ const AdminDashboard = () => {
       });
     } finally {
       setLoadingAnalytics(false);
+    }
+  };
+
+  const fetchModuleTokens = async () => {
+    setLoadingModules(true);
+    try {
+      const { data, error } = await supabase
+        .from("module_access_tokens")
+        .select("*")
+        .order("created_at", { ascending: false });
+
+      if (error) throw error;
+      setModuleTokens(data || []);
+    } catch (error: any) {
+      console.error("Error fetching module tokens:", error);
+      toast({
+        title: "Error",
+        description: "Failed to load module tokens",
+        variant: "destructive",
+      });
+    } finally {
+      setLoadingModules(false);
+    }
+  };
+
+  const handleCreateModuleToken = async () => {
+    if (!newModuleToken.module_id || !newModuleToken.module_title) {
+      toast({
+        title: "Missing fields",
+        description: "Module ID and Title are required",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setCreatingModule(true);
+    try {
+      // Generate a random token
+      const token = `learn_${Math.random().toString(36).substring(2, 15)}${Math.random().toString(36).substring(2, 15)}`;
+      
+      // Parse HTML content if provided
+      const moduleContent = newModuleToken.module_content_html ? {
+        type: 'html',
+        html: newModuleToken.module_content_html,
+        styles: moduleHTMLPreview || ''
+      } : null;
+
+      const { data, error } = await supabase
+        .from("module_access_tokens")
+        .insert({
+          token,
+          module_id: newModuleToken.module_id,
+          module_title: newModuleToken.module_title,
+          module_description: newModuleToken.module_description || null,
+          module_content: moduleContent,
+          expires_at: newModuleToken.expires_at || null,
+          max_uses: newModuleToken.max_uses ? parseInt(newModuleToken.max_uses) : null,
+          current_uses: 0,
+          is_active: true,
+          created_by: user?.id,
+        })
+        .select()
+        .single();
+
+      if (error) throw error;
+
+      toast({
+        title: "Module Token Created!",
+        description: "Share this link in Discord for learners to access the module",
+      });
+
+      // Reset form
+      setNewModuleToken({
+        module_id: "",
+        module_title: "",
+        module_description: "",
+        module_content_html: "",
+        expires_at: "",
+        max_uses: "",
+      });
+      setModuleHTMLPreview("");
+
+      // Refresh tokens
+      await fetchModuleTokens();
+    } catch (error: any) {
+      console.error("Error creating module token:", error);
+      toast({
+        title: "Error",
+        description: error.message || "Failed to create module token",
+        variant: "destructive",
+      });
+    } finally {
+      setCreatingModule(false);
     }
   };
 
@@ -1553,6 +1666,400 @@ const AdminDashboard = () => {
     }
   };
 
+  const handleDemoteRank = async () => {
+    if (!selectedSellerForXP) {
+      toast({
+        title: "Selection required",
+        description: "Please select a partner to demote",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    const seller = sellers.find(s => s.id === selectedSellerForXP);
+    if (!seller) {
+      toast({
+        title: "Partner not found",
+        description: "Selected partner could not be found",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    const currentRank = seller.current_rank as PartnerRank;
+    const previousRank = getPreviousRank(currentRank);
+
+    if (!previousRank) {
+      toast({
+        title: "Already at minimum rank",
+        description: `${seller.business_name} is already at the lowest rank (Recruit)`,
+        variant: "destructive",
+      });
+      return;
+    }
+
+    // Confirm demotion
+    if (!confirm(`Are you sure you want to demote ${seller.business_name} from ${currentRank} to ${previousRank}? They will need to manually rank up again unless you promote them through this panel.`)) {
+      return;
+    }
+
+    setDemotingRank(true);
+    try {
+      const previousRankInfo = getRankInfo(previousRank);
+
+      // Update rank and commission rate (don't update highest_rank when demoting)
+      const { error: updateError } = await supabase
+        .from('sellers')
+        .update({
+          current_rank: previousRank,
+          commission_rate: previousRankInfo.commissionRate,
+          // Don't update highest_rank when demoting - keep their achievement
+        })
+        .eq('id', selectedSellerForXP);
+
+      if (updateError) throw updateError;
+
+      // Log rank demotion
+      await supabase
+        .from('partner_activity_log')
+        .insert({
+          seller_id: selectedSellerForXP,
+          event_type: 'rank_up',
+          xp_value: 0,
+          description: `Admin demotion: Demoted from ${currentRank} to ${previousRank}`,
+          metadata: {
+            old_rank: currentRank,
+            new_rank: previousRank,
+            admin_demotion: true,
+            demoted_by: user?.id,
+          },
+        });
+
+      toast({
+        title: "Rank Demoted!",
+        description: `${seller.business_name} has been demoted from ${currentRank} to ${previousRank}. They will need to manually rank up again unless promoted through this panel.`,
+      });
+
+      // Reset form
+      setSelectedSellerForXP("");
+      setXpSellerSearchOpen(false);
+
+      // Refresh seller data
+      fetchAdminData();
+    } catch (error: any) {
+      toast({
+        title: "Failed to demote rank",
+        description: error.message,
+        variant: "destructive",
+      });
+    } finally {
+      setDemotingRank(false);
+    }
+  };
+
+  const handleAdvanceToNextRank = async () => {
+    if (!selectedSellerForXP) {
+      toast({
+        title: "Selection required",
+        description: "Please select a partner to advance",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    const seller = sellers.find(s => s.id === selectedSellerForXP);
+    if (!seller) {
+      toast({
+        title: "Partner not found",
+        description: "Selected partner could not be found",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    const currentRank = seller.current_rank as PartnerRank;
+    const nextRank = getNextRank(currentRank);
+
+    if (!nextRank) {
+      toast({
+        title: "Already at max rank",
+        description: `${seller.business_name} is already at the highest rank (Partner Pro)`,
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setAdvancingRank(true);
+    try {
+      // Get all tasks required for the next rank
+      const requiredTasks = getTasksForRank(nextRank);
+      const rankInfo = getRankInfo(nextRank);
+
+      // Check which tasks are already completed
+      const { data: existingCompletions } = await supabase
+        .from('partner_activity_log')
+        .select('metadata')
+        .eq('seller_id', selectedSellerForXP)
+        .in('event_type', ['task_completed', 'quiz_completed']);
+
+      const completedLessonIds = new Set(
+        existingCompletions?.map(c => c.metadata?.lesson_id).filter(Boolean) || []
+      );
+
+      // Mark all missing tasks as completed
+      const tasksToComplete = requiredTasks.filter(taskId => !completedLessonIds.has(taskId));
+      
+      if (tasksToComplete.length > 0) {
+        const taskCompletions = tasksToComplete.map(taskId => ({
+          seller_id: selectedSellerForXP,
+          event_type: 'task_completed',
+          xp_value: 0, // XP will be awarded separately
+          description: `Admin bypass: Auto-completed task ${taskId} for ${nextRank} rank`,
+          metadata: {
+            lesson_id: taskId,
+            admin_bypass: true,
+            bypassed_by: user?.id,
+            target_rank: nextRank,
+          },
+        }));
+
+        const { error: logError } = await supabase
+          .from('partner_activity_log')
+          .insert(taskCompletions);
+
+        if (logError) throw logError;
+      }
+
+      // Set XP to next rank threshold if current XP is less
+      const currentXp = seller.current_xp || 0;
+      const nextRankXpThreshold = rankInfo.xpThreshold;
+      
+      if (currentXp < nextRankXpThreshold) {
+        const xpNeeded = nextRankXpThreshold - currentXp;
+        const { error: xpError } = await supabase.rpc('add_seller_xp', {
+          _seller_id: selectedSellerForXP,
+          _xp_amount: xpNeeded,
+          _event_type: 'admin_grant',
+          _description: `Admin bypass: Set to ${nextRank} rank threshold`,
+          _metadata: { 
+            granted_by: user?.id,
+            reason: `Admin bypass to ${nextRank}`,
+            bypass_progression: true
+          }
+        });
+
+        if (xpError) throw xpError;
+      }
+
+      // Update rank and commission rate
+      const { error: updateError } = await supabase
+        .from('sellers')
+        .update({
+          current_rank: nextRank,
+          commission_rate: rankInfo.commissionRate,
+          highest_rank: nextRank, // Update highest rank if this is higher
+        })
+        .eq('id', selectedSellerForXP);
+
+      if (updateError) throw updateError;
+
+      // Log rank up
+      await supabase
+        .from('partner_activity_log')
+        .insert({
+          seller_id: selectedSellerForXP,
+          event_type: 'rank_up',
+          xp_value: 0,
+          description: `Admin bypass: Ranked up to ${nextRank}`,
+          metadata: {
+            old_rank: currentRank,
+            new_rank: nextRank,
+            admin_bypass: true,
+            bypassed_by: user?.id,
+          },
+        });
+
+      toast({
+        title: "Rank Advanced!",
+        description: `${seller.business_name} has been advanced from ${currentRank} to ${nextRank}. All required tasks have been auto-completed.`,
+      });
+
+      // Reset form
+      setSelectedSellerForXP("");
+      setXpSellerSearchOpen(false);
+
+      // Refresh seller data
+      fetchAdminData();
+    } catch (error: any) {
+      toast({
+        title: "Failed to advance rank",
+        description: error.message,
+        variant: "destructive",
+      });
+    } finally {
+      setAdvancingRank(false);
+    }
+  };
+
+  const handleSetRank = async () => {
+    if (!selectedSellerForXP) {
+      toast({
+        title: "Selection required",
+        description: "Please select a partner to set rank",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    if (!selectedTargetRank) {
+      toast({
+        title: "Rank required",
+        description: "Please select a target rank",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    const seller = sellers.find(s => s.id === selectedSellerForXP);
+    if (!seller) {
+      toast({
+        title: "Partner not found",
+        description: "Selected partner could not be found",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    const currentRank = seller.current_rank as PartnerRank;
+    const targetRank = selectedTargetRank as PartnerRank;
+
+    if (currentRank === targetRank) {
+      toast({
+        title: "Already at target rank",
+        description: `${seller.business_name} is already at ${targetRank} rank`,
+        variant: "destructive",
+      });
+      return;
+    }
+
+    // Confirm rank change
+    if (!confirm(`Are you sure you want to set ${seller.business_name}'s rank from ${currentRank} to ${targetRank}? This will complete all required tasks and set XP to the appropriate threshold.`)) {
+      return;
+    }
+
+    setSettingRank(true);
+    try {
+      const targetRankInfo = getRankInfo(targetRank);
+      const targetRankTasks = getTasksForRank(targetRank);
+
+      // Check which tasks are already completed
+      const { data: existingCompletions } = await supabase
+        .from('partner_activity_log')
+        .select('metadata')
+        .eq('seller_id', selectedSellerForXP)
+        .in('event_type', ['task_completed', 'quiz_completed']);
+
+      const completedLessonIds = new Set(
+        existingCompletions?.map(c => c.metadata?.lesson_id).filter(Boolean) || []
+      );
+
+      // Mark all missing tasks as completed
+      const tasksToComplete = targetRankTasks.filter(taskId => !completedLessonIds.has(taskId));
+      
+      if (tasksToComplete.length > 0) {
+        const taskCompletions = tasksToComplete.map(taskId => ({
+          seller_id: selectedSellerForXP,
+          event_type: 'task_completed',
+          xp_value: 0,
+          description: `Admin bypass: Auto-completed task ${taskId} for ${targetRank} rank`,
+          metadata: {
+            lesson_id: taskId,
+            admin_bypass: true,
+            bypassed_by: user?.id,
+            target_rank: targetRank,
+          },
+        }));
+
+        const { error: logError } = await supabase
+          .from('partner_activity_log')
+          .insert(taskCompletions);
+
+        if (logError) throw logError;
+      }
+
+      // Set XP to target rank threshold if current XP is less
+      const currentXp = seller.current_xp || 0;
+      const targetRankXpThreshold = targetRankInfo.xpThreshold;
+      
+      if (currentXp < targetRankXpThreshold) {
+        const xpNeeded = targetRankXpThreshold - currentXp;
+        const { error: xpError } = await supabase.rpc('add_seller_xp', {
+          _seller_id: selectedSellerForXP,
+          _xp_amount: xpNeeded,
+          _event_type: 'admin_grant',
+          _description: `Admin bypass: Set to ${targetRank} rank threshold`,
+          _metadata: { 
+            granted_by: user?.id,
+            reason: `Admin bypass to ${targetRank}`,
+            bypass_progression: true
+          }
+        });
+
+        if (xpError) throw xpError;
+      }
+
+      // Update rank and commission rate
+      const { error: updateError } = await supabase
+        .from('sellers')
+        .update({
+          current_rank: targetRank,
+          commission_rate: targetRankInfo.commissionRate,
+          highest_rank: targetRank, // Update highest rank if this is higher
+        })
+        .eq('id', selectedSellerForXP);
+
+      if (updateError) throw updateError;
+
+      // Log rank change
+      await supabase
+        .from('partner_activity_log')
+        .insert({
+          seller_id: selectedSellerForXP,
+          event_type: 'rank_up',
+          xp_value: 0,
+          description: `Admin bypass: Rank set to ${targetRank}`,
+          metadata: {
+            old_rank: currentRank,
+            new_rank: targetRank,
+            admin_bypass: true,
+            bypassed_by: user?.id,
+            set_rank: true,
+          },
+        });
+
+      toast({
+        title: "Rank Set!",
+        description: `${seller.business_name}'s rank has been set from ${currentRank} to ${targetRank}. All required tasks have been auto-completed.`,
+      });
+
+      // Reset form
+      setSelectedTargetRank("");
+      setSelectedSellerForXP("");
+      setXpSellerSearchOpen(false);
+
+      // Refresh seller data
+      fetchAdminData();
+    } catch (error: any) {
+      toast({
+        title: "Failed to set rank",
+        description: error.message,
+        variant: "destructive",
+      });
+    } finally {
+      setSettingRank(false);
+    }
+  };
+
   const handleBypassToVerified = async () => {
     if (!selectedSellerForXP) {
       toast({
@@ -2330,6 +2837,10 @@ const AdminDashboard = () => {
                   <TabsTrigger value="xp-management" className="flex items-center justify-center gap-2 data-[state=active]:bg-background">
                     <Trophy className="w-4 h-4" />
                     <span className="hidden sm:inline">Give XP</span>
+                  </TabsTrigger>
+                  <TabsTrigger value="modules" className="flex items-center justify-center gap-2 data-[state=active]:bg-background">
+                    <BookOpen className="w-4 h-4" />
+                    <span className="hidden sm:inline">Modules</span>
                   </TabsTrigger>
                 </TabsList>
 
@@ -3765,10 +4276,209 @@ const AdminDashboard = () => {
                           </div>
                         )}
                       </div>
+                      {selectedSellerForXP && (() => {
+                        const seller = sellers.find(s => s.id === selectedSellerForXP);
+                        if (!seller) return null;
+                        const currentRank = seller.current_rank as PartnerRank;
+                        const nextRank = getNextRank(currentRank);
+                        const previousRank = getPreviousRank(currentRank);
+                        const nextRankInfo = nextRank ? getRankInfo(nextRank) : null;
+                        const previousRankInfo = previousRank ? getRankInfo(previousRank) : null;
+                        const requiredTasks = nextRank ? getTasksForRank(nextRank) : [];
+                        return (
+                          <>
+                            {nextRank && (
+                              <Card className="bg-muted/20 mb-3">
+                                <CardContent className="pt-6">
+                                  <div className="space-y-2 text-sm">
+                                    <p className="font-semibold text-primary">Advance to Next Rank</p>
+                                    <p className="text-muted-foreground">
+                                      This will advance <strong>{seller.business_name}</strong> from <strong>{currentRank}</strong> to <strong>{nextRank}</strong>
+                                    </p>
+                                    <div className="space-y-1 text-xs text-muted-foreground">
+                                      <p>• All <strong className="text-primary">{requiredTasks.length} required tasks</strong> will be auto-completed</p>
+                                      <p>• XP will be set to <strong className="text-primary">{nextRankInfo?.xpThreshold}</strong> (if below threshold)</p>
+                                      <p>• Commission rate will be set to <strong className="text-primary">{nextRankInfo?.commissionRate}%</strong></p>
+                                    </div>
+                                  </div>
+                                </CardContent>
+                              </Card>
+                            )}
+                            {previousRank && (
+                              <Card className="bg-muted/20 mb-3 border-destructive/20">
+                                <CardContent className="pt-6">
+                                  <div className="space-y-2 text-sm">
+                                    <p className="font-semibold text-destructive">Demote to Previous Rank</p>
+                                    <p className="text-muted-foreground">
+                                      This will demote <strong>{seller.business_name}</strong> from <strong>{currentRank}</strong> to <strong>{previousRank}</strong>
+                                    </p>
+                                    <div className="space-y-1 text-xs text-muted-foreground">
+                                      <p>• Commission rate will be set to <strong className="text-destructive">{previousRankInfo?.commissionRate}%</strong></p>
+                                      <p>• They will need to <strong className="text-destructive">manually rank up</strong> again unless you promote them</p>
+                                      <p>• Their <strong>highest rank achievement</strong> will be preserved</p>
+                                    </div>
+                                  </div>
+                                </CardContent>
+                              </Card>
+                            )}
+                          </>
+                        );
+                      })()}
+                      <div className="flex gap-2 mb-3">
+                        <Button
+                          onClick={handleAdvanceToNextRank}
+                          disabled={advancingRank || demotingRank || !selectedSellerForXP}
+                          className="flex-1 bg-primary hover:bg-primary/90 text-primary-foreground"
+                          variant="default"
+                        >
+                          {advancingRank ? (
+                            <>
+                              <Activity className="w-4 h-4 mr-2 animate-spin" />
+                              Advancing...
+                            </>
+                          ) : (
+                            <>
+                              <TrendingUp className="w-4 h-4 mr-2" />
+                              Advance Rank
+                            </>
+                          )}
+                        </Button>
+                        {selectedSellerForXP && (() => {
+                          const seller = sellers.find(s => s.id === selectedSellerForXP);
+                          if (!seller) return null;
+                          const currentRank = seller.current_rank as PartnerRank;
+                          const previousRank = getPreviousRank(currentRank);
+                          if (!previousRank) return null;
+                          return (
+                            <Button
+                              onClick={handleDemoteRank}
+                              disabled={advancingRank || demotingRank || !selectedSellerForXP}
+                              className="flex-1 bg-destructive hover:bg-destructive/90 text-destructive-foreground"
+                              variant="default"
+                            >
+                              {demotingRank ? (
+                                <>
+                                  <Activity className="w-4 h-4 mr-2 animate-spin" />
+                                  Demoting...
+                                </>
+                              ) : (
+                                <>
+                                  <TrendingDown className="w-4 h-4 mr-2" />
+                                  Demote Rank
+                                </>
+                              )}
+                            </Button>
+                          );
+                        })()}
+                      </div>
+
+                      {/* Set to Specific Rank */}
+                      <Card className="bg-gradient-to-r from-secondary/10 to-secondary/5 border-secondary/20 mt-4">
+                        <CardHeader>
+                          <CardTitle className="flex items-center gap-2 text-secondary-foreground">
+                            <UserCog className="w-5 h-5" />
+                            Set to Specific Rank
+                          </CardTitle>
+                          <CardDescription>
+                            Set a partner's rank directly to any rank. This will complete all required tasks and set XP to the appropriate threshold.
+                          </CardDescription>
+                        </CardHeader>
+                        <CardContent className="space-y-4">
+                          {selectedSellerForXP && (() => {
+                            const seller = sellers.find(s => s.id === selectedSellerForXP);
+                            if (!seller) return null;
+                            const currentRank = seller.current_rank as PartnerRank;
+                            return (
+                              <div className="space-y-3">
+                                <div className="p-3 bg-secondary/10 border border-secondary/20 rounded-lg">
+                                  <p className="text-sm text-muted-foreground mb-2">
+                                    <strong className="text-secondary-foreground">Selected Partner:</strong>{' '}
+                                    <span className="text-foreground">{seller.business_name}</span>
+                                  </p>
+                                  <p className="text-sm text-muted-foreground">
+                                    <strong className="text-secondary-foreground">Current Rank:</strong>{' '}
+                                    <span className="text-foreground">{currentRank}</span>
+                                  </p>
+                                </div>
+                                <div className="space-y-2">
+                                  <Label htmlFor="target-rank">Target Rank</Label>
+                                  <Select
+                                    value={selectedTargetRank}
+                                    onValueChange={(value) => setSelectedTargetRank(value as PartnerRank)}
+                                    disabled={settingRank}
+                                  >
+                                    <SelectTrigger id="target-rank">
+                                      <SelectValue placeholder="Select target rank" />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                      <SelectItem value="Recruit">Recruit</SelectItem>
+                                      <SelectItem value="Recruit Plus">Recruit Plus</SelectItem>
+                                      <SelectItem value="Apprentice">Apprentice</SelectItem>
+                                      <SelectItem value="Apprentice Plus">Apprentice Plus</SelectItem>
+                                      <SelectItem value="Agent">Agent</SelectItem>
+                                      <SelectItem value="Agent Plus">Agent Plus</SelectItem>
+                                      <SelectItem value="Verified">Verified</SelectItem>
+                                      <SelectItem value="Verified Plus">Verified Plus</SelectItem>
+                                      <SelectItem value="Partner">Partner</SelectItem>
+                                      <SelectItem value="Partner Plus">Partner Plus</SelectItem>
+                                      <SelectItem value="Partner Pro">Partner Pro</SelectItem>
+                                    </SelectContent>
+                                  </Select>
+                                </div>
+                                {selectedTargetRank && selectedTargetRank !== currentRank && (() => {
+                                  const targetRankInfo = getRankInfo(selectedTargetRank as PartnerRank);
+                                  const targetRankTasks = getTasksForRank(selectedTargetRank as PartnerRank);
+                                  return (
+                                    <Card className="bg-muted/20">
+                                      <CardContent className="pt-6">
+                                        <div className="space-y-2 text-sm">
+                                          <p className="font-semibold text-secondary-foreground">Rank Change Preview</p>
+                                          <p className="text-muted-foreground">
+                                            This will set <strong>{seller.business_name}</strong> from <strong>{currentRank}</strong> to <strong>{selectedTargetRank}</strong>
+                                          </p>
+                                          <div className="space-y-1 text-xs text-muted-foreground">
+                                            <p>• All <strong className="text-secondary-foreground">{targetRankTasks.length} required tasks</strong> will be auto-completed</p>
+                                            <p>• XP will be set to <strong className="text-secondary-foreground">{targetRankInfo.xpThreshold}</strong> (if below threshold)</p>
+                                            <p>• Commission rate will be set to <strong className="text-secondary-foreground">{targetRankInfo.commissionRate}%</strong></p>
+                                          </div>
+                                        </div>
+                                      </CardContent>
+                                    </Card>
+                                  );
+                                })()}
+                                <Button
+                                  onClick={handleSetRank}
+                                  disabled={settingRank || !selectedSellerForXP || !selectedTargetRank || selectedTargetRank === (seller?.current_rank as PartnerRank)}
+                                  className="w-full bg-secondary hover:bg-secondary/90 text-secondary-foreground"
+                                  variant="default"
+                                >
+                                  {settingRank ? (
+                                    <>
+                                      <Activity className="w-4 h-4 mr-2 animate-spin" />
+                                      Setting Rank...
+                                    </>
+                                  ) : (
+                                    <>
+                                      <UserCog className="w-4 h-4 mr-2" />
+                                      Set to {selectedTargetRank || "Selected Rank"}
+                                    </>
+                                  )}
+                                </Button>
+                              </div>
+                            );
+                          })()}
+                          {!selectedSellerForXP && (
+                            <p className="text-sm text-muted-foreground text-center py-4">
+                              Select a partner from above to set their rank
+                            </p>
+                          )}
+                        </CardContent>
+                      </Card>
+
                       <Button
                         onClick={handleBypassToVerified}
                         disabled={bypassingToVerified || !selectedSellerForXP}
-                        className="w-full bg-primary hover:bg-primary/90 text-primary-foreground"
+                        className="w-full bg-secondary hover:bg-secondary/90 text-secondary-foreground mt-4"
                         variant="default"
                       >
                         {bypassingToVerified ? (
@@ -3785,6 +4495,209 @@ const AdminDashboard = () => {
                       </Button>
                     </CardContent>
                   </Card>
+                  </div>
+                </TabsContent>
+
+                <TabsContent value="modules">
+                  <div className="space-y-6">
+                    {/* Create Module Token */}
+                    <Card>
+                      <CardHeader>
+                        <CardTitle className="flex items-center gap-2">
+                          <BookOpen className="w-5 h-5" />
+                          Create Module Access Link
+                        </CardTitle>
+                        <CardDescription>
+                          Create a shareable link for learners to access a module through Discord
+                        </CardDescription>
+                      </CardHeader>
+                      <CardContent className="space-y-4">
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                          <div className="space-y-2">
+                            <Label htmlFor="module-id">Module ID *</Label>
+                            <Input
+                              id="module-id"
+                              placeholder="foundations-of-business-automation"
+                              value={newModuleToken.module_id}
+                              onChange={(e) => setNewModuleToken({ ...newModuleToken, module_id: e.target.value })}
+                              required
+                            />
+                          </div>
+                          <div className="space-y-2">
+                            <Label htmlFor="module-title">Module Title *</Label>
+                            <Input
+                              id="module-title"
+                              placeholder="Module 1: Foundations of Business Automation"
+                              value={newModuleToken.module_title}
+                              onChange={(e) => setNewModuleToken({ ...newModuleToken, module_title: e.target.value })}
+                              required
+                            />
+                          </div>
+                        </div>
+                        <div className="space-y-2">
+                          <Label htmlFor="module-description">Description</Label>
+                          <Textarea
+                            id="module-description"
+                            placeholder="Learn how automation saves time, reduces errors..."
+                            value={newModuleToken.module_description}
+                            onChange={(e) => setNewModuleToken({ ...newModuleToken, module_description: e.target.value })}
+                            rows={2}
+                          />
+                        </div>
+                        <div className="space-y-2">
+                          <Label htmlFor="module-html">HTML Content</Label>
+                          <Textarea
+                            id="module-html"
+                            placeholder="Paste the HTML content from the mockup file (body content)"
+                            value={newModuleToken.module_content_html}
+                            onChange={(e) => {
+                              setNewModuleToken({ ...newModuleToken, module_content_html: e.target.value });
+                              // Extract styles if present
+                              const htmlMatch = e.target.value.match(/<style>([\s\S]*?)<\/style>/);
+                              if (htmlMatch) {
+                                setModuleHTMLPreview(htmlMatch[1]);
+                              }
+                            }}
+                            rows={10}
+                            className="font-mono text-xs"
+                          />
+                          <p className="text-xs text-muted-foreground">
+                            Paste the full HTML body content from the mockup file. The styles will be extracted automatically.
+                          </p>
+                        </div>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                          <div className="space-y-2">
+                            <Label htmlFor="expires-at">Expires At (Optional)</Label>
+                            <Input
+                              id="expires-at"
+                              type="datetime-local"
+                              value={newModuleToken.expires_at}
+                              onChange={(e) => setNewModuleToken({ ...newModuleToken, expires_at: e.target.value })}
+                            />
+                          </div>
+                          <div className="space-y-2">
+                            <Label htmlFor="max-uses">Max Uses (Optional)</Label>
+                            <Input
+                              id="max-uses"
+                              type="number"
+                              placeholder="Unlimited"
+                              value={newModuleToken.max_uses}
+                              onChange={(e) => setNewModuleToken({ ...newModuleToken, max_uses: e.target.value })}
+                            />
+                          </div>
+                        </div>
+                        <Button
+                          onClick={handleCreateModuleToken}
+                          disabled={creatingModule || !newModuleToken.module_id || !newModuleToken.module_title}
+                          className="w-full"
+                        >
+                          {creatingModule ? (
+                            <>
+                              <Activity className="mr-2 h-4 w-4 animate-spin" />
+                              Creating...
+                            </>
+                          ) : (
+                            <>
+                              <Plus className="mr-2 h-4 w-4" />
+                              Create Module Link
+                            </>
+                          )}
+                        </Button>
+                      </CardContent>
+                    </Card>
+
+                    {/* Existing Module Tokens */}
+                    <Card>
+                      <CardHeader>
+                        <CardTitle className="flex items-center gap-2">
+                          <Link2 className="w-5 h-5" />
+                          Module Access Links
+                        </CardTitle>
+                        <CardDescription>
+                          All active module access links. Share these in Discord for learners.
+                        </CardDescription>
+                      </CardHeader>
+                      <CardContent>
+                        {loadingModules ? (
+                          <div className="text-center py-8">
+                            <Activity className="w-6 h-6 animate-spin text-primary mx-auto mb-2" />
+                            <p className="text-muted-foreground">Loading module links...</p>
+                          </div>
+                        ) : moduleTokens.length === 0 ? (
+                          <div className="text-center py-8">
+                            <BookOpen className="w-12 h-12 text-muted-foreground mx-auto mb-4 opacity-50" />
+                            <p className="text-muted-foreground">No module links created yet</p>
+                            <p className="text-sm text-muted-foreground mt-2">
+                              Create your first module access link above
+                            </p>
+                          </div>
+                        ) : (
+                          <div className="space-y-4">
+                            {moduleTokens.map((token) => {
+                              const shareLink = `${window.location.origin}/learner-dashboard?token=${token.token}`;
+                              const isExpired = token.expires_at && new Date(token.expires_at) < new Date();
+                              const isMaxedOut = token.max_uses && token.current_uses >= token.max_uses;
+                              
+                              return (
+                                <Card key={token.id} className={!token.is_active || isExpired || isMaxedOut ? "opacity-60" : ""}>
+                                  <CardContent className="pt-6">
+                                    <div className="space-y-3">
+                                      <div className="flex items-start justify-between">
+                                        <div className="flex-1">
+                                          <h4 className="font-semibold text-lg">{token.module_title}</h4>
+                                          {token.module_description && (
+                                            <p className="text-sm text-muted-foreground mt-1">
+                                              {token.module_description}
+                                            </p>
+                                          )}
+                                          <div className="flex items-center gap-4 mt-2 text-xs text-muted-foreground">
+                                            <span>ID: {token.module_id}</span>
+                                            <span>•</span>
+                                            <span>Uses: {token.current_uses}{token.max_uses ? ` / ${token.max_uses}` : ''}</span>
+                                            {token.expires_at && (
+                                              <>
+                                                <span>•</span>
+                                                <span>
+                                                  {isExpired ? 'Expired' : `Expires: ${new Date(token.expires_at).toLocaleDateString()}`}
+                                                </span>
+                                              </>
+                                            )}
+                                          </div>
+                                        </div>
+                                        <Badge variant={token.is_active && !isExpired && !isMaxedOut ? "default" : "secondary"}>
+                                          {!token.is_active ? "Inactive" : isExpired ? "Expired" : isMaxedOut ? "Maxed Out" : "Active"}
+                                        </Badge>
+                                      </div>
+                                      <div className="flex items-center gap-2 pt-2 border-t">
+                                        <Input
+                                          value={shareLink}
+                                          readOnly
+                                          className="flex-1 font-mono text-xs"
+                                        />
+                                        <Button
+                                          variant="outline"
+                                          size="sm"
+                                          onClick={() => {
+                                            navigator.clipboard.writeText(shareLink);
+                                            toast({
+                                              title: "Copied!",
+                                              description: "Link copied to clipboard",
+                                            });
+                                          }}
+                                        >
+                                          <Copy className="w-4 h-4 mr-2" />
+                                          Copy Link
+                                        </Button>
+                                      </div>
+                                    </div>
+                                  </CardContent>
+                                </Card>
+                              );
+                            })}
+                          </div>
+                        )}
+                      </CardContent>
+                    </Card>
                   </div>
                 </TabsContent>
               </Tabs>

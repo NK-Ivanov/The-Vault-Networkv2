@@ -142,13 +142,15 @@ const Navigation = () => {
       const rolesList = roles?.map(r => r.role) || [];
       
       let role: string | null = null;
-      // Priority: admin > seller > client
+      // Priority: admin > seller > client > learner
       if (rolesList.includes("admin")) {
         role = "admin";
       } else if (rolesList.includes("seller")) {
         role = "seller";
       } else if (rolesList.includes("client")) {
         role = "client";
+      } else if (rolesList.includes("learner")) {
+        role = "learner";
       }
       
       setUserRole(role);
@@ -196,6 +198,8 @@ const Navigation = () => {
         return "/partner-dashboard";
       case "client":
         return "/client-dashboard";
+      case "learner":
+        return "/learner-dashboard";
       default:
         return null;
     }

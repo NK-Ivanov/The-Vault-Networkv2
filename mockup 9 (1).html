@@ -1,0 +1,1025 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>The Vault Network – Module 1: Foundations of Business Automation</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <style>
+    /* ---------- Base layout ---------- */
+    body {
+      margin: 0;
+      padding: 40px 0;
+      background: #050505;
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
+        sans-serif;
+      color: #111111;
+    }
+
+    .page {
+      background: #ffffff;
+      max-width: 850px;
+      margin: 0 auto 40px auto;
+      padding: 64px 72px;
+      box-shadow: 0 12px 40px rgba(0, 0, 0, 0.6);
+      box-sizing: border-box;
+    }
+
+    .cover {
+      background: #050505;
+      color: #f7f7f7;
+      position: relative;
+      padding-top: 80px;
+    }
+
+    .cover-inner {
+      border: 1px solid #f5c84c;
+      padding: 80px 72px;
+      height: 100%;
+      min-height: 600px;
+      box-sizing: border-box;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+    }
+
+    .vault-academy-label {
+      font-size: 12px;
+      letter-spacing: 0.18em;
+      text-transform: uppercase;
+      color: #f5c84c;
+    }
+
+    .cover-logo {
+      max-width: 260px;
+      margin: 80px 0 40px 0;
+    }
+
+    .module-label {
+      font-size: 12px;
+      letter-spacing: 0.25em;
+      text-transform: uppercase;
+      color: #f5c84c;
+      margin-bottom: 12px;
+    }
+
+    .cover-title {
+      font-size: 32px;
+      font-weight: 700;
+      letter-spacing: 0.04em;
+      margin: 0 0 12px 0;
+    }
+
+    .cover-subtitle {
+      font-size: 14px;
+      max-width: 420px;
+      color: #f7f7f7;
+      opacity: 0.9;
+    }
+
+    .cover-accent-line {
+      height: 2px;
+      width: 220px;
+      background: #f5c84c;
+      margin-top: 18px;
+    }
+
+    h1, h2, h3, h4 {
+      color: #111111;
+      margin-top: 0;
+    }
+
+    h1 {
+      font-size: 26px;
+      margin-bottom: 12px;
+    }
+
+    h2 {
+      font-size: 22px;
+      margin-top: 0;
+      margin-bottom: 12px;
+    }
+
+    h3 {
+      font-size: 18px;
+      margin-bottom: 8px;
+    }
+
+    h4 {
+      font-size: 15px;
+      margin-bottom: 6px;
+    }
+
+    p {
+      font-size: 14px;
+      line-height: 1.6;
+      margin: 0 0 10px 0;
+    }
+
+    ul, ol {
+      font-size: 14px;
+      line-height: 1.6;
+      margin-top: 0;
+      padding-left: 20px;
+    }
+
+    a {
+      color: #c99721;
+      text-decoration: none;
+    }
+
+    a:hover {
+      text-decoration: underline;
+    }
+
+    .gold {
+      color: #c99721;
+    }
+
+    .muted {
+      color: #555555;
+    }
+
+    .module-map-list li {
+      margin-bottom: 4px;
+    }
+
+    .badge {
+      display: inline-block;
+      padding: 3px 10px;
+      border-radius: 12px;
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.12em;
+      border: 1px solid #f5c84c;
+      color: #333333;
+      background: #fffaf0;
+    }
+
+    .callout {
+      border-radius: 6px;
+      padding: 10px 14px;
+      font-size: 13px;
+      margin: 16px 0;
+    }
+
+    .callout-checkpoint {
+      border: 1px solid #ffe29a;
+      background: #fffaf0;
+    }
+
+    .callout-tip {
+      border: 1px solid #dde7ff;
+      background: #f4f7ff;
+    }
+
+    .callout-warning {
+      border: 1px solid #ffb3b3;
+      background: #fff5f5;
+    }
+
+    .callout strong {
+      font-weight: 600;
+    }
+
+    .two-col {
+      display: flex;
+      gap: 32px;
+      align-items: flex-start;
+    }
+
+    .two-col > div {
+      flex: 1;
+    }
+
+    .diagram-box {
+      border: 1px dashed #cccccc;
+      border-radius: 8px;
+      padding: 14px 16px;
+      background: #fafafa;
+      font-size: 13px;
+    }
+
+    .diagram-label {
+      font-weight: 600;
+      margin-bottom: 4px;
+    }
+
+    .figure-caption {
+      font-size: 12px;
+      color: #666666;
+      margin-top: 4px;
+    }
+
+    .steps-list li {
+      margin-bottom: 6px;
+    }
+
+    .page-title-accent {
+      height: 3px;
+      width: 80px;
+      background: #f5c84c;
+      margin-bottom: 18px;
+    }
+
+    .page-header-kicker {
+      font-size: 11px;
+      letter-spacing: 0.24em;
+      text-transform: uppercase;
+      color: #c99721;
+      margin-bottom: 6px;
+    }
+
+    .page-break {
+      page-break-before: always;
+    }
+
+    .pill {
+      display: inline-block;
+      padding: 3px 8px;
+      font-size: 11px;
+      border-radius: 999px;
+      background: #111111;
+      color: #f5c84c;
+      text-transform: uppercase;
+      letter-spacing: 0.15em;
+    }
+
+    .quiz-list li {
+      margin-bottom: 8px;
+    }
+
+    .glossary-list dt {
+      font-weight: 600;
+      margin-top: 10px;
+    }
+
+    .glossary-list dd {
+      margin-left: 0;
+      margin-bottom: 4px;
+      font-size: 14px;
+      line-height: 1.6;
+    }
+
+    .center {
+      text-align: center;
+    }
+
+    .helper-img {
+      width: 100%;
+      max-width: 420px;
+      border-radius: 8px;
+      display: block;
+      margin: 4px auto 0 auto;
+    }
+
+    .helper-caption {
+      font-size: 11px;
+      color: #777777;
+      text-align: center;
+      margin-top: 4px;
+    }
+
+    @media print {
+      body {
+        background: #ffffff;
+        padding: 0;
+      }
+      .page {
+        box-shadow: none;
+        margin: 0 auto;
+      }
+    }
+  </style>
+</head>
+<body>
+
+  <!-- COVER PAGE -->
+  <section class="page cover" id="top">
+    <div class="cover-inner">
+      <div>
+        <div class="vault-academy-label">THE VAULT NETWORK ACADEMY</div>
+
+        <!-- Replace src with your own banner/logo -->
+        <img
+          class="cover-logo"
+          src="https://cdn.discordapp.com/attachments/1421913032480522283/1422370650668011674/Logo_centre.png"
+          alt="The Vault Network logo"
+        />
+
+        <div class="module-label">MODULE 1</div>
+        <h1 class="cover-title">Foundations of Business Automation</h1>
+        <p class="cover-subtitle">
+          Learn how automation saves time, reduces errors, and helps modern
+          businesses scale without adding more staff. This module is
+          built for complete beginners — no coding or tech background needed.
+        </p>
+        <div class="cover-accent-line"></div>
+      </div>
+
+      <div class="muted" style="font-size: 11px; margin-top: 40px;">
+        Part of <span class="gold">The Vault Network</span> learning pathway.
+        Finish this module and build the three workflows inside to unlock your
+        first badge in the Discord server.
+      </div>
+    </div>
+  </section>
+
+  <!-- PAGE 2 – INTRO + MODULE MAP -->
+  <section class="page page-break" id="overview">
+    <div class="page-title-accent"></div>
+    <div class="page-header-kicker">Module overview</div>
+    <h1>Foundations of Business Automation</h1>
+
+    <p>
+      This module gives you a clear, non-technical understanding of what
+      automation is, why businesses pay for it, and how to build simple
+      workflows using <strong>n8n</strong> (a visual automation tool).
+      If you've never automated anything before, you're in the right place.
+    </p>
+
+    <p>
+      You will:
+    </p>
+    <ul>
+      <li>Learn the basic terms you&apos;ll hear in automation conversations.</li>
+      <li>See real examples of automations businesses are happy to pay for.</li>
+      <li>Understand the core building blocks of a workflow.</li>
+      <li>Set up n8n and build three working automations.</li>
+    </ul>
+
+    <div class="callout callout-warning">
+      <strong>Good to know:</strong> If you see a word you don&apos;t recognise,
+      check whether the full meaning is written in brackets the first time
+      (for example, <strong>CRM</strong> (Customer Relationship Management –
+      the system where a business stores customer contact details)). You
+      can also flip to the <strong>Glossary</strong> page at the end.
+    </div>
+
+    <h2 id="module-map">Module Map (Click to Jump)</h2>
+    <ol class="module-map-list">
+      <li><a href="#mindset">Automation Mindset &amp; Definitions</a></li>
+      <li><a href="#types">Types of Automations Businesses Pay For</a></li>
+      <li><a href="#building-blocks">Core Building Blocks of a Workflow</a></li>
+      <li><a href="#why-n8n">Why We Use n8n at The Vault</a></li>
+      <li><a href="#setup-checklist">n8n Setup Checklist</a></li>
+      <li><a href="#automation-1">Automation #1 – Discord Test Notifier</a></li>
+      <li><a href="#automation-2">Automation #2 – Lead Capture → Sheet &amp; Discord</a></li>
+      <li><a href="#automation-3">Automation #3 – Daily Accountability Ping</a></li>
+      <li><a href="#wrap-up">Wrap-Up, Challenges &amp; Quiz</a></li>
+      <li><a href="#glossary">Key Terms &amp; Glossary</a></li>
+    </ol>
+
+    <p class="muted" style="margin-top: 16px;">
+      Tip: if you are viewing this on the web, you can use this module map
+      like a mini navigation menu. Click the line you want and you’ll jump
+      straight to that section.
+    </p>
+  </section>
+
+  <!-- PAGE 3 – WHAT IS AUTOMATION -->
+  <section class="page page-break" id="mindset">
+    <div class="page-title-accent"></div>
+    <div class="page-header-kicker">1. Automation mindset &amp; definitions</div>
+    <h2>What Is Automation?</h2>
+
+    <div class="two-col">
+      <div>
+        <p>
+          <strong>Automation</strong> is when software completes tasks for you
+          without you having to repeat the same clicks every day. Instead of a
+          person copying data or sending the same email over and over, a
+          system follows a predefined set of steps (a
+          <strong>workflow</strong> – a series of actions the computer follows).
+        </p>
+
+        <p>In business, automation is commonly used to:</p>
+        <ul>
+          <li>Send emails automatically after a form is submitted.</li>
+          <li>Move new leads into a <strong>CRM</strong>
+            (Customer Relationship Management system – where a company stores
+            customer information).</li>
+          <li>Send invoice or payment reminders on a schedule.</li>
+          <li>Notify staff in Discord when an important event happens.</li>
+        </ul>
+
+        <p>
+          Your goal as a learner is not to become a professional coder. Your
+          goal is to understand how to connect apps together so that the
+          boring, repetitive parts of work happen automatically.
+        </p>
+      </div>
+
+      <div>
+        <div class="diagram-box">
+          <div class="diagram-label">Simple automation example</div>
+          <p style="margin-bottom: 4px;">
+            1. Customer fills in a website form<br />
+            2. Automation runs<br />
+            3. Lead is added to a spreadsheet + Discord alert is sent
+          </p>
+          <p class="muted" style="font-size: 12px;">
+            One event can trigger several actions at once.
+          </p>
+        </div>
+
+        <!-- Optional illustration placeholder -->
+        <img
+          class="helper-img"
+          src="https://images.unsplash.com/photo-1517245386807-bb43f82c33c4?auto=format&fit=crop&w=900&q=80"
+          alt="Person working on laptop with automation diagram on screen"
+        />
+        <div class="helper-caption">
+          Example illustration – replace with your own Vault-branded graphic if desired.
+        </div>
+      </div>
+    </div>
+
+    <h3>Why Businesses Use Automation</h3>
+    <ul>
+      <li><strong>Save time</strong> – repetitive tasks run automatically.</li>
+      <li><strong>Reduce errors</strong> – fewer copy/paste mistakes.</li>
+      <li>
+        <strong>Improve customer experience</strong> – faster, more consistent
+        replies.
+      </li>
+      <li><strong>Increase revenue</strong> – more follow-ups, less leakage.</li>
+      <li>
+        <strong>Scale without more staff</strong> – systems do the boring work.
+      </li>
+    </ul>
+
+    <p>
+      When you pitch automations to clients later as a seller or builder,
+      these benefits are the core of your value proposition.
+    </p>
+  </section>
+
+  <!-- PAGE 4 – TYPES OF AUTOMATIONS -->
+  <section class="page page-break" id="types">
+    <div class="page-title-accent"></div>
+    <div class="page-header-kicker">2. Types of automations businesses pay for</div>
+    <h2>Categories of High-Value Automations</h2>
+
+    <p>
+      There are hundreds of possible automations, but most paid work falls
+      into a few clear categories. Here are some examples you&apos;ll see often:
+    </p>
+
+    <h3>1. Lead Capture &amp; Follow-Up</h3>
+    <ul>
+      <li>Capture leads from website forms into a spreadsheet.</li>
+      <li>Send an instant welcome email and a Discord or Slack alert.</li>
+      <li>Tag the lead in a CRM (Customer Relationship Management system).</li>
+    </ul>
+
+    <h3>2. Sales Pipeline &amp; Proposals</h3>
+    <ul>
+      <li>Move deals between stages in a pipeline automatically.</li>
+      <li>Create draft proposals or invoices when a deal hits a stage.</li>
+      <li>Notify the sales team when a new opportunity comes in.</li>
+    </ul>
+
+    <h3>3. Customer Support &amp; Service</h3>
+    <ul>
+      <li>Turn support forms into tickets inside a help desk tool.</li>
+      <li>Send automatic &quot;we received your message&quot; replies.</li>
+      <li>Escalate urgent issues to a special channel.</li>
+    </ul>
+
+    <h3>4. Reporting &amp; Dashboards</h3>
+    <ul>
+      <li>Pull key numbers every day into a Google Sheet.</li>
+      <li>Send a daily summary of sales or bookings.</li>
+      <li>Update a simple dashboard the owner checks each morning.</li>
+    </ul>
+
+    <h3>5. Internal Operations</h3>
+    <ul>
+      <li>Onboarding new staff with checklists and automatic emails.</li>
+      <li>Reminders for renewals, licenses, or maintenance dates.</li>
+      <li>Syncing contact lists between tools (for example CRM → email tool).</li>
+    </ul>
+
+    <div class="callout callout-tip">
+      <strong>Vault Insight:</strong> Most small businesses don&apos;t need
+      crazy AI agents on day one. They need simple, reliable flows that send
+      information to the right place, at the right time. The automations in
+      this module are exactly that.
+    </div>
+  </section>
+
+  <!-- PAGE 5 – BUILDING BLOCKS + WHY N8N -->
+  <section class="page page-break" id="building-blocks">
+    <div class="page-title-accent"></div>
+    <div class="page-header-kicker">3. Core building blocks of a workflow</div>
+    <h2>How an Automation Is Structured</h2>
+
+    <p>
+      Most automations can be broken down into a few simple parts:
+    </p>
+
+    <ol>
+      <li><strong>Trigger</strong> – what starts the workflow.</li>
+      <li><strong>Input data</strong> – information coming into the system.</li>
+      <li><strong>Actions</strong> – what we want the system to do.</li>
+      <li><strong>Logic</strong> – rules, filters, or branches.</li>
+      <li><strong>Outputs</strong> – where the final result is sent.</li>
+    </ol>
+
+    <div class="diagram-box">
+      <div class="diagram-label">Example: New lead from website form</div>
+      <p>
+        Trigger: new form submission →<br />
+        Action 1: save lead to Google Sheet →<br />
+        Action 2: send Discord alert →<br />
+        Output: lead is stored + team is notified.
+      </p>
+    </div>
+
+    <p>
+      In n8n, each step in that chain is represented by a
+      <strong>node</strong> (a block in the visual workflow that does one job).
+      You will learn how to link nodes together to create your first flows.
+    </p>
+  </section>
+
+  <section class="page page-break" id="why-n8n">
+    <div class="page-title-accent"></div>
+    <div class="page-header-kicker">4. Why we use n8n at The Vault</div>
+    <h2>Why n8n Instead of Other Tools?</h2>
+
+    <p>
+      There are many automation tools (Zapier, Make, Pabbly, etc). At The
+      Vault, we focus on <strong>n8n</strong> because:
+    </p>
+    <ul>
+      <li>It&apos;s <strong>visual</strong> – you can see your workflow as a flowchart.</li>
+      <li>It&apos;s <strong>flexible</strong> – works with APIs
+        (Application Programming Interfaces – ways apps talk to each other)
+        and custom logic when you&apos;re ready.</li>
+      <li>It&apos;s <strong>affordable</strong> – great for small businesses.</li>
+      <li>It can be <strong>self-hosted</strong> later when you serve bigger clients.</li>
+    </ul>
+
+    <div class="callout callout-tip">
+      <strong>Optional videos if you like watching first:</strong><br />
+      • <a href="https://www.youtube.com/watch?v=4BVTkqbn_tY" target="_blank">
+        n8n Beginner Course (1/9) – Introduction to Automation (AIpreneur-J)
+      </a><br />
+      • <a href="https://www.youtube.com/watch?v=4cQWJViybAQ" target="_blank">
+        n8n Quick Start Tutorial – Build Your First Workflow
+      </a>
+    </div>
+
+    <div class="callout callout-checkpoint">
+      <strong>Checkpoint:</strong> By the end of this module you should feel
+      comfortable opening n8n, reading a simple workflow, and
+      understanding which node does what.
+    </div>
+  </section>
+
+  <!-- PAGE 6 – N8N SETUP -->
+  <section class="page page-break" id="setup-checklist">
+    <div class="page-title-accent"></div>
+    <div class="page-header-kicker">5. n8n setup checklist</div>
+    <h2>Getting Ready – n8n &amp; Test Workspace</h2>
+
+    <p>
+      Before building anything, you need a place to create and test your flows.
+      This checklist keeps things simple.
+    </p>
+
+    <ol class="steps-list">
+      <li>
+        <strong>Create an n8n account.</strong><br />
+        Go to <a href="https://n8n.io" target="_blank">n8n.io</a> and sign up
+        for a free account. Use an email you can access easily.
+      </li>
+      <li>
+        <strong>Log in and create a new workflow.</strong><br />
+        Click <em>Workflows → New</em>. Name it
+        <code>Vault Module 1 – Playground</code>.
+      </li>
+      <li>
+        <strong>Find the Run button.</strong><br />
+        In the top-right of n8n you will see a button to
+        <em>Execute Workflow</em>. You will use this a lot while testing.
+      </li>
+      <li>
+        <strong>Turn on &quot;Manual&quot; testing.</strong><br />
+        For your first builds we will use manual runs so you can see
+        what is happening step by step.
+      </li>
+    </ol>
+
+    <div class="callout callout-checkpoint">
+      <strong>Checkpoint:</strong> before moving on, you should be able to log
+      in, create a new workflow, rename it, add a node, and run it manually
+      without errors.
+    </div>
+  </section>
+
+  <!-- PAGE 7 – AUTOMATION #1 (DISCORD TEST NOTIFIER) -->
+  <section class="page page-break" id="automation-1">
+    <div class="page-title-accent"></div>
+    <div class="page-header-kicker">6. Automation #1</div>
+    <h2>Discord Test Notifier</h2>
+
+    <p>
+      Your first build is a small win: press a button in n8n and get a
+      message in a private Discord channel. This proves everything is
+      connected correctly.
+    </p>
+
+    <h3>Step 0 – Create a Discord Webhook</h3>
+    <ol class="steps-list">
+      <li>
+        Open your Discord server and choose the channel where you want the
+        test message.
+      </li>
+      <li>
+        Click the channel name → <strong>Integrations</strong> →
+        <strong>Create Webhook</strong>.
+      </li>
+      <li>
+        Give it a name like <code>Vault Test Bot</code>.
+      </li>
+      <li>
+        Copy the <strong>Webhook URL</strong> and save it somewhere safe –
+        you will paste it into n8n in a moment.
+      </li>
+      <li>
+        If you want more detail, Discord has an official guide:
+        <a href="https://support.discord.com/hc/en-us/articles/228383668-Intro-to-Webhooks" target="_blank">
+          Intro to Webhooks
+        </a>.
+      </li>
+    </ol>
+
+    <div class="callout callout-tip">
+      <strong>Optional video help:</strong> search on YouTube for
+      &quot;Discord webhook for beginners&quot;. There are many short,
+      step-by-step videos if you prefer to see it visually.
+    </div>
+
+    <h3>Step 1 – Create a new workflow in n8n</h3>
+    <ol class="steps-list">
+      <li>Create a new workflow and name it <code>Discord Test Notifier</code>.</li>
+      <li>
+        Add a <strong>Manual Trigger</strong> node
+        (this lets you run the workflow by clicking a button).
+      </li>
+    </ol>
+
+    <h3>Step 2 – Add an HTTP Request node</h3>
+    <ol class="steps-list">
+      <li>
+        Add a second node and search for <strong>HTTP Request</strong>.
+      </li>
+      <li>Set <strong>Method</strong> to <code>POST</code>.</li>
+      <li>Paste your Discord Webhook URL into the <strong>URL</strong> field.</li>
+      <li>Set <strong>Authentication</strong> to <em>None</em>.</li>
+      <li>Set <strong>Body Content Type</strong> to <code>JSON</code>
+        (a simple text format for data).</li>
+      <li>
+        In <strong>JSON Body</strong>, add:
+        <pre style="background:#111;color:#f5f5f5;padding:8px;border-radius:4px;font-size:12px;">
+{
+  "content": "Vault test message – if you can read this, your first automation works."
+}</pre>
+      </li>
+    </ol>
+
+    <h3>Step 3 – Connect and test</h3>
+    <ol class="steps-list">
+      <li>Connect <strong>Manual Trigger → HTTP Request</strong>.</li>
+      <li>Click <strong>Execute Workflow</strong>.</li>
+      <li>
+        Check your Discord channel. You should see the test message appear.
+      </li>
+    </ol>
+
+    <div class="callout callout-checkpoint">
+      <strong>Checkpoint:</strong> If the message appears in Discord, you have
+      completed Automation #1. If not, re-check your Webhook URL and JSON body.
+    </div>
+  </section>
+
+  <!-- PAGE 8 – AUTOMATION #2 (LEAD CAPTURE) -->
+  <section class="page page-break" id="automation-2">
+    <div class="page-title-accent"></div>
+    <div class="page-header-kicker">7. Automation #2</div>
+    <h2>Lead Capture → Google Sheet &amp; Discord</h2>
+
+    <p>
+      Now you’ll build something closer to a real client automation:
+      when a new lead fills in a form, their details are stored in a
+      spreadsheet and your sales channel in Discord gets a message.
+    </p>
+
+    <h3>Concept</h3>
+    <div class="diagram-box">
+      <div class="diagram-label">Flow overview</div>
+      <p>
+        Trigger: form sends data to a <strong>webhook</strong>
+        (a special URL that listens for data).<br />
+        Step 1: clean the data in a <strong>Set</strong> node.<br />
+        Step 2: append a new row to Google Sheets.<br />
+        Step 3: send a formatted message to Discord via HTTP Request.
+      </p>
+    </div>
+
+    <h3>Step-by-step build</h3>
+    <ol class="steps-list">
+      <li>
+        <strong>Add a Webhook node.</strong><br />
+        • HTTP Method: <code>POST</code><br />
+        • Path: <code>vault-module-lead</code> (for example)<br />
+        Copy the <strong>Test URL</strong> – this is your “form endpoint”.
+      </li>
+      <li>
+        <strong>Add a Set node.</strong><br />
+        Map incoming fields into clean keys, e.g.:<br />
+        • <code>name</code><br />
+        • <code>email</code><br />
+        • <code>source</code><br />
+        • <code>budget</code><br />
+        • <code>timestamp = {{$now}}</code>
+      </li>
+      <li>
+        <strong>Add a Google Sheets node (Append).</strong><br />
+        Select your spreadsheet and worksheet, then map fields from the
+        Set node into each column.
+      </li>
+      <li>
+        <strong>Add a Discord HTTP Request node.</strong><br />
+        Same idea as Automation #1, but now send a richer message, e.g.:<br />
+        <pre style="background:#111;color:#f5f5f5;padding:8px;border-radius:4px;font-size:12px;">
+{
+  "content": "New lead: {{$json[\"name\"]}} ({{$json[\"email\"]}}) – " +
+             "Source: {{$json[\"source\"]}} – Budget: {{$json[\"budget\"]}}"
+}</pre>
+      </li>
+      <li>
+        <strong>Connect the nodes.</strong><br />
+        <code>Webhook → Set → Google Sheets</code> and also a branch from
+        <code>Set → HTTP Request</code>. Both actions should run after Set.
+      </li>
+      <li>
+        <strong>Test with sample data.</strong><br />
+        Use a tool like
+        <a href="https://webhook.site" target="_blank">Webhook.site</a>
+        or <a href="https://www.postman.com/" target="_blank">Postman</a>
+        to send a POST request to your Webhook URL with JSON like:<br />
+        <pre style="background:#111;color:#f5f5f5;padding:8px;border-radius:4px;font-size:12px;">
+{
+  "name": "Test Lead",
+  "email": "lead@example.com",
+  "source": "Module 1",
+  "budget": "1-3k"
+}</pre>
+      </li>
+    </ol>
+
+    <div class="callout callout-tip">
+      <strong>Optional video help:</strong> for a deeper understanding of
+      webhooks, check out
+      &quot;Webhooks for Beginners – Full Course&quot; on the
+      freeCodeCamp.org YouTube channel, or any beginner webhook explainer.
+    </div>
+
+    <div class="callout callout-checkpoint">
+      <strong>Checkpoint:</strong> A new row appears in your Google Sheet and a
+      nicely formatted message appears in Discord whenever you send test data.
+    </div>
+  </section>
+
+  <!-- PAGE 9 – AUTOMATION #3 (DAILY PING) -->
+  <section class="page page-break" id="automation-3">
+    <div class="page-title-accent"></div>
+    <div class="page-header-kicker">8. Automation #3</div>
+    <h2>Daily Accountability Ping</h2>
+
+    <p>
+      For the final build, you’ll create a simple scheduled automation that
+      sends a daily message. This could be used for personal habits,
+      team stand-ups, or client reminders.
+    </p>
+
+    <h3>Goal</h3>
+    <p>
+      Every morning at a chosen time, send a Discord message asking for a
+      quick update.
+    </p>
+
+    <h3>Steps</h3>
+    <ol class="steps-list">
+      <li>
+        <strong>Create a new workflow</strong> called
+        <code>Daily Accountability Ping</code>.
+      </li>
+      <li>
+        <strong>Add a Cron node.</strong><br />
+        • Mode: <code>Every Day</code><br />
+        • Time: choose something like <code>09:00</code> in your time zone.
+      </li>
+      <li>
+        <strong>Add an HTTP Request node</strong> (Discord webhook).<br />
+        • Method: <code>POST</code><br />
+        • URL: your Discord Webhook URL<br />
+        • Body Content Type: <code>JSON</code><br />
+        • JSON Body:
+        <pre style="background:#111;color:#f5f5f5;padding:8px;border-radius:4px;font-size:12px;">
+{
+  "content": "Daily check-in: what did you get done today?"
+}</pre>
+      </li>
+      <li>
+        <strong>Connect and activate.</strong><br />
+        Connect <code>Cron → HTTP Request</code>, run once manually to test,
+        then turn the workflow <strong>Active</strong> in n8n.
+      </li>
+    </ol>
+
+    <div class="callout callout-checkpoint">
+      <strong>Checkpoint:</strong> The message appears at your chosen time
+      every day without you touching anything. That’s real automation.
+    </div>
+  </section>
+
+  <!-- PAGE 10 – WRAP-UP + QUIZ -->
+  <section class="page page-break" id="wrap-up">
+    <div class="page-title-accent"></div>
+    <div class="page-header-kicker">9. Wrap-up, challenges &amp; quiz</div>
+    <h2>Module Wrap-Up</h2>
+
+    <p>
+      You&apos;ve just built three working automations as a complete beginner.
+      That&apos;s a big deal. Most people never get this far.
+    </p>
+
+    <h3>What you should now understand</h3>
+    <ul>
+      <li>What automation is and why businesses pay for it.</li>
+      <li>Basic terms like workflow, node, trigger, webhook and CRM.</li>
+      <li>How to navigate n8n and build simple flows.</li>
+      <li>How to connect n8n to Discord and Google Sheets.</li>
+    </ul>
+
+    <h3>Mini challenges (optional but recommended)</h3>
+    <ol class="quiz-list">
+      <li>
+        Change the wording of your Discord messages so they match your
+        own style.
+      </li>
+      <li>
+        Add one extra field to the lead capture flow (for example
+        <code>phone</code>) and store it correctly.
+      </li>
+      <li>
+        Create a second daily ping workflow that reminds you to review your
+        goals once a week instead of every day.
+      </li>
+    </ol>
+
+    <h3>Quiz &amp; verification</h3>
+    <p>
+      When this module is live on the Vault site, there will be a button
+      here that takes you to a short quiz. Passing the quiz and showing your
+      three working automations in Discord will unlock the next stage.
+    </p>
+
+    <p class="center" style="margin-top: 24px;">
+      <a href="https://vaultnet.work" target="_blank"
+         style="display:inline-block;padding:10px 22px;border-radius:999px;
+                border:1px solid #f5c84c;background:#111111;color:#f5c84c;
+                text-decoration:none;font-size:13px;letter-spacing:0.12em;
+                text-transform:uppercase;">
+        Take Quiz (Coming Soon)
+      </a>
+    </p>
+
+    <p class="muted center" style="margin-top: 12px;">
+      Once complete, head back to the <strong>Vault Discord</strong> and post
+      your wins in the #wins channel.
+    </p>
+  </section>
+
+  <!-- PAGE 11 – KEY TERMS & GLOSSARY -->
+  <section class="page page-break" id="glossary">
+    <div class="page-title-accent"></div>
+    <div class="page-header-kicker">10. Key terms</div>
+    <h2>Key Terms &amp; Glossary</h2>
+
+    <p>
+      Use this page whenever a word feels confusing. You don&apos;t need to
+      memorise everything — this is your quick reference.
+    </p>
+
+    <dl class="glossary-list">
+      <dt>Automation</dt>
+      <dd>
+        Using software to complete tasks automatically without someone having
+        to repeat the same clicks every time.
+      </dd>
+
+      <dt>Workflow</dt>
+      <dd>
+        A series of steps that an automation follows, usually shown as a
+        flowchart in tools like n8n.
+      </dd>
+
+      <dt>Node</dt>
+      <dd>
+        A single block in an n8n workflow that does one specific job
+        (for example &quot;send HTTP request&quot; or &quot;add row to
+        Google Sheet&quot;).
+      </dd>
+
+      <dt>Trigger</dt>
+      <dd>
+        The event that starts an automation (for example &quot;new form
+        submitted&quot; or &quot;every day at 09:00&quot;).
+      </dd>
+
+      <dt>Action</dt>
+      <dd>
+        What the automation does after it is triggered, such as sending a
+        message or saving data.
+      </dd>
+
+      <dt>CRM (Customer Relationship Management)</dt>
+      <dd>
+        A system where businesses store and manage information about their
+        customers, leads and interactions (for example HubSpot or Salesforce).
+      </dd>
+
+      <dt>Webhook</dt>
+      <dd>
+        A special URL that waits for data. When another system sends data to
+        that URL, it can start an automation instantly.
+      </dd>
+
+      <dt>API (Application Programming Interface)</dt>
+      <dd>
+        A set of rules that lets two apps talk to each other and share data.
+        Automation tools use APIs to connect different services.
+      </dd>
+
+      <dt>HTTP (HyperText Transfer Protocol)</dt>
+      <dd>
+        The main way data moves across the web. When you send an HTTP request,
+        you are asking another system for something or sending it information.
+      </dd>
+
+      <dt>JSON (JavaScript Object Notation)</dt>
+      <dd>
+        A simple text format for sending data, often used in APIs and webhooks.
+        It looks like key–value pairs inside curly braces.
+      </dd>
+
+      <dt>Discord Webhook URL</dt>
+      <dd>
+        A special link Discord generates for a channel. When you send a
+        request to this link, a bot message appears in that channel.
+      </dd>
+
+      <dt>Cron</dt>
+      <dd>
+        A scheduling system used in n8n to run workflows at specific times,
+        such as every day at 09:00.
+      </dd>
+
+      <dt>Google Sheet (Spreadsheet)</dt>
+      <dd>
+        A grid of rows and columns inside Google Sheets where you can store
+        and update data, similar to Excel.
+      </dd>
+
+      <dt>Lead</dt>
+      <dd>
+        A person or company who has shown interest in a product or service and
+        may become a customer.
+      </dd>
+
+      <dt>Form endpoint</dt>
+      <dd>
+        The URL where form data is sent when someone clicks &quot;Submit&quot;.
+        In this module, your Webhook URL acts as the endpoint.
+      </dd>
+    </dl>
+
+    <div class="callout callout-tip">
+      <strong>How to use this page:</strong> When you see a word in the module
+      that you don&apos;t fully get, pause, flip to this glossary, read the
+      definition, then go back. Don&apos;t rush – understanding the language
+      is part of becoming valuable as an automation builder.
+    </div>
+
+    <p class="muted center" style="margin-top: 24px;">
+      End of Module 1 – Foundations of Business Automation
+    </p>
+  </section>
+
+</body>
+</html>

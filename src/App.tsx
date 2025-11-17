@@ -14,6 +14,10 @@ import PartnerDashboard from "./pages/PartnerDashboard";
 import ClientDashboard from "./pages/ClientDashboard";
 import AdminDashboard from "./pages/AdminDashboard";
 import PartnerPro from "./pages/PartnerPro";
+import AutomationDetail from "./pages/AutomationDetail";
+import Learners from "./pages/Learners";
+import LearnerDashboard from "./pages/LearnerDashboard";
+import LearnerModule from "./pages/LearnerModule";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -36,6 +40,10 @@ const App = () => (
             <Route path="/partner-pro" element={<PartnerPro />} />
             <Route path="/client-dashboard" element={<ClientDashboard />} />
             <Route path="/admin-dashboard" element={<AdminDashboard />} />
+            <Route path="/automation/:id" element={<AutomationDetail />} />
+            <Route path="/learners" element={<Learners />} />
+            <Route path="/learner-dashboard" element={<LearnerDashboard />} />
+            <Route path="/learner-module/:moduleId" element={<LearnerModule />} />
             {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
             <Route path="*" element={<NotFound />} />
           </Routes>

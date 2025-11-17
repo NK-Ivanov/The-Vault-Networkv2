@@ -18,6 +18,9 @@ DECLARE
   is_completed BOOLEAN;
   missing_tasks TEXT[];
   next_rank_xp_threshold INTEGER;
+  expected_progression TEXT[];
+  current_index INTEGER;
+  next_index INTEGER;
 BEGIN
   -- Get current rank and XP
   SELECT s.current_rank, s.current_xp INTO current_rank_val, current_xp
@@ -28,11 +31,30 @@ BEGIN
     RETURN jsonb_build_object('success', false, 'error', 'Seller not found');
   END IF;
   
-  -- Get next rank
+  -- Get next rank - ensure it's only one step ahead
   new_rank_val := public.get_next_rank(current_rank_val);
   
   IF new_rank_val IS NULL THEN
     RETURN jsonb_build_object('success', false, 'error', 'Already at max rank');
+  END IF;
+  
+  -- Safety check: Verify that the next rank is actually the immediate next rank
+  -- This prevents any rank skipping bugs
+  expected_progression := ARRAY['Recruit', 'Recruit Plus', 'Apprentice', 'Apprentice Plus', 'Agent', 'Agent Plus', 'Verified', 'Verified Plus', 'Partner', 'Partner Plus', 'Partner Pro'];
+  
+  -- Find current rank index
+  current_index := array_position(expected_progression, current_rank_val);
+  next_index := array_position(expected_progression, new_rank_val);
+  
+  -- Verify next rank is exactly one step ahead
+  IF next_index IS NULL OR current_index IS NULL OR next_index != current_index + 1 THEN
+    RETURN jsonb_build_object(
+      'success', false,
+      'error', 'Invalid rank progression',
+      'message', 'Rank progression error detected. Please contact support.',
+      'current_rank', current_rank_val,
+      'next_rank', new_rank_val
+    );
   END IF;
   
   -- Get XP threshold for next rank
@@ -52,33 +74,38 @@ BEGIN
     );
   END IF;
   
-  -- Get required tasks for current rank
+  -- Get required tasks for CURRENT rank (user must complete all tasks for current rank to advance)
+  -- Note: Some ranks like Partner have no tasks, so they only need XP to advance
   required_tasks := public.get_tasks_for_rank(current_rank_val);
   
-  -- Check if all tasks are completed
-  missing_tasks := ARRAY[]::TEXT[];
-  FOREACH task_id IN ARRAY required_tasks
-  LOOP
-    is_completed := public.is_lesson_completed(_seller_id, task_id);
-    IF NOT is_completed THEN
-      missing_tasks := array_append(missing_tasks, task_id);
+  -- Only check tasks if the current rank has tasks required
+  -- If current rank has no tasks (empty array), skip task checking and only require XP
+  IF array_length(required_tasks, 1) > 0 THEN
+    -- Check if all tasks are completed
+    missing_tasks := ARRAY[]::TEXT[];
+    FOREACH task_id IN ARRAY required_tasks
+    LOOP
+      is_completed := public.is_lesson_completed(_seller_id, task_id);
+      IF NOT is_completed THEN
+        missing_tasks := array_append(missing_tasks, task_id);
+      END IF;
+    END LOOP;
+    
+    -- Check if can advance
+    can_advance := array_length(missing_tasks, 1) IS NULL;
+    
+    IF NOT can_advance THEN
+      RETURN jsonb_build_object(
+        'success', false,
+        'error', 'tasks_not_completed',
+        'message', 'Complete all tasks for ' || current_rank_val || ' rank to advance',
+        'current_rank', current_rank_val,
+        'next_rank', new_rank_val,
+        'completed_tasks', array_length(required_tasks, 1) - array_length(missing_tasks, 1),
+        'total_tasks', array_length(required_tasks, 1),
+        'missing_tasks', missing_tasks
+      );
     END IF;
-  END LOOP;
-  
-  -- Check if can advance
-  can_advance := array_length(missing_tasks, 1) IS NULL;
-  
-  IF NOT can_advance THEN
-    RETURN jsonb_build_object(
-      'success', false,
-      'error', 'tasks_not_completed',
-      'message', 'Complete all tasks for your current rank to advance',
-      'current_rank', current_rank_val,
-      'next_rank', new_rank_val,
-      'completed_tasks', array_length(required_tasks, 1) - array_length(missing_tasks, 1),
-      'total_tasks', array_length(required_tasks, 1),
-      'missing_tasks', missing_tasks
-    );
   END IF;
   
   -- All checks passed - advance rank
@@ -160,19 +187,30 @@ DECLARE
   _tasks TEXT[];
 BEGIN
   -- Hardcoded task IDs for each rank (matching partner-lessons.ts)
+  -- Plus ranks require tasks up to and including Stage B of that rank
   CASE _rank
     WHEN 'Recruit' THEN
-      _tasks := ARRAY['stage-1-recruit-3']; -- Complete Getting Started
+      _tasks := ARRAY['stage-1-recruit-1', 'stage-1-recruit-2', 'stage-1-recruit-3']; -- Recruit Stage A: Open Overview, Copy Referral Link, View 3 Automations
+    WHEN 'Recruit Plus' THEN
+      _tasks := ARRAY['stage-1-recruit-1', 'stage-1-recruit-2', 'stage-1-recruit-3', 'stage-1-recruit-plus-4', 'stage-1-recruit-plus-5', 'stage-1-recruit-plus-6']; -- Recruit Stage A + B (Plus rank unlocks after Stage B)
     WHEN 'Apprentice' THEN
-      _tasks := ARRAY['stage-1-recruit-3', 'stage-2-apprentice-6']; -- Complete Getting Started + Suggest New Automation
+      _tasks := ARRAY['stage-1-recruit-1', 'stage-1-recruit-2', 'stage-1-recruit-3', 'stage-1-recruit-plus-4', 'stage-1-recruit-plus-5', 'stage-1-recruit-plus-6', 'stage-1-recruit-plus-7', 'stage-2-apprentice-6', 'stage-2-apprentice-7']; -- All Recruit Plus + Apprentice Stage A tasks (course is not a task, only tasks counted)
+    WHEN 'Apprentice Plus' THEN
+      _tasks := ARRAY['stage-1-recruit-1', 'stage-1-recruit-2', 'stage-1-recruit-3', 'stage-1-recruit-plus-4', 'stage-1-recruit-plus-5', 'stage-1-recruit-plus-6', 'stage-1-recruit-plus-7', 'stage-2-apprentice-6', 'stage-2-apprentice-7', 'stage-2-apprentice-8', 'stage-2-apprentice-9', 'stage-2-apprentice-10']; -- All Apprentice Stage A + B (Plus rank unlocks after Stage B)
     WHEN 'Agent' THEN
-      _tasks := ARRAY['stage-1-recruit-3', 'stage-2-apprentice-6', 'stage-3-agent-9', 'stage-3-agent-10']; -- All previous + Create Sales Script + Log First Outreach
-    WHEN 'Partner' THEN
-      _tasks := ARRAY['stage-1-recruit-3', 'stage-2-apprentice-6', 'stage-3-agent-9', 'stage-3-agent-10', 'stage-4-partner-12', 'stage-4-partner-13', 'stage-4-partner-14', 'stage-4-partner-15']; -- All previous + Add Demo Client + Assign Demo Automation + Pitch Reflection + Invite Friend
+      _tasks := ARRAY['stage-1-recruit-1', 'stage-1-recruit-2', 'stage-1-recruit-3', 'stage-1-recruit-plus-4', 'stage-1-recruit-plus-5', 'stage-1-recruit-plus-6', 'stage-1-recruit-plus-7', 'stage-2-apprentice-6', 'stage-2-apprentice-7', 'stage-2-apprentice-8', 'stage-2-apprentice-9', 'stage-2-apprentice-10', 'stage-2-apprentice-11', 'stage-2-apprentice-12', 'stage-2-apprentice-13', 'stage-3-agent-9']; -- All Apprentice Plus + Agent Stage A tasks (course is not a task)
+    WHEN 'Agent Plus' THEN
+      _tasks := ARRAY['stage-1-recruit-1', 'stage-1-recruit-2', 'stage-1-recruit-3', 'stage-1-recruit-plus-4', 'stage-1-recruit-plus-5', 'stage-1-recruit-plus-6', 'stage-1-recruit-plus-7', 'stage-2-apprentice-6', 'stage-2-apprentice-7', 'stage-2-apprentice-8', 'stage-2-apprentice-9', 'stage-2-apprentice-10', 'stage-2-apprentice-11', 'stage-2-apprentice-12', 'stage-2-apprentice-13', 'stage-3-agent-9', 'stage-3-agent-10', 'stage-3-agent-plus-11', 'stage-3-agent-plus-12', 'stage-3-agent-plus-13']; -- All Agent Stage A + B + Sales Foundations Course + The Outreach Process Course + Log In 3 Consecutive Days
     WHEN 'Verified' THEN
-      _tasks := ARRAY['stage-1-recruit-3', 'stage-2-apprentice-6', 'stage-3-agent-9', 'stage-3-agent-10', 'stage-4-partner-12', 'stage-4-partner-13', 'stage-4-partner-14', 'stage-4-partner-15', 'stage-5-verified-17', 'stage-5-verified-18', 'stage-5-verified-19', 'stage-5-verified-20']; -- All previous + Verified tasks (16 is a course, not a task)
+      _tasks := ARRAY['stage-1-recruit-1', 'stage-1-recruit-2', 'stage-1-recruit-3', 'stage-1-recruit-plus-4', 'stage-1-recruit-plus-5', 'stage-1-recruit-plus-6', 'stage-1-recruit-plus-7', 'stage-2-apprentice-6', 'stage-2-apprentice-7', 'stage-2-apprentice-8', 'stage-2-apprentice-9', 'stage-2-apprentice-10', 'stage-2-apprentice-11', 'stage-2-apprentice-12', 'stage-2-apprentice-13', 'stage-3-agent-9', 'stage-3-agent-10', 'stage-4-partner-12']; -- All Agent Plus + Verified Stage A tasks (course is not a task)
+    WHEN 'Verified Plus' THEN
+      _tasks := ARRAY['stage-1-recruit-1', 'stage-1-recruit-2', 'stage-1-recruit-3', 'stage-1-recruit-plus-4', 'stage-1-recruit-plus-5', 'stage-1-recruit-plus-6', 'stage-1-recruit-plus-7', 'stage-2-apprentice-6', 'stage-2-apprentice-7', 'stage-2-apprentice-8', 'stage-2-apprentice-9', 'stage-2-apprentice-10', 'stage-2-apprentice-11', 'stage-2-apprentice-12', 'stage-2-apprentice-13', 'stage-3-agent-9', 'stage-3-agent-10', 'stage-4-partner-12', 'stage-4-partner-13', 'stage-4-partner-14', 'stage-4-partner-15']; -- All Verified Stage A + B + Invite a Friend (Plus rank unlocks after Stage B)
+    WHEN 'Partner' THEN
+      _tasks := ARRAY['stage-1-recruit-1', 'stage-1-recruit-2', 'stage-1-recruit-3', 'stage-1-recruit-plus-4', 'stage-1-recruit-plus-5', 'stage-1-recruit-plus-6', 'stage-1-recruit-plus-7', 'stage-2-apprentice-6', 'stage-2-apprentice-7', 'stage-2-apprentice-8', 'stage-2-apprentice-9', 'stage-2-apprentice-10', 'stage-2-apprentice-11', 'stage-2-apprentice-12', 'stage-2-apprentice-13', 'stage-3-agent-9', 'stage-3-agent-10', 'stage-4-partner-12', 'stage-4-partner-13', 'stage-4-partner-14', 'stage-4-partner-15']; -- All Verified Plus tasks (no Partner tasks required, only course visible)
+    WHEN 'Partner Plus' THEN
+      _tasks := ARRAY['stage-1-recruit-1', 'stage-1-recruit-2', 'stage-1-recruit-3', 'stage-1-recruit-plus-4', 'stage-1-recruit-plus-5', 'stage-1-recruit-plus-6', 'stage-1-recruit-plus-7', 'stage-2-apprentice-6', 'stage-2-apprentice-7', 'stage-2-apprentice-8', 'stage-2-apprentice-9', 'stage-2-apprentice-10', 'stage-2-apprentice-11', 'stage-2-apprentice-12', 'stage-2-apprentice-13', 'stage-3-agent-9', 'stage-3-agent-10', 'stage-4-partner-12', 'stage-4-partner-13', 'stage-4-partner-14', 'stage-4-partner-15', 'stage-5-verified-17', 'stage-5-verified-18', 'stage-5-verified-19', 'stage-5-verified-20']; -- All Verified Plus + Partner Plus Stage 5 tasks (17, 18, 19, 20)
     WHEN 'Partner Pro' THEN
-      _tasks := ARRAY['stage-1-recruit-3', 'stage-2-apprentice-6', 'stage-3-agent-9', 'stage-3-agent-10', 'stage-4-partner-12', 'stage-4-partner-13', 'stage-4-partner-14', 'stage-4-partner-15', 'stage-5-verified-17', 'stage-5-verified-18', 'stage-5-verified-19', 'stage-5-verified-20']; -- All tasks (16 is a course, not a task)
+      _tasks := ARRAY['stage-1-recruit-1', 'stage-1-recruit-2', 'stage-1-recruit-3', 'stage-1-recruit-plus-4', 'stage-1-recruit-plus-5', 'stage-1-recruit-plus-6', 'stage-1-recruit-plus-7', 'stage-2-apprentice-6', 'stage-2-apprentice-7', 'stage-2-apprentice-8', 'stage-2-apprentice-9', 'stage-2-apprentice-10', 'stage-2-apprentice-11', 'stage-2-apprentice-12', 'stage-2-apprentice-13', 'stage-3-agent-9', 'stage-3-agent-10', 'stage-4-partner-12', 'stage-4-partner-13', 'stage-4-partner-14', 'stage-4-partner-15', 'stage-5-verified-17', 'stage-5-verified-18', 'stage-5-verified-19', 'stage-5-verified-20']; -- All tasks (courses are not tasks)
     ELSE
       _tasks := ARRAY[]::TEXT[];
   END CASE;
@@ -189,11 +227,17 @@ STABLE
 AS $$
 BEGIN
   CASE _current_rank
-    WHEN 'Recruit' THEN RETURN 'Apprentice';
-    WHEN 'Apprentice' THEN RETURN 'Agent';
-    WHEN 'Agent' THEN RETURN 'Partner';
-    WHEN 'Partner' THEN RETURN 'Verified';
-    WHEN 'Verified' THEN RETURN 'Partner Pro';
+    -- Rank progression with Plus sub-ranks
+    WHEN 'Recruit' THEN RETURN 'Recruit Plus';
+    WHEN 'Recruit Plus' THEN RETURN 'Apprentice';
+    WHEN 'Apprentice' THEN RETURN 'Apprentice Plus';
+    WHEN 'Apprentice Plus' THEN RETURN 'Agent';
+    WHEN 'Agent' THEN RETURN 'Agent Plus';
+    WHEN 'Agent Plus' THEN RETURN 'Verified';
+    WHEN 'Verified' THEN RETURN 'Verified Plus';
+    WHEN 'Verified Plus' THEN RETURN 'Partner';
+    WHEN 'Partner' THEN RETURN 'Partner Plus';
+    WHEN 'Partner Plus' THEN RETURN 'Partner Pro';
     ELSE RETURN NULL;
   END CASE;
 END;
@@ -207,11 +251,17 @@ STABLE
 AS $$
 BEGIN
   CASE _rank
+    -- Base ranks and their Plus variants share the same XP threshold
     WHEN 'Recruit' THEN RETURN 0;
+    WHEN 'Recruit Plus' THEN RETURN 0;
     WHEN 'Apprentice' THEN RETURN 1000;
+    WHEN 'Apprentice Plus' THEN RETURN 1000;
     WHEN 'Agent' THEN RETURN 2500;
-    WHEN 'Partner' THEN RETURN 4500;
-    WHEN 'Verified' THEN RETURN 7000;
+    WHEN 'Agent Plus' THEN RETURN 2500;
+    WHEN 'Verified' THEN RETURN 4500;
+    WHEN 'Verified Plus' THEN RETURN 4500;
+    WHEN 'Partner' THEN RETURN 7000;
+    WHEN 'Partner Plus' THEN RETURN 7000;
     WHEN 'Partner Pro' THEN RETURN 10000;
     ELSE RETURN 0;
   END CASE;
