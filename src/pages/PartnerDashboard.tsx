@@ -362,6 +362,7 @@ const PartnerDashboard = () => {
   const [completedLessons, setCompletedLessons] = useState<Set<string>>(new Set());
   const [selectedLesson, setSelectedLesson] = useState<PartnerLesson | null>(null);
   const [showQuizDialog, setShowQuizDialog] = useState(false);
+  const [showPartnerProDetails, setShowPartnerProDetails] = useState(false);
   const [quizAnswers, setQuizAnswers] = useState<Record<number, string>>({});
   const [currentQuizQuestion, setCurrentQuizQuestion] = useState(0);
   const [submittingQuiz, setSubmittingQuiz] = useState(false);
@@ -586,50 +587,8 @@ const PartnerDashboard = () => {
     }
   }, [sellerData?.id, lessons.length, bookmarkedAutomations.size, automationsWithPricingViewed.size]);
 
-  // Auto-complete "Read One Automation in Full" task when an automation is fully read
-  useEffect(() => {
-    if (!sellerData?.id || lessons.length === 0 || fullyReadAutomations.size === 0) return;
-
-    // Check if at least one automation has been fully read
-    const readAutomationId = Array.from(fullyReadAutomations)[0];
-    if (!readAutomationId) return;
-
-    const readFullLesson = lessons.find(l => l.title === 'Read One Automation in Full (Details + Features)' && l.rank_required === 'Apprentice Plus');
-    if (readFullLesson && !completedLessons.has(readFullLesson.id) && !taskCompletionRef.current.has(readFullLesson.id)) {
-      (async () => {
-        // Mark as processing to prevent duplicate completions
-        taskCompletionRef.current.add(readFullLesson.id);
-        try {
-          // Check if already completed in activity log
-          const { data: existingCompletion } = await supabase
-            .from("partner_activity_log")
-            .select("id")
-            .eq("seller_id", sellerData.id)
-            .eq("event_type", "task_completed")
-            .eq("metadata->>lesson_id", readFullLesson.id)
-            .maybeSingle();
-          
-          if (!existingCompletion) {
-            // Update completedLessons immediately to prevent re-triggering
-            setCompletedLessons(prev => new Set([...prev, readFullLesson.id]));
-            await addXP(readFullLesson.xp_reward, 'task_completed', `Completed: ${readFullLesson.title}`, { 
-              lesson_id: readFullLesson.id 
-            });
-            toast({
-              title: "Task Completed! 🎉",
-              description: `You've read a full automation and earned ${readFullLesson.xp_reward} XP!`,
-            });
-          } else {
-            // Already completed, remove from ref
-            taskCompletionRef.current.delete(readFullLesson.id);
-          }
-        } catch (error) {
-          console.error('Error auto-completing Read One Automation task from effect:', error);
-          taskCompletionRef.current.delete(readFullLesson.id);
-        }
-      })();
-    }
-  }, [sellerData?.id, lessons.length, fullyReadAutomations.size]);
+  // Note: "Read One Automation in Full" task completion is now handled in AutomationDetail.tsx
+  // when the user views an automation detail page, not automatically here
 
   // Track "Open Overview Tab" task completion
   const overviewTaskCompletedRef = useRef(false);
@@ -816,10 +775,10 @@ const PartnerDashboard = () => {
         }
       }
 
-      // Check if user just reached Verified rank and show popup
-      if (seller.current_rank === 'Verified' && !localStorage.getItem('verified_rank_popup_seen')) {
+      // Check if user just reached Partner Plus rank and show popup
+      if (seller.current_rank === 'Partner Plus' && !localStorage.getItem('partner_plus_rank_popup_seen')) {
         setShowVerifiedRankPopup(true);
-        localStorage.setItem('verified_rank_popup_seen', 'true');
+        localStorage.setItem('partner_plus_rank_popup_seen', 'true');
       }
 
       const { data: clientsData, error: clientsError } = await supabase
@@ -1043,17 +1002,17 @@ const PartnerDashboard = () => {
       // Fetch progression data when seller data is loaded
       await fetchProgressionData(seller.id, seller.current_rank as PartnerRank);
       
-      // Check if user just reached Verified rank and show popup (first time only)
-      if (seller.current_rank === 'Verified') {
-        const hasSeenPopup = localStorage.getItem('verified_rank_popup_seen');
+      // Check if user just reached Partner Plus rank and show popup (first time only)
+      if (seller.current_rank === 'Partner Plus') {
+        const hasSeenPopup = localStorage.getItem('partner_plus_rank_popup_seen');
         if (!hasSeenPopup) {
-          // Check if they recently reached Verified (within last 24 hours)
+          // Check if they recently reached Partner Plus (within last 24 hours)
           const { data: recentRankUp } = await supabase
             .from('partner_activity_log')
-            .select('created_at')
+            .select('created_at, metadata')
             .eq('seller_id', seller.id)
             .eq('event_type', 'rank_up')
-            .eq("metadata->>new_rank", 'Verified')
+            .eq("metadata->>new_rank", 'Partner Plus')
             .order('created_at', { ascending: false })
             .limit(1)
             .maybeSingle();
@@ -1063,10 +1022,11 @@ const PartnerDashboard = () => {
             const now = Date.now();
             const hoursSinceRankUp = (now - rankUpTime) / (1000 * 60 * 60);
             
-            // Show popup if rank up was within last 24 hours
-            if (hoursSinceRankUp < 24) {
+            // Show popup if rank up to Partner Plus was within last 24 hours
+            const newRank = recentRankUp.metadata?.new_rank;
+            if (hoursSinceRankUp < 24 && newRank === 'Partner Plus' && !localStorage.getItem('partner_plus_rank_popup_seen')) {
               setShowVerifiedRankPopup(true);
-              localStorage.setItem('verified_rank_popup_seen', 'true');
+              localStorage.setItem('partner_plus_rank_popup_seen', 'true');
             }
           }
         }
@@ -1148,6 +1108,23 @@ const PartnerDashboard = () => {
         title: "Referral Code Updated!",
         description: "Your referral code has been updated successfully.",
       });
+
+      // Complete "Edit Referral Code" task if not already completed
+      const editReferralCodeLesson = lessons.find((l: any) => l.id === 'stage-4-verified-14b');
+      if (editReferralCodeLesson && !completedLessons.has(editReferralCodeLesson.id)) {
+        try {
+          await addXP(editReferralCodeLesson.xp_reward, 'task_completed', `Completed: ${editReferralCodeLesson.title}`, { 
+            lesson_id: editReferralCodeLesson.id 
+          });
+          setCompletedLessons(prev => new Set([...prev, editReferralCodeLesson.id]));
+          toast({
+            title: "Task Completed! 🎉",
+            description: `You've edited your referral code and earned ${editReferralCodeLesson.xp_reward} XP!`,
+          });
+        } catch (error) {
+          console.error("Error completing edit referral code task:", error);
+        }
+      }
 
 
       setEditingReferralCode(false);
@@ -1332,6 +1309,288 @@ const PartnerDashboard = () => {
         const merged = new Set([...prev, ...fetchedCompleted]);
         return merged;
       });
+      
+      // Check and complete "Log In on 2 Different Days" task if needed
+      // This runs on dashboard load, so it will catch login days added via admin panel
+      const loginDaysLesson = lessonsData.find((l: any) => l.title === 'Log In on 2 Different Days' && l.rank_required === 'Apprentice Plus');
+      if (loginDaysLesson && !fetchedCompleted.has(loginDaysLesson.id)) {
+        // Check unique login days count
+        const { data: loginDays } = await supabase
+          .from("partner_activity_log")
+          .select("metadata")
+          .eq("seller_id", sellerId)
+          .eq("event_type", "login_day");
+
+        if (loginDays) {
+          const uniqueDates = new Set(
+            loginDays.map((log: any) => log.metadata?.login_date).filter(Boolean)
+          );
+
+          // If 2+ unique login days, complete the task
+          if (uniqueDates.size >= 2) {
+            // Check if already completed (double-check)
+            const { data: existingCompletion } = await supabase
+              .from("partner_activity_log")
+              .select("id")
+              .eq("seller_id", sellerId)
+              .eq("event_type", "task_completed")
+              .eq("metadata->>lesson_id", loginDaysLesson.id)
+              .maybeSingle();
+
+            if (!existingCompletion) {
+              // Complete the task
+              try {
+                await addXP(loginDaysLesson.xp_reward, 'task_completed', `Completed: ${loginDaysLesson.title}`, { 
+                  lesson_id: loginDaysLesson.id 
+                }, sellerId);
+                setCompletedLessons(prev => new Set([...prev, loginDaysLesson.id]));
+                toast({
+                  title: "Task Completed! 🎉",
+                  description: `You've logged in on 2 different days and earned ${loginDaysLesson.xp_reward} XP!`,
+                });
+              } catch (error) {
+                console.error("Error completing login days task:", error);
+              }
+            }
+          }
+        }
+      }
+
+      // Check and complete "Log In on 3 Consecutive Days" task if needed
+      // This runs on dashboard load, so it will catch login streaks that reach 3 days
+      const loginStreakLesson = lessonsData.find((l: any) => l.title === 'Log In on 3 Consecutive Days' && l.rank_required === 'Agent Plus');
+      if (loginStreakLesson && !fetchedCompleted.has(loginStreakLesson.id)) {
+        // Calculate consecutive login streak from activity log (more reliable than login_streak field)
+        const { data: loginDays } = await supabase
+          .from("partner_activity_log")
+          .select("metadata")
+          .eq("seller_id", sellerId)
+          .eq("event_type", "login_day")
+          .order("metadata->>login_date", { ascending: false });
+
+        let consecutiveStreak = 0;
+        if (loginDays && loginDays.length > 0) {
+          // Get unique login dates and sort them descending
+          const loginDates = Array.from(
+            new Set(loginDays.map((log: any) => log.metadata?.login_date).filter(Boolean))
+          ).sort().reverse();
+
+          // Calculate consecutive streak from most recent date backwards
+          if (loginDates.length > 0) {
+            // Sort dates and work backwards from most recent
+            // Don't require dates to be "today" - just check for consecutive days
+            consecutiveStreak = 1; // Start with the most recent date
+            
+            // Count consecutive days going backwards from most recent
+            for (let i = 1; i < loginDates.length; i++) {
+              const currentDate = new Date(loginDates[i - 1] + 'T00:00:00');
+              const previousDate = new Date(loginDates[i] + 'T00:00:00');
+              
+              // Calculate days between (should be exactly 1 for consecutive)
+              const daysBetween = Math.floor((currentDate.getTime() - previousDate.getTime()) / (1000 * 60 * 60 * 24));
+              
+              if (daysBetween === 1) {
+                consecutiveStreak++;
+              } else {
+                break; // Streak broken
+              }
+            }
+          }
+        }
+
+        // If streak is 3 or more, complete the task
+        if (consecutiveStreak >= 3) {
+          // Check if already completed (double-check)
+          const { data: existingCompletion } = await supabase
+            .from("partner_activity_log")
+            .select("id")
+            .eq("seller_id", sellerId)
+            .eq("event_type", "task_completed")
+            .eq("metadata->>lesson_id", loginStreakLesson.id)
+            .maybeSingle();
+
+          if (!existingCompletion) {
+            // Complete the task
+            try {
+              await addXP(loginStreakLesson.xp_reward, 'task_completed', `Completed: ${loginStreakLesson.title}`, { 
+                lesson_id: loginStreakLesson.id 
+              }, sellerId);
+              setCompletedLessons(prev => new Set([...prev, loginStreakLesson.id]));
+              toast({
+                title: "Task Completed! 🎉",
+                description: `You've logged in on 3 consecutive days and earned ${loginStreakLesson.xp_reward} XP!`,
+              });
+            } catch (error) {
+              console.error("Error completing login streak task:", error);
+            }
+          }
+        }
+      }
+
+      // Check and complete Partner Plus tasks if needed
+      // These checks run on dashboard load, so they will catch completed tasks automatically
+      if (rank === 'Partner Plus' || (getNextRank(rank as PartnerRank) === 'Partner Plus' && sellerId)) {
+        // Check "Invite First Real Client" task (stage-5-verified-17)
+        const inviteRealClientLesson = lessonsData.find((l: any) => l.id === 'stage-5-verified-17');
+        if (inviteRealClientLesson && !fetchedCompleted.has(inviteRealClientLesson.id)) {
+          // Check if seller has any real clients (non-demo)
+          const { data: realClientsData } = await supabase
+            .from("clients")
+            .select("id")
+            .eq("seller_id", sellerId)
+            .or("is_demo.is.null,is_demo.eq.false")
+            .limit(1);
+
+          if (realClientsData && realClientsData.length > 0) {
+            // Check if already completed (double-check)
+            const { data: existingCompletion } = await supabase
+              .from("partner_activity_log")
+              .select("id")
+              .eq("seller_id", sellerId)
+              .eq("event_type", "task_completed")
+              .eq("metadata->>lesson_id", inviteRealClientLesson.id)
+              .maybeSingle();
+
+            if (!existingCompletion) {
+              try {
+                await addXP(inviteRealClientLesson.xp_reward, 'task_completed', `Completed: ${inviteRealClientLesson.title}`, { 
+                  lesson_id: inviteRealClientLesson.id 
+                }, sellerId);
+                setCompletedLessons(prev => new Set([...prev, inviteRealClientLesson.id]));
+                toast({
+                  title: "Task Completed! 🎉",
+                  description: `You've invited your first real client and earned ${inviteRealClientLesson.xp_reward} XP!`,
+                });
+              } catch (error) {
+                console.error("Error completing invite real client task:", error);
+              }
+            }
+          }
+        }
+
+        // Check "Assign First Automation to Real Client" task (stage-5-verified-18)
+        const assignAutomationLesson = lessonsData.find((l: any) => l.id === 'stage-5-verified-18');
+        if (assignAutomationLesson && !fetchedCompleted.has(assignAutomationLesson.id)) {
+          // Check if seller has assigned an automation to a real client
+          const { data: realClientAutomationsData } = await supabase
+            .from("client_automations")
+            .select(`
+              id,
+              client:clients!client_automations_client_id_fkey (
+                is_demo
+              )
+            `)
+            .eq("seller_id", sellerId)
+            .limit(1);
+
+          // Filter to only real clients (non-demo)
+          const hasRealClientAutomation = realClientAutomationsData?.some((ca: any) => {
+            const client = ca.client;
+            return client && (client.is_demo === false || client.is_demo === null);
+          });
+
+          if (hasRealClientAutomation) {
+            // Check if already completed (double-check)
+            const { data: existingCompletion } = await supabase
+              .from("partner_activity_log")
+              .select("id")
+              .eq("seller_id", sellerId)
+              .eq("event_type", "task_completed")
+              .eq("metadata->>lesson_id", assignAutomationLesson.id)
+              .maybeSingle();
+
+            if (!existingCompletion) {
+              try {
+                await addXP(assignAutomationLesson.xp_reward, 'task_completed', `Completed: ${assignAutomationLesson.title}`, { 
+                  lesson_id: assignAutomationLesson.id 
+                }, sellerId);
+                setCompletedLessons(prev => new Set([...prev, assignAutomationLesson.id]));
+                toast({
+                  title: "Task Completed! 🎉",
+                  description: `You've assigned your first automation to a real client and earned ${assignAutomationLesson.xp_reward} XP!`,
+                });
+              } catch (error) {
+                console.error("Error completing assign automation task:", error);
+              }
+            }
+          }
+        }
+
+        // Check "Mark First Sale" task (stage-5-verified-19)
+        const markFirstSaleLesson = lessonsData.find((l: any) => l.id === 'stage-5-verified-19');
+        if (markFirstSaleLesson && !fetchedCompleted.has(markFirstSaleLesson.id)) {
+          // Check if seller has any paid transactions
+          const { data: paidTransactionsData } = await supabase
+            .from("transactions")
+            .select("id")
+            .eq("seller_id", sellerId)
+            .eq("payment_status", "paid")
+            .limit(1);
+
+          if (paidTransactionsData && paidTransactionsData.length > 0) {
+            // Check if already completed (double-check)
+            const { data: existingCompletion } = await supabase
+              .from("partner_activity_log")
+              .select("id")
+              .eq("seller_id", sellerId)
+              .eq("event_type", "task_completed")
+              .eq("metadata->>lesson_id", markFirstSaleLesson.id)
+              .maybeSingle();
+
+            if (!existingCompletion) {
+              try {
+                await addXP(markFirstSaleLesson.xp_reward, 'task_completed', `Completed: ${markFirstSaleLesson.title}`, { 
+                  lesson_id: markFirstSaleLesson.id 
+                }, sellerId);
+                setCompletedLessons(prev => new Set([...prev, markFirstSaleLesson.id]));
+                toast({
+                  title: "Task Completed! 🎉",
+                  description: `You've made your first sale and earned ${markFirstSaleLesson.xp_reward} XP!`,
+                });
+              } catch (error) {
+                console.error("Error completing mark first sale task:", error);
+              }
+            }
+          }
+        }
+
+        // Check "Submit Case Summary" task (stage-5-verified-20)
+        const submitCaseStudyLesson = lessonsData.find((l: any) => l.id === 'stage-5-verified-20');
+        if (submitCaseStudyLesson && !fetchedCompleted.has(submitCaseStudyLesson.id)) {
+          // Check if seller has submitted a case study
+          const { data: caseStudyData } = await supabase
+            .from("partner_case_studies")
+            .select("id")
+            .eq("seller_id", sellerId)
+            .limit(1);
+
+          if (caseStudyData && caseStudyData.length > 0) {
+            // Check if already completed (double-check)
+            const { data: existingCompletion } = await supabase
+              .from("partner_activity_log")
+              .select("id")
+              .eq("seller_id", sellerId)
+              .eq("event_type", "task_completed")
+              .eq("metadata->>lesson_id", submitCaseStudyLesson.id)
+              .maybeSingle();
+
+            if (!existingCompletion) {
+              try {
+                await addXP(submitCaseStudyLesson.xp_reward, 'task_completed', `Completed: ${submitCaseStudyLesson.title}`, { 
+                  lesson_id: submitCaseStudyLesson.id 
+                }, sellerId);
+                setCompletedLessons(prev => new Set([...prev, submitCaseStudyLesson.id]));
+                toast({
+                  title: "Task Completed! 🎉",
+                  description: `You've submitted a case study and earned ${submitCaseStudyLesson.xp_reward} XP!`,
+                });
+              } catch (error) {
+                console.error("Error completing submit case study task:", error);
+              }
+            }
+          }
+        }
+      }
       
       setLoadingLessons(false);
 
@@ -1798,12 +2057,12 @@ const PartnerDashboard = () => {
         }, 500);
         
         // Show Verified rank popup if user just reached Verified
-        if (data.new_rank === 'Verified') {
+        if (data.new_rank === 'Partner Plus') {
           // Check if we've shown this popup before
-          const hasSeenPopup = localStorage.getItem('verified_rank_popup_seen');
+          const hasSeenPopup = localStorage.getItem('partner_plus_rank_popup_seen');
           if (!hasSeenPopup) {
             setShowVerifiedRankPopup(true);
-            localStorage.setItem('verified_rank_popup_seen', 'true');
+            localStorage.setItem('partner_plus_rank_popup_seen', 'true');
           }
         }
       } else if (data && !data.success) {
@@ -1829,7 +2088,17 @@ const PartnerDashboard = () => {
   };
 
   // Handle Partner Pro checkout
+  // LOCKED: Partner Pro is currently "Coming Soon" - uncomment to re-enable checkout
   const handlePartnerProCheckout = async () => {
+    // Show "Coming Soon" message instead of initiating checkout
+    toast({
+      title: "Coming Soon",
+      description: "Partner Pro is launching soon! Stay tuned for updates.",
+      variant: "default",
+    });
+    return;
+
+    /* UNCOMMENT BELOW TO RE-ENABLE CHECKOUT
     if (!sellerData?.id || !user?.email) {
       toast({
         title: "Error",
@@ -1860,20 +2129,22 @@ const PartnerDashboard = () => {
         variant: "destructive",
       });
     }
+    */
   };
 
   // Helper function to add XP via database function
-  const addXP = async (xpAmount: number, eventType: string, description: string, metadata?: any) => {
-    if (!sellerData?.id) {
+  const addXP = async (xpAmount: number, eventType: string, description: string, metadata?: any, sellerIdOverride?: string) => {
+    const targetSellerId = sellerIdOverride || sellerData?.id;
+    if (!targetSellerId) {
       console.error("Cannot add XP: sellerData.id is missing");
       return;
     }
     
     try {
-      console.log("Adding XP:", { xpAmount, eventType, description, metadata, sellerId: sellerData.id });
+      console.log("Adding XP:", { xpAmount, eventType, description, metadata, sellerId: targetSellerId });
       
       const { data, error } = await supabase.rpc('add_seller_xp', {
-        _seller_id: sellerData.id,
+        _seller_id: targetSellerId,
         _xp_amount: xpAmount,
         _event_type: eventType,
         _description: description,
@@ -1896,7 +2167,18 @@ const PartnerDashboard = () => {
       await fetchSellerData();
       
       // Refresh progression data to update completion status and lessons
-      await fetchProgressionData(sellerData.id, sellerData?.current_rank as PartnerRank);
+      // Use targetSellerId instead of sellerData.id since sellerData might not be updated yet
+      if (targetSellerId) {
+        const updatedSeller = await supabase
+          .from("sellers")
+          .select("current_rank")
+          .eq("id", targetSellerId)
+          .maybeSingle();
+        
+        if (updatedSeller?.current_rank) {
+          await fetchProgressionData(targetSellerId, updatedSeller.current_rank as PartnerRank);
+        }
+      }
       
       showXPNotification(xpAmount, description);
     } catch (error: any) {
@@ -2148,24 +2430,56 @@ const PartnerDashboard = () => {
   const handleBriefDialogClose = async (open: boolean) => {
     if (!open && briefViewStartTime && selectedAutomationBrief) {
       const viewDuration = Date.now() - briefViewStartTime;
-      // If brief was open for at least 5 seconds, consider it read
-      if (viewDuration >= 5000) {
+      // If brief was open for at least 3 seconds, consider it read (reduced from 5 seconds)
+      if (viewDuration >= 3000) {
         // Check for "Read One Full Automation Brief" (Recruit Plus)
         const briefLesson = lessons.find(l => l.title === 'Read One Full Automation Brief' && l.rank_required === 'Recruit Plus');
-        if (briefLesson && !completedLessons.has(briefLesson.id) && !fullyReadAutomations.has(selectedAutomationBrief.id)) {
-          try {
-            await addXP(briefLesson.xp_reward, 'task_completed', `Completed: ${briefLesson.title}`, { 
-              lesson_id: briefLesson.id 
-            });
-            setCompletedLessons(prev => new Set([...prev, briefLesson.id]));
-            setFullyReadAutomations(prev => new Set([...prev, selectedAutomationBrief.id]));
-            // Don't call fetchProgressionData here - it will be called by addXP's fetchSellerData
-          } catch (error: any) {
-            console.error("Error completing brief task:", error);
+        if (briefLesson && !completedLessons.has(briefLesson.id)) {
+          // Check if this automation was already used for this specific task
+          const automationAlreadyUsed = fullyReadAutomations.has(selectedAutomationBrief.id);
+          
+          // Only complete if not already completed for this task
+          if (!automationAlreadyUsed) {
+            try {
+              await addXP(briefLesson.xp_reward, 'task_completed', `Completed: ${briefLesson.title}`, { 
+                lesson_id: briefLesson.id 
+              });
+              setCompletedLessons(prev => new Set([...prev, briefLesson.id]));
+              setFullyReadAutomations(prev => new Set([...prev, selectedAutomationBrief.id]));
+              toast({
+                title: "Task Completed! 🎉",
+                description: `You earned ${briefLesson.xp_reward} XP for reading a full automation brief!`,
+              });
+              // Don't call fetchProgressionData here - it will be called by addXP's fetchSellerData
+            } catch (error: any) {
+              console.error("Error completing brief task:", error);
+              toast({
+                title: "Error",
+                description: error.message || "Failed to complete task. Please try again.",
+                variant: "destructive",
+              });
+            }
+          } else {
+            console.log("Task already completed for this automation");
           }
+        } else if (briefLesson && completedLessons.has(briefLesson.id)) {
+          console.log("Task already completed");
+        } else if (!briefLesson) {
+          console.warn("Could not find 'Read One Full Automation Brief' lesson for Recruit Plus");
         }
-        
-        // Check for "Read One Automation in Full (Details + Features)" (Apprentice Plus)
+      } else {
+        // Brief wasn't open long enough
+        const remainingTime = Math.ceil((3000 - viewDuration) / 1000);
+        toast({
+          title: "Keep Reading",
+          description: `Please keep the brief open for at least ${remainingTime} more second${remainingTime !== 1 ? 's' : ''} to complete the task.`,
+          variant: "default",
+        });
+      }
+      
+      // Check for "Read One Automation in Full (Details + Features)" (Apprentice Plus)
+      // This check happens regardless of duration, but only if the Recruit Plus task wasn't just completed
+      if (viewDuration >= 3000) {
         const readFullLesson = lessons.find(l => l.title === 'Read One Automation in Full (Details + Features)' && l.rank_required === 'Apprentice Plus');
         if (readFullLesson && !completedLessons.has(readFullLesson.id) && !fullyReadAutomations.has(selectedAutomationBrief.id)) {
           try {
@@ -2183,6 +2497,7 @@ const PartnerDashboard = () => {
           }
         }
       }
+      
       setBriefViewStartTime(null);
     }
     setShowAutomationBrief(open);
@@ -2840,6 +3155,25 @@ const PartnerDashboard = () => {
         description: "The automation has been assigned to the client",
       });
 
+      // Complete "Assign First Automation to Real Client" task if this is a real client (not demo)
+      if (!isDemoClient && sellerData?.id) {
+        const assignAutomationLesson = lessons.find((l: any) => l.id === 'stage-5-verified-18');
+        if (assignAutomationLesson && !completedLessons.has(assignAutomationLesson.id)) {
+          try {
+            await addXP(assignAutomationLesson.xp_reward, 'task_completed', `Completed: ${assignAutomationLesson.title}`, { 
+              lesson_id: assignAutomationLesson.id 
+            });
+            setCompletedLessons(prev => new Set([...prev, assignAutomationLesson.id]));
+            toast({
+              title: "Task Completed! 🎉",
+              description: `You've assigned your first automation to a real client and earned ${assignAutomationLesson.xp_reward} XP!`,
+            });
+          } catch (error) {
+            console.error("Error completing assign automation task:", error);
+          }
+        }
+      }
+
       // Track task completion for demo automation assignment
       if (isDemoClient) {
         const assignDemoLesson = lessons.find(l => l.title === 'Assign Demo Automation' && l.rank_required === 'Verified');
@@ -3452,7 +3786,7 @@ const PartnerDashboard = () => {
                               </div>
                               <div className="flex gap-2">
                                 <Button
-                                  onClick={() => navigate('/partner-pro')}
+                                  onClick={() => setShowPartnerProDetails(true)}
                                   variant="outline"
                                   size="sm"
                                   className="border-primary/50 text-primary hover:bg-primary/10"
@@ -3461,11 +3795,12 @@ const PartnerDashboard = () => {
                                 </Button>
                                 <Button
                                   onClick={handlePartnerProCheckout}
-                                  className="bg-primary hover:bg-primary/90 text-primary-foreground"
+                                  className="bg-primary/50 hover:bg-primary/50 text-primary-foreground cursor-not-allowed"
                                   size="sm"
+                                  disabled
                                 >
                                   <Trophy className="w-4 h-4 mr-2" />
-                                  Upgrade - $24.99/mo
+                                  Coming Soon
                                 </Button>
                               </div>
                             </div>
@@ -3498,11 +3833,12 @@ const PartnerDashboard = () => {
                       
                       const progress = calculateProgressToNextRank(sellerData.current_xp || 0, sellerData.current_rank as PartnerRank);
                       // Get tasks required for the NEXT rank (what user needs to complete to advance)
+                      // getTasksForRank already returns all tasks needed (including previous rank tasks)
                       const allRequiredTasks = getTasksForRank(nextRank);
-                      // Filter to only count tasks for the NEXT rank (not previous ranks)
+                      // Filter to only count tasks/quizzes (not courses)
                       const nextRankTasks = allRequiredTasks.filter(taskId => {
                         const lesson = lessons.find(l => l.id === taskId);
-                        return lesson && lesson.rank_required === nextRank;
+                        return lesson && (lesson.lesson_type === 'task' || lesson.lesson_type === 'quiz');
                       });
                       const completedTasks = nextRankTasks.filter(taskId => completedLessons.has(taskId));
                       const allTasksCompleted = nextRankTasks.length === 0 || completedTasks.length === nextRankTasks.length;
@@ -3582,11 +3918,12 @@ const PartnerDashboard = () => {
                               </div>
                               <Button
                                 onClick={sellerData?.current_rank === 'Partner Plus' && nextRank === 'Partner Pro' ? handlePartnerProCheckout : handleManualRankUp}
-                                className="w-full bg-primary hover:bg-primary/90 text-primary-foreground"
+                                className={`w-full ${sellerData?.current_rank === 'Partner Plus' && nextRank === 'Partner Pro' ? 'bg-primary/50 hover:bg-primary/50 cursor-not-allowed' : 'bg-primary hover:bg-primary/90'} text-primary-foreground`}
                                 size="sm"
+                                disabled={sellerData?.current_rank === 'Partner Plus' && nextRank === 'Partner Pro'}
                               >
                                 <Trophy className="w-4 h-4 mr-2" />
-                                {sellerData?.current_rank === 'Partner Plus' && nextRank === 'Partner Pro' ? 'Upgrade to Partner Pro - $24.99/month' : `Advance to ${nextRank}`}
+                                {sellerData?.current_rank === 'Partner Plus' && nextRank === 'Partner Pro' ? 'Coming Soon' : `Advance to ${nextRank}`}
                               </Button>
                             </div>
                           )}
@@ -3617,10 +3954,10 @@ const PartnerDashboard = () => {
               <DialogHeader>
                 <DialogTitle className="text-2xl text-primary flex items-center gap-2">
                   <Trophy className="w-6 h-6" />
-                  Congratulations! You've Reached Verified Rank
+                  Congratulations! You've Reached Partner Plus Rank
                 </DialogTitle>
                 <DialogDescription className="text-base pt-2">
-                  You're now up to speed with all the basics and ready to pitch to clients!
+                  You've learned everything! You're now ready to unlock Partner Pro.
                 </DialogDescription>
               </DialogHeader>
               <div className="space-y-4 py-4">
@@ -3629,7 +3966,7 @@ const PartnerDashboard = () => {
                     You've completed all the essential training and tasks. You now have everything you need to start pitching to real clients and building your automation business.
                   </p>
                   <p className="text-sm text-muted-foreground">
-                    If you want more guidance, advanced features, and premium support, consider upgrading to <strong className="text-primary">Partner Pro</strong>.
+                    Ready to take it to the next level? Upgrade to <strong className="text-primary">Partner Pro</strong> for advanced features, premium support, and exclusive automations.
                   </p>
                 </div>
                 <div className="flex gap-3">
@@ -3706,15 +4043,15 @@ const PartnerDashboard = () => {
 
           {/* View All Ranks Dialog */}
           <Dialog open={showRanksDialog} onOpenChange={setShowRanksDialog}>
-            <DialogContent className="max-w-4xl max-h-[85vh]">
+            <DialogContent className="max-w-7xl max-h-[95vh] w-[95vw]">
               <DialogHeader>
                 <DialogTitle className="text-primary text-xl">Partner Rank Progression</DialogTitle>
                 <DialogDescription>
                   Your journey from Recruit to Partner Pro
                 </DialogDescription>
               </DialogHeader>
-              <ScrollArea className="max-h-[70vh] pr-4">
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 py-2">
+              <div className="overflow-y-auto max-h-[80vh] pr-2">
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 py-2">
                   {(() => {
                     // Base ranks only (excluding Plus variants)
                     const baseRanks: { base: PartnerRank; plus?: PartnerRank }[] = [
@@ -3728,24 +4065,40 @@ const PartnerDashboard = () => {
                     
                     const allRanks: PartnerRank[] = ['Recruit', 'Recruit Plus', 'Apprentice', 'Apprentice Plus', 'Agent', 'Agent Plus', 'Verified', 'Verified Plus', 'Partner', 'Partner Plus', 'Partner Pro'];
                     
+                    const currentRank = sellerData?.current_rank as PartnerRank || 'Recruit';
+                    const currentXP = sellerData?.current_xp || 0;
+                    const allRanksList: PartnerRank[] = ['Recruit', 'Recruit Plus', 'Apprentice', 'Apprentice Plus', 'Agent', 'Agent Plus', 'Verified', 'Verified Plus', 'Partner', 'Partner Plus', 'Partner Pro'];
+                    const currentRankIndex = allRanksList.indexOf(currentRank);
+                    
                     return baseRanks.map(({ base, plus }, index) => {
                       const baseRankInfo = RANK_INFO[base];
                       const plusRankInfo = plus ? RANK_INFO[plus] : null;
                       const hasPartnerPro = sellerData?.partner_pro_subscription_status === 'active';
                       
                       // Check if user is at base rank or Plus variant
-                      const isCurrentBaseRank = base === 'Partner Pro' ? hasPartnerPro : sellerData?.current_rank === base;
-                      const isCurrentPlusRank = plus ? sellerData?.current_rank === plus : false;
+                      const isCurrentBaseRank = base === 'Partner Pro' ? hasPartnerPro : currentRank === base;
+                      const isCurrentPlusRank = plus ? currentRank === plus : false;
                       const isCurrentRank = isCurrentBaseRank || isCurrentPlusRank;
                       
-                      // Check if unlocked (base rank or Plus variant)
-                      const isBaseUnlocked = base === 'Partner Pro' ? hasPartnerPro : (sellerData?.current_xp || 0) >= baseRankInfo.xpThreshold;
-                      const isPlusUnlocked = plus ? (sellerData?.current_xp || 0) >= (plusRankInfo?.xpThreshold || 0) : false;
+                      // Check if unlocked - only if user has actually reached this rank or a higher rank
+                      // A rank is "unlocked" if the user's current rank index is >= this rank's index
+                      const baseRankIndex = allRanksList.indexOf(base);
+                      const plusRankIndex = plus ? allRanksList.indexOf(plus) : -1;
+                      const isBaseUnlocked = base === 'Partner Pro' 
+                        ? hasPartnerPro 
+                        : currentRankIndex >= baseRankIndex; // Only unlocked if actually reached
+                      const isPlusUnlocked = plus 
+                        ? currentRankIndex >= plusRankIndex 
+                        : false;
                       const isUnlocked = isBaseUnlocked || isPlusUnlocked;
                       
-                      // Get next base rank
+                      // Get next base rank and calculate XP needed from current rank
                       const nextBaseRank = index < baseRanks.length - 1 ? baseRanks[index + 1].base : null;
-                      const xpToNext = nextBaseRank ? RANK_INFO[nextBaseRank].xpThreshold - baseRankInfo.xpThreshold : 0;
+                      const nextBaseRankInfo = nextBaseRank ? RANK_INFO[nextBaseRank] : null;
+                      // XP needed from current rank to next base rank
+                      const xpToNext = nextBaseRankInfo 
+                        ? Math.max(0, nextBaseRankInfo.xpThreshold - currentXP) 
+                        : 0;
                     
                       return (
                         <Card 
@@ -3758,9 +4111,9 @@ const PartnerDashboard = () => {
                                 : 'border-border bg-muted/20 opacity-75'
                           }`}
                         >
-                          <CardContent className="p-5">
+                          <CardContent className="p-4">
                             {/* Rank Header */}
-                            <div className="flex items-start justify-between mb-4">
+                            <div className="flex items-start justify-between mb-3">
                               <div className="flex items-center gap-2 flex-1">
                                 <div className={`p-2 rounded-lg ${
                                   isCurrentRank 
@@ -3808,15 +4161,15 @@ const PartnerDashboard = () => {
                                       {base === 'Partner Pro' ? 'Active Subscription' : 'Current Rank'}
                                     </Badge>
                                   )}
-                                  {isUnlocked && !isCurrentRank && (
+                                  {isUnlocked && !isCurrentRank && baseRankIndex < currentRankIndex && (
                                     <Badge variant="outline" className="mt-1 text-xs text-green-500 border-green-500">Unlocked</Badge>
                                   )}
                                 </div>
                               </div>
-                              {nextBaseRank && (
+                              {nextBaseRank && isCurrentRank && (
                                 <div className="text-right">
                                   <div className="text-xs text-muted-foreground mb-1">Next Rank</div>
-                                  <div className="text-lg font-bold text-primary">{xpToNext > 0 ? `+${xpToNext.toLocaleString()}` : xpToNext < 0 ? xpToNext.toLocaleString() : '0'} XP</div>
+                                  <div className="text-lg font-bold text-primary">{xpToNext > 0 ? `+${xpToNext.toLocaleString()}` : '0'} XP</div>
                                 </div>
                               )}
                             </div>
@@ -3868,7 +4221,7 @@ const PartnerDashboard = () => {
                     });
                   })()}
                 </div>
-              </ScrollArea>
+              </div>
             </DialogContent>
           </Dialog>
 
@@ -4540,6 +4893,29 @@ const PartnerDashboard = () => {
                                                 {isCompleted ? 'Link Copied' : 'Copy Referral Link'}
                                               </Button>
                                             </div>
+                                          </div>
+                                        )}
+                                        
+                                                {lesson.title === 'Edit Referral Code' && (
+                                          <div className="p-4 bg-muted/50 rounded-lg space-y-3">
+                                            <p className="text-sm text-muted-foreground mb-2">
+                                              Customize your referral code to make it more memorable and personal. A personalized referral code makes it easier to share and remember, helping you grow your network more effectively!
+                                            </p>
+                                            <p className="text-xs text-muted-foreground mb-3">
+                                              <strong className="text-primary">How to complete:</strong> Go to the Overview tab, find your referral link section, click "Edit" next to your referral code, enter a new code (alphanumeric, dashes, and underscores only), and save your changes.
+                                            </p>
+                                            <Button
+                                              onClick={() => {
+                                                setActiveTab('overview');
+                                                setExpandedLessonId(undefined);
+                                              }}
+                                              variant="outline"
+                                              size="sm"
+                                              disabled={isCompleted || !canAccess}
+                                              className="w-full"
+                                            >
+                                              {isCompleted ? 'Task Completed' : 'Go to Overview Tab'}
+                                            </Button>
                                           </div>
                                         )}
                                         
@@ -5224,6 +5600,75 @@ const PartnerDashboard = () => {
                                           </div>
                                         )}
                                         
+                                                {lesson.title === 'Invite First Real Client' && (
+                                          <div className="p-4 bg-muted/50 rounded-lg space-y-3">
+                                            <p className="text-sm text-muted-foreground mb-2">
+                                              Share your referral link with a real business that needs automation. When they sign up and create a business account, they'll be assigned to you and you'll earn {lesson.xp_reward} XP!
+                                            </p>
+                                            <p className="text-xs text-muted-foreground mb-3">
+                                              <strong className="text-primary">How to complete:</strong> Go to the Overview tab, copy your referral link, and share it with a real business. When they sign up using your link, the task will automatically complete.
+                                            </p>
+                                            <Button
+                                              onClick={() => {
+                                                setActiveTab('overview');
+                                                setExpandedLessonId(undefined);
+                                              }}
+                                              variant="outline"
+                                              size="sm"
+                                              disabled={isCompleted || !canAccess}
+                                              className="w-full"
+                                            >
+                                              {isCompleted ? 'Task Completed' : 'Go to Overview Tab'}
+                                            </Button>
+                                          </div>
+                                        )}
+                                        
+                                                {lesson.title === 'Assign First Automation to Real Client' && (
+                                          <div className="p-4 bg-muted/50 rounded-lg space-y-3">
+                                            <p className="text-sm text-muted-foreground mb-2">
+                                              Assign your first automation to a real client. Select your real client, choose the right automation for their needs, and assign it through the dashboard. You'll earn {lesson.xp_reward} XP when you complete this!
+                                            </p>
+                                            <p className="text-xs text-muted-foreground mb-3">
+                                              <strong className="text-primary">How to complete:</strong> Go to the Clients tab, select a real client (not a demo client), choose an automation, and click "Assign Automation". The task will automatically complete when you assign an automation to a real client.
+                                            </p>
+                                            <Button
+                                              onClick={() => {
+                                                setActiveTab('clients');
+                                                setExpandedLessonId(undefined);
+                                              }}
+                                              variant="outline"
+                                              size="sm"
+                                              disabled={isCompleted || !canAccess}
+                                              className="w-full"
+                                            >
+                                              {isCompleted ? 'Task Completed' : 'Go to Clients Tab'}
+                                            </Button>
+                                          </div>
+                                        )}
+                                        
+                                                {lesson.title === 'Mark First Sale' && (
+                                          <div className="p-4 bg-muted/50 rounded-lg space-y-3">
+                                            <p className="text-sm text-muted-foreground mb-2">
+                                              Complete your first automation sale! When a client pays the setup fee, you'll automatically earn {lesson.xp_reward} XP. This is a major milestone - celebrate your success!
+                                            </p>
+                                            <p className="text-xs text-muted-foreground mb-3">
+                                              <strong className="text-primary">How to complete:</strong> This task automatically completes when a client pays the setup fee for an automation you've assigned. You can track your sales in the Earnings tab.
+                                            </p>
+                                            <Button
+                                              onClick={() => {
+                                                setActiveTab('earnings');
+                                                setExpandedLessonId(undefined);
+                                              }}
+                                              variant="outline"
+                                              size="sm"
+                                              disabled={isCompleted || !canAccess}
+                                              className="w-full"
+                                            >
+                                              {isCompleted ? 'Task Completed' : 'View Earnings'}
+                                            </Button>
+                                          </div>
+                                        )}
+                                        
                                                 {lesson.title === 'Submit Case Summary' && (
                                           <div className="space-y-3">
                                             <div className="space-y-2">
@@ -5296,7 +5741,7 @@ const PartnerDashboard = () => {
                                               <Zap className="w-5 h-5 text-primary" />
                                               <div>
                                                 <h3 className="text-base font-semibold text-primary">
-                                                  Upgrade to Partner Pro
+                                                  Partner Pro - Coming Soon
                                                 </h3>
                                                 <p className="text-xs text-muted-foreground">
                                                   Unlock premium features, advanced automations, and exclusive benefits
@@ -5305,7 +5750,7 @@ const PartnerDashboard = () => {
                                             </div>
                                             <div className="flex gap-2 w-full sm:w-auto">
                                               <Button
-                                                onClick={() => navigate('/partner-pro')}
+                                                onClick={() => setShowPartnerProDetails(true)}
                                                 variant="outline"
                                                 size="sm"
                                                 className="flex-1 sm:flex-none border-primary/50 text-primary hover:bg-primary/10"
@@ -5314,11 +5759,12 @@ const PartnerDashboard = () => {
                                               </Button>
                                               <Button
                                                 onClick={handlePartnerProCheckout}
-                                                className="flex-1 sm:flex-none bg-primary hover:bg-primary/90 text-primary-foreground"
+                                                className="flex-1 sm:flex-none bg-primary/50 hover:bg-primary/50 text-primary-foreground cursor-not-allowed"
                                                 size="sm"
+                                                disabled
                                               >
                                                 <Trophy className="w-4 h-4 mr-2" />
-                                                Upgrade - $24.99/mo
+                                                Coming Soon
                                               </Button>
                                             </div>
                                           </div>
@@ -5361,15 +5807,16 @@ const PartnerDashboard = () => {
                                   // For other ranks, show normal progression
                                   if (!nextRank) return null;
                                   
-                                  // Get all tasks needed for current rank (includes previous ranks' tasks)
-                                  const allRequiredTasks = getTasksForRank(currentRank);
-                                  // Filter to only count tasks for the current rank (not previous ranks)
-                                  const currentRankTasks = allRequiredTasks.filter(taskId => {
+                                  // Get all tasks needed for the NEXT rank (what user needs to complete to advance)
+                                  // getTasksForRank already returns all tasks needed (including previous rank tasks)
+                                  const allRequiredTasks = getTasksForRank(nextRank);
+                                  // Filter to only count tasks/quizzes (not courses)
+                                  const nextRankTasks = allRequiredTasks.filter(taskId => {
                                     const lesson = lessons.find(l => l.id === taskId);
-                                    return lesson && lesson.rank_required === currentRank;
+                                    return lesson && (lesson.lesson_type === 'task' || lesson.lesson_type === 'quiz');
                                   });
-                                  const completedCurrentRankTasks = currentRankTasks.filter(taskId => completedLessons.has(taskId));
-                                  const allTasksCompleted = currentRankTasks.length === 0 || completedCurrentRankTasks.length === currentRankTasks.length;
+                                  const completedNextRankTasks = nextRankTasks.filter(taskId => completedLessons.has(taskId));
+                                  const allTasksCompleted = nextRankTasks.length === 0 || completedNextRankTasks.length === nextRankTasks.length;
                                   const nextRankThreshold = nextRank ? getRankInfo(nextRank).xpThreshold : 0;
                                   const xpThresholdMet = (sellerData?.current_xp || 0) >= nextRankThreshold;
                                   const canAdvance = allTasksCompleted && xpThresholdMet;
@@ -5403,11 +5850,11 @@ const PartnerDashboard = () => {
                                                   <div className="flex items-start gap-2 mb-2">
                                                     <AlertCircle className="w-4 h-4 text-accent flex-shrink-0 mt-0.5" />
                                                     <p className="text-sm text-muted-foreground">
-                                                      <strong className="text-accent">Complete all tasks:</strong> You have enough XP, but you need to complete all {currentRankTasks.length} task{currentRankTasks.length !== 1 ? 's' : ''} for {currentRank} rank.
+                                                      <strong className="text-accent">Complete all tasks:</strong> You have enough XP, but you need to complete all {nextRankTasks.length} task{nextRankTasks.length !== 1 ? 's' : ''} for {nextRank} rank.
                                                     </p>
                                                   </div>
                                                   <p className="text-xs text-muted-foreground ml-6">
-                                                    Completed: {completedCurrentRankTasks.length} / {currentRankTasks.length} tasks
+                                                    Completed: {completedNextRankTasks.length} / {nextRankTasks.length} tasks
                                                   </p>
                                                 </div>
                                               )}
@@ -5417,11 +5864,12 @@ const PartnerDashboard = () => {
                                                 <div className="mt-4">
                                                   <Button
                                                     onClick={currentRank === 'Partner Plus' && nextRank === 'Partner Pro' ? handlePartnerProCheckout : handleManualRankUp}
-                                                    className="w-full bg-primary hover:bg-primary/90 text-primary-foreground"
+                                                    className={`w-full ${currentRank === 'Partner Plus' && nextRank === 'Partner Pro' ? 'bg-primary/50 hover:bg-primary/50 cursor-not-allowed' : 'bg-primary hover:bg-primary/90'} text-primary-foreground`}
                                                     size="lg"
+                                                    disabled={currentRank === 'Partner Plus' && nextRank === 'Partner Pro'}
                                                   >
                                                     <Trophy className="w-5 h-5 mr-2" />
-                                                    {currentRank === 'Partner Plus' && nextRank === 'Partner Pro' ? 'Upgrade to Partner Pro - $24.99/month' : `Advance to ${nextRank}`}
+                                                    {currentRank === 'Partner Plus' && nextRank === 'Partner Pro' ? 'Coming Soon' : `Advance to ${nextRank}`}
                                                   </Button>
                                                 </div>
                                               )}
@@ -8315,6 +8763,83 @@ const PartnerDashboard = () => {
               </ScrollArea>
               <div className="flex justify-end gap-2 pt-4 border-t">
                 <Button variant="outline" onClick={() => handleBriefDialogClose(false)}>
+                  Close
+                </Button>
+              </div>
+            </DialogContent>
+          </Dialog>
+
+          {/* Partner Pro Details Dialog */}
+          <Dialog open={showPartnerProDetails} onOpenChange={setShowPartnerProDetails}>
+            <DialogContent className="max-w-2xl">
+              <DialogHeader>
+                <DialogTitle className="flex items-center gap-2">
+                  <Trophy className="w-6 h-6 text-primary" />
+                  Partner Pro - Coming Soon
+                </DialogTitle>
+                <DialogDescription>
+                  Unlock advanced features and tools to accelerate your automation business
+                </DialogDescription>
+              </DialogHeader>
+              <ScrollArea className="max-h-[60vh] pr-4">
+                <div className="space-y-6">
+                  <div className="p-4 bg-primary/10 border border-primary/20 rounded-lg">
+                    <p className="text-sm text-muted-foreground text-center">
+                      Partner Pro is launching soon! Here's what you can expect:
+                    </p>
+                  </div>
+
+                  <div className="space-y-4">
+                    <div className="flex items-start gap-3">
+                      <BookOpen className="w-5 h-5 text-primary flex-shrink-0 mt-0.5" />
+                      <div>
+                        <h3 className="font-semibold text-base mb-1">Advanced Tutorials</h3>
+                        <p className="text-sm text-muted-foreground">
+                          Access to in-depth tutorials covering advanced automation strategies, client management techniques, and scaling your business.
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="flex items-start gap-3">
+                      <Zap className="w-5 h-5 text-primary flex-shrink-0 mt-0.5" />
+                      <div>
+                        <h3 className="font-semibold text-base mb-1">Getting Started Guides</h3>
+                        <p className="text-sm text-muted-foreground">
+                          Step-by-step guides to help you get started quickly, from setting up your first automation to closing your first deal.
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="flex items-start gap-3">
+                      <Users className="w-5 h-5 text-primary flex-shrink-0 mt-0.5" />
+                      <div>
+                        <h3 className="font-semibold text-base mb-1">Client Lead Tools</h3>
+                        <p className="text-sm text-muted-foreground">
+                          Powerful tools to help you find, qualify, and convert leads into clients. Includes lead generation templates, email sequences, and tracking tools.
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="flex items-start gap-3">
+                      <TrendingUp className="w-5 h-5 text-primary flex-shrink-0 mt-0.5" />
+                      <div>
+                        <h3 className="font-semibold text-base mb-1">And More</h3>
+                        <p className="text-sm text-muted-foreground">
+                          Additional features including premium automations, priority support, advanced analytics, and exclusive partner resources.
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="p-4 bg-muted/50 rounded-lg">
+                    <p className="text-sm text-center text-muted-foreground">
+                      Stay tuned for updates! We'll notify you when Partner Pro is available.
+                    </p>
+                  </div>
+                </div>
+              </ScrollArea>
+              <div className="flex justify-end gap-2 pt-4 border-t">
+                <Button variant="outline" onClick={() => setShowPartnerProDetails(false)}>
                   Close
                 </Button>
               </div>

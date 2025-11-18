@@ -647,7 +647,7 @@ const PartnerPro = () => {
             <CardContent className="p-12">
               <Lock className="w-16 h-16 text-primary mx-auto mb-6" />
               <h2 className="text-3xl md:text-4xl font-bold mb-4 text-primary">
-                Become a Vault Partner Pro
+                Partner Pro - Coming Soon
               </h2>
               <p className="text-lg text-muted-foreground mb-2 max-w-2xl mx-auto">
                 Upgrade your toolkit, earn more, and manage clients like an agency.
@@ -658,11 +658,11 @@ const PartnerPro = () => {
               <div className="flex flex-col sm:flex-row gap-4 justify-center">
                 <Button
                   size="lg"
-                  className="bg-primary hover:bg-primary/90 text-primary-foreground font-bold px-8 py-6 gold-border-glow"
-                  onClick={() => navigate('/partner-dashboard')}
+                  className="bg-primary/50 hover:bg-primary/50 text-primary-foreground font-bold px-8 py-6 cursor-not-allowed"
+                  disabled
                 >
-                  Upgrade to Partner Pro - $24.99/month
-                  <ArrowRight className="ml-2 h-5 w-5" />
+                  Coming Soon
+                  <Lock className="ml-2 h-5 w-5" />
                 </Button>
                 <Button
                   size="lg"
@@ -674,7 +674,7 @@ const PartnerPro = () => {
                 </Button>
               </div>
               <p className="text-xs text-muted-foreground mt-4">
-                Cancel anytime • No long-term commitment • Automatic upgrade once payment confirmed
+                Partner Pro is launching soon! Stay tuned for updates.
               </p>
             </CardContent>
           </Card>

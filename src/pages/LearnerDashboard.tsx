@@ -58,6 +58,7 @@ const LearnerDashboard = () => {
   const [leaderboard, setLeaderboard] = useState<LeaderboardEntry[]>([]);
   const [loadingLeaderboard, setLoadingLeaderboard] = useState(false);
   const leaderboardLoadedRef = useRef(false);
+  const [xpNotification, setXpNotification] = useState<{ xp: number; message: string } | null>(null);
   
   const moduleToken = searchParams.get("token");
 
@@ -340,6 +341,12 @@ const LearnerDashboard = () => {
     }
   };
 
+  // Helper function to show XP notification
+  const showXPNotification = (xp: number, message: string) => {
+    setXpNotification({ xp, message });
+    setTimeout(() => setXpNotification(null), 5000);
+  };
+
   const processRankUpNotifications = async () => {
     if (!learnerData) return;
 
@@ -458,6 +465,9 @@ const LearnerDashboard = () => {
               .update({ current_xp: (learner.current_xp || 0) + 200 })
               .eq("id", learnerData.id);
           }
+        } else {
+          // Show XP notification
+          showXPNotification(200, `Added module: ${data.module_title}`);
         }
 
         // Refresh learner data to get updated XP and rank
@@ -551,6 +561,23 @@ const LearnerDashboard = () => {
     <div className="min-h-screen bg-background">
       <Navigation />
       
+      {/* XP Notification */}
+      {xpNotification && (
+        <div className="fixed top-20 right-4 z-50 animate-bounce">
+          <Card className="bg-[#f5c84c] text-[#111111] border-[#f5c84c] shadow-lg">
+            <CardContent className="p-4">
+              <div className="flex items-center gap-2">
+                <Trophy className="w-5 h-5" />
+                <div>
+                  <p className="font-bold">+{xpNotification.xp} XP</p>
+                  <p className="text-sm opacity-90">{xpNotification.message}</p>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      )}
+
       <div className="container mx-auto px-6 py-12 pt-24">
         {/* Header */}
         <div className="mb-8">
@@ -845,6 +872,9 @@ const LearnerDashboard = () => {
                                   .update({ current_xp: (learner.current_xp || 0) + 150 })
                                   .eq("id", learnerData.id);
                               }
+                            } else {
+                              // Show XP notification
+                              showXPNotification(150, `Opened module: ${module.module_title}`);
                             }
 
                             // Mark as accessed

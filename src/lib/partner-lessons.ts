@@ -1852,6 +1852,25 @@ What worked well? What would you do differently? Learning from practice helps yo
     order_index: 14
   },
   {
+    id: 'stage-4-verified-14b',
+    stage: 4,
+    rank_required: 'Verified',
+    lesson_type: 'task',
+    title: 'Edit Referral Code',
+    content: `Customize your referral code to make it more memorable and personal.
+
+**Task:**
+1. Go to the Overview tab
+2. Find your referral link section
+3. Click "Edit" next to your referral code
+4. Enter a new code (alphanumeric, dashes, and underscores only)
+5. Save your changes
+
+**Why:** A personalized referral code makes it easier to share and remember, helping you grow your network more effectively!`,
+    xp_reward: 300,
+    order_index: 14.5
+  },
+  {
     id: generateId(4, 'Partner', 15),
     stage: 4,
     rank_required: 'Verified',

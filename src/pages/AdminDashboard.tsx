@@ -237,6 +237,10 @@ const AdminDashboard = () => {
   const [demotingRank, setDemotingRank] = useState(false);
   const [selectedTargetRank, setSelectedTargetRank] = useState<PartnerRank | "">("");
   const [settingRank, setSettingRank] = useState(false);
+  const [selectedSellerForLoginDays, setSelectedSellerForLoginDays] = useState<string>("");
+  const [loginDayDate, setLoginDayDate] = useState<string>(new Date().toISOString().split('T')[0]);
+  const [addingLoginDay, setAddingLoginDay] = useState(false);
+  const [loginDaysData, setLoginDaysData] = useState<{ count: number; dates: string[] } | null>(null);
   
   // Module management state
   const [moduleTokens, setModuleTokens] = useState<any[]>([]);
@@ -339,6 +343,40 @@ const AdminDashboard = () => {
       checkAdminRole();
     }
   }, [user]);
+
+  // Fetch login days data when seller is selected
+  useEffect(() => {
+    const fetchLoginDays = async () => {
+      const sellerId = selectedSellerForLoginDays || selectedSellerForXP;
+      if (!sellerId) {
+        setLoginDaysData(null);
+        return;
+      }
+
+      try {
+        const { data: loginDays } = await supabase
+          .from("partner_activity_log")
+          .select("metadata")
+          .eq("seller_id", sellerId)
+          .eq("event_type", "login_day");
+
+        if (loginDays) {
+          const uniqueDates = new Set(
+            loginDays.map((log: any) => log.metadata?.login_date).filter(Boolean)
+          );
+          const sortedDates = Array.from(uniqueDates).sort().reverse();
+          setLoginDaysData({ count: uniqueDates.size, dates: sortedDates });
+        } else {
+          setLoginDaysData({ count: 0, dates: [] });
+        }
+      } catch (error) {
+        console.error("Error fetching login days:", error);
+        setLoginDaysData(null);
+      }
+    };
+
+    fetchLoginDays();
+  }, [selectedSellerForLoginDays, selectedSellerForXP]);
 
   const checkAdminRole = async () => {
     try {
@@ -4725,6 +4763,203 @@ const AdminDashboard = () => {
                           </Card>
                         );
                       })()}
+                    </CardContent>
+                  </Card>
+
+                  {/* Testing: Add Login Days */}
+                  <Card className="bg-gradient-to-r from-yellow-500/10 to-yellow-500/5 border-yellow-500/20">
+                    <CardHeader>
+                      <CardTitle className="flex items-center gap-2 text-yellow-500">
+                        <Zap className="w-5 h-5" />
+                        Testing: Add Login Days
+                      </CardTitle>
+                      <CardDescription>
+                        For testing purposes only. Manually add login days to a partner's account. This will help test the "Log In on 2 Different Days" task and login streak tracking.
+                      </CardDescription>
+                    </CardHeader>
+                    <CardContent className="space-y-4">
+                      <div className="space-y-4">
+                        <div className="space-y-2">
+                          <Label htmlFor="login-days-seller-select">Select Partner</Label>
+                          <Popover open={false}>
+                            <PopoverTrigger asChild>
+                              <Button
+                                variant="outline"
+                                role="combobox"
+                                className="w-full justify-between"
+                                onClick={() => {
+                                  // Use the same seller selector as XP management
+                                  setSelectedSellerForLoginDays(selectedSellerForXP || "");
+                                }}
+                              >
+                                {selectedSellerForLoginDays
+                                  ? sellers.find(s => s.id === selectedSellerForLoginDays)?.business_name
+                                  : selectedSellerForXP
+                                    ? sellers.find(s => s.id === selectedSellerForXP)?.business_name
+                                    : "Choose a partner..."}
+                                <Search className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                              </Button>
+                            </PopoverTrigger>
+                          </Popover>
+                          <p className="text-xs text-muted-foreground">
+                            Tip: Select a partner from the "Give XP to Partner" section above, or use the dropdown.
+                          </p>
+                        </div>
+
+                        <div className="space-y-2">
+                          <Label htmlFor="login-day-date">Login Date</Label>
+                          <Input
+                            id="login-day-date"
+                            type="date"
+                            value={loginDayDate}
+                            onChange={(e) => setLoginDayDate(e.target.value)}
+                            className="w-full"
+                          />
+                          <p className="text-xs text-muted-foreground">
+                            Select the date to add as a login day. Defaults to today.
+                          </p>
+                        </div>
+
+                        <Button
+                          onClick={async () => {
+                            const sellerId = selectedSellerForLoginDays || selectedSellerForXP;
+                            if (!sellerId) {
+                              toast({
+                                title: "Partner Required",
+                                description: "Please select a partner first.",
+                                variant: "destructive",
+                              });
+                              return;
+                            }
+
+                            if (!loginDayDate) {
+                              toast({
+                                title: "Date Required",
+                                description: "Please select a date.",
+                                variant: "destructive",
+                              });
+                              return;
+                            }
+
+                            setAddingLoginDay(true);
+                            try {
+                              // Check if login day already exists for this date
+                              const { data: existing } = await supabase
+                                .from("partner_activity_log")
+                                .select("id")
+                                .eq("seller_id", sellerId)
+                                .eq("event_type", "login_day")
+                                .eq("metadata->>login_date", loginDayDate)
+                                .maybeSingle();
+
+                              if (existing) {
+                                toast({
+                                  title: "Login Day Already Exists",
+                                  description: `This partner already has a login day recorded for ${loginDayDate}.`,
+                                  variant: "destructive",
+                                });
+                                setAddingLoginDay(false);
+                                return;
+                              }
+
+                              // Add login day entry
+                              const { error } = await supabase.from("partner_activity_log").insert({
+                                seller_id: sellerId,
+                                event_type: "login_day",
+                                xp_value: 0,
+                                description: `Admin test: Logged in on ${loginDayDate}`,
+                                metadata: { 
+                                  login_date: loginDayDate,
+                                  admin_test: true,
+                                  added_by: user?.id
+                                }
+                              });
+
+                              if (error) throw error;
+
+                              toast({
+                                title: "Login Day Added!",
+                                description: `Successfully added login day ${loginDayDate} for ${sellers.find(s => s.id === sellerId)?.business_name || 'partner'}.`,
+                              });
+
+                              // Fetch current login days count
+                              const { data: loginDays } = await supabase
+                                .from("partner_activity_log")
+                                .select("metadata")
+                                .eq("seller_id", sellerId)
+                                .eq("event_type", "login_day");
+
+                              if (loginDays) {
+                                const uniqueDates = new Set(
+                                  loginDays.map((log: any) => log.metadata?.login_date).filter(Boolean)
+                                );
+                                const sortedDates = Array.from(uniqueDates).sort().reverse();
+                                setLoginDaysData({ count: uniqueDates.size, dates: sortedDates });
+                                toast({
+                                  title: "Login Days Count",
+                                  description: `This partner now has ${uniqueDates.size} unique login day(s).`,
+                                });
+                              }
+
+                              // Reset date to today for next entry
+                              setLoginDayDate(new Date().toISOString().split('T')[0]);
+                            } catch (error: any) {
+                              console.error("Error adding login day:", error);
+                              toast({
+                                title: "Error",
+                                description: error.message || "Failed to add login day.",
+                                variant: "destructive",
+                              });
+                            } finally {
+                              setAddingLoginDay(false);
+                            }
+                          }}
+                          disabled={addingLoginDay || (!selectedSellerForLoginDays && !selectedSellerForXP)}
+                          className="w-full"
+                        >
+                          {addingLoginDay ? (
+                            <>
+                              <Activity className="mr-2 h-4 w-4 animate-spin" />
+                              Adding Login Day...
+                            </>
+                          ) : (
+                            <>
+                              <Zap className="mr-2 h-4 w-4" />
+                              Add Login Day
+                            </>
+                          )}
+                        </Button>
+                      </div>
+
+                      {(selectedSellerForLoginDays || selectedSellerForXP) && loginDaysData && (
+                        <Card className="bg-muted/20">
+                          <CardContent className="pt-6">
+                            <div className="space-y-2">
+                              <div className="flex justify-between items-center">
+                                <span className="text-sm text-muted-foreground">Total Login Days:</span>
+                                <span className="font-semibold">{loginDaysData.count}</span>
+                              </div>
+                              {loginDaysData.dates.length > 0 && (
+                                <div className="mt-3 pt-3 border-t">
+                                  <p className="text-xs text-muted-foreground mb-2">Login Dates:</p>
+                                  <div className="flex flex-wrap gap-1">
+                                    {loginDaysData.dates.slice(0, 10).map((date: string) => (
+                                      <Badge key={date} variant="secondary" className="text-xs">
+                                        {date}
+                                      </Badge>
+                                    ))}
+                                    {loginDaysData.dates.length > 10 && (
+                                      <Badge variant="outline" className="text-xs">
+                                        +{loginDaysData.dates.length - 10} more
+                                      </Badge>
+                                    )}
+                                  </div>
+                                </div>
+                              )}
+                            </div>
+                          </CardContent>
+                        </Card>
+                      )}
                     </CardContent>
                   </Card>
 
