@@ -285,6 +285,150 @@ interface PartnerBadge {
   xp_reward: number;
 }
 
+// Login Streak Tracker Component
+const LoginStreakTracker = ({ lesson, sellerData }: { lesson: any; sellerData: SellerData | null }) => {
+  const [timeUntilMidnight, setTimeUntilMidnight] = useState({ hours: 0, minutes: 0, seconds: 0 });
+  const [consecutiveDays, setConsecutiveDays] = useState(0);
+
+  useEffect(() => {
+    // Calculate consecutive login days
+    const calculateConsecutiveDays = async () => {
+      if (!sellerData?.id) return;
+
+      const { data: loginDays } = await supabase
+        .from("partner_activity_log")
+        .select("metadata")
+        .eq("seller_id", sellerData.id)
+        .eq("event_type", "login_day")
+        .order("metadata->>login_date", { ascending: false });
+
+      if (loginDays && loginDays.length > 0) {
+        const loginDates = Array.from(
+          new Set(loginDays.map((log: any) => log.metadata?.login_date).filter(Boolean))
+        ).sort().reverse();
+
+        let streak = 0;
+        if (loginDates.length > 0) {
+          const today = new Date();
+          today.setHours(0, 0, 0, 0);
+          
+          streak = 1;
+          for (let i = 1; i < loginDates.length; i++) {
+            const currentDate = new Date(loginDates[i - 1] + 'T00:00:00');
+            const previousDate = new Date(loginDates[i] + 'T00:00:00');
+            const daysBetween = Math.floor((currentDate.getTime() - previousDate.getTime()) / (1000 * 60 * 60 * 24));
+            
+            if (daysBetween === 1) {
+              streak++;
+            } else {
+              break;
+            }
+          }
+        }
+        
+        setConsecutiveDays(streak);
+      } else {
+        setConsecutiveDays(sellerData?.login_streak || 0);
+      }
+    };
+
+    calculateConsecutiveDays();
+  }, [sellerData]);
+
+  useEffect(() => {
+    // Update countdown every second
+    const updateCountdown = () => {
+      const now = new Date();
+      const midnight = new Date();
+      midnight.setDate(midnight.getDate() + 1); // Next day
+      midnight.setHours(0, 0, 0, 0); // Set to midnight (00:00:00)
+      
+      const diff = midnight.getTime() - now.getTime();
+      const hours = Math.floor(diff / (1000 * 60 * 60));
+      const minutes = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60));
+      const seconds = Math.floor((diff % (1000 * 60)) / 1000);
+      
+      setTimeUntilMidnight({ 
+        hours: Math.max(0, hours), 
+        minutes: Math.max(0, minutes), 
+        seconds: Math.max(0, seconds) 
+      });
+    };
+
+    updateCountdown(); // Initial update
+    const interval = setInterval(updateCountdown, 1000); // Update every second
+
+    return () => clearInterval(interval);
+  }, []);
+
+  const daysRemaining = Math.max(0, 3 - consecutiveDays);
+  const progress = Math.min(100, (consecutiveDays / 3) * 100);
+
+  return (
+    <div className="p-4 bg-muted/50 rounded-lg space-y-4">
+      <div>
+        <p className="text-sm text-muted-foreground mb-3">
+          Log in to your Partner Dashboard on <strong>3 consecutive days</strong>. Your login streak is tracked automatically. Earn {lesson.xp_reward} XP when you complete this task.
+        </p>
+        
+        <div className="space-y-3">
+          {/* Current Streak Display */}
+          <div className="flex items-center justify-between p-3 bg-background rounded-lg border border-border">
+            <div>
+              <p className="text-xs text-muted-foreground mb-1">Current Consecutive Days</p>
+              <p className="text-2xl font-bold text-primary">{consecutiveDays}</p>
+            </div>
+            <div className="text-right">
+              <p className="text-xs text-muted-foreground mb-1">Days Remaining</p>
+              <p className="text-2xl font-bold text-foreground">{daysRemaining}</p>
+            </div>
+          </div>
+
+          {/* Progress Bar */}
+          <div className="space-y-2">
+            <div className="flex items-center justify-between text-xs text-muted-foreground">
+              <span>Progress to 3 consecutive days</span>
+              <span>{consecutiveDays}/3 days</span>
+            </div>
+            <Progress value={progress} className="h-2" />
+          </div>
+
+          {/* Countdown Timer */}
+          <div className="p-3 bg-primary/10 rounded-lg border border-primary/20">
+            <p className="text-xs text-muted-foreground mb-2">Time until next day resets:</p>
+            <div className="flex items-center gap-3">
+              <div className="flex items-center gap-1">
+                <span className="text-2xl font-bold text-primary">{String(timeUntilMidnight.hours).padStart(2, '0')}</span>
+                <span className="text-sm text-muted-foreground">h</span>
+              </div>
+              <span className="text-primary">:</span>
+              <div className="flex items-center gap-1">
+                <span className="text-2xl font-bold text-primary">{String(timeUntilMidnight.minutes).padStart(2, '0')}</span>
+                <span className="text-sm text-muted-foreground">m</span>
+              </div>
+              <span className="text-primary">:</span>
+              <div className="flex items-center gap-1">
+                <span className="text-2xl font-bold text-primary">{String(timeUntilMidnight.seconds).padStart(2, '0')}</span>
+                <span className="text-sm text-muted-foreground">s</span>
+              </div>
+            </div>
+            <p className="text-xs text-muted-foreground mt-2">
+              Log in again tomorrow to continue your streak. Missing a day will reset your consecutive count.
+            </p>
+          </div>
+
+          {/* Explanation */}
+          <div className="pt-2 border-t border-border">
+            <p className="text-xs text-muted-foreground">
+              <strong>How it works:</strong> Your login streak counts consecutive calendar days. Log in at least once each day to maintain your streak. The day resets at midnight (00:00:00) in your local timezone.
+            </p>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
 interface BadgeEarning {
   id: string;
   seller_id: string;
@@ -4082,14 +4226,28 @@ const PartnerDashboard = () => {
                       
                       // Check if unlocked - only if user has actually reached this rank or a higher rank
                       // A rank is "unlocked" if the user's current rank index is >= this rank's index
+                      // AND they have enough XP for that rank (not just rank index)
                       const baseRankIndex = allRanksList.indexOf(base);
                       const plusRankIndex = plus ? allRanksList.indexOf(plus) : -1;
+                      const baseRankXpThreshold = baseRankInfo.xpThreshold;
+                      const plusRankXpThreshold = plusRankInfo?.xpThreshold || 0;
+                      
+                      // A rank is unlocked only if:
+                      // 1. User has actually reached this rank or higher (by rank index), AND
+                      // 2. User has enough XP for the base rank
+                      const hasReachedRank = currentRankIndex >= baseRankIndex;
+                      const hasEnoughXpForBase = currentXP >= baseRankXpThreshold;
                       const isBaseUnlocked = base === 'Partner Pro' 
                         ? hasPartnerPro 
-                        : currentRankIndex >= baseRankIndex; // Only unlocked if actually reached
+                        : hasReachedRank && hasEnoughXpForBase; // Must have reached rank AND have enough XP
+                      
+                      // For Plus rank, must have reached it AND have enough XP
+                      const hasReachedPlusRank = plus ? currentRankIndex >= plusRankIndex : false;
+                      const hasEnoughXpForPlus = plus ? currentXP >= plusRankXpThreshold : false;
                       const isPlusUnlocked = plus 
-                        ? currentRankIndex >= plusRankIndex 
+                        ? hasReachedPlusRank && hasEnoughXpForPlus
                         : false;
+                      
                       const isUnlocked = isBaseUnlocked || isPlusUnlocked;
                       
                       // Get next base rank and calculate XP needed from current rank
@@ -5555,6 +5713,10 @@ const PartnerDashboard = () => {
                                               This task will be automatically completed when you log in on 2 different days.
                                             </p>
                                           </div>
+                                        )}
+                                        
+                                                {lesson.title === 'Log In on 3 Consecutive Days' && (
+                                          <LoginStreakTracker lesson={lesson} sellerData={sellerData} />
                                         )}
                                         
                                                 {lesson.title === 'Invite a Friend' && (
