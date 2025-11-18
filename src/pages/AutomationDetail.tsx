@@ -84,7 +84,7 @@ const AutomationDetail = () => {
 
           // Fetch bookmarked automations
           const { data: bookmarksData } = await supabase
-            .from("partner_bookmarks")
+            .from("automation_bookmarks")
             .select("automation_id")
             .eq("seller_id", data.id);
 
@@ -179,7 +179,7 @@ const AutomationDetail = () => {
 
       if (isBookmarked) {
         const { error } = await supabase
-          .from("partner_bookmarks")
+          .from("automation_bookmarks")
           .delete()
           .eq("seller_id", sellerData.id)
           .eq("automation_id", automation.id);
@@ -197,7 +197,7 @@ const AutomationDetail = () => {
           description: "Automation removed from bookmarks.",
         });
       } else {
-        const { error } = await supabase.from("partner_bookmarks").insert({
+        const { error } = await supabase.from("automation_bookmarks").insert({
           seller_id: sellerData.id,
           automation_id: automation.id,
         });

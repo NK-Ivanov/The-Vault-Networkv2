@@ -335,6 +335,7 @@ const PartnerDashboard = () => {
   const [ticketMessages, setTicketMessages] = useState<TicketMessageData[]>([]);
   const ticketMessagesEndRef = useRef<HTMLDivElement>(null);
   const taskCompletionRef = useRef<Set<string>>(new Set());
+  const fetchingProgressionRef = useRef(false);
   const [newTicketMessage, setNewTicketMessage] = useState("");
   const [sendingTicketMessage, setSendingTicketMessage] = useState(false);
   const [showTicketDialog, setShowTicketDialog] = useState(false);
@@ -454,8 +455,10 @@ const PartnerDashboard = () => {
     if (!automationPreviewLesson) return;
     if (completedLessons.has(automationPreviewLesson.id)) return;
     if (viewedAutomations.size < 3) return;
+    if (taskCompletionRef.current.has(automationPreviewLesson.id)) return; // Prevent duplicate
 
     (async () => {
+      taskCompletionRef.current.add(automationPreviewLesson.id);
       try {
         await addXP(
           automationPreviewLesson.xp_reward,
@@ -466,9 +469,10 @@ const PartnerDashboard = () => {
         setCompletedLessons((prev) => new Set([...prev, automationPreviewLesson.id]));
       } catch (error) {
         console.error('Error auto-completing Automation Preview task from effect:', error);
+        taskCompletionRef.current.delete(automationPreviewLesson.id);
       }
     })();
-  }, [sellerData?.id, lessons, completedLessons, viewedAutomations]);
+  }, [sellerData?.id, lessons.length, viewedAutomations.size]); // Removed completedLessons from deps
 
   // Auto-complete bookmark tasks when bookmarks are added
   useEffect(() => {
@@ -628,23 +632,30 @@ const PartnerDashboard = () => {
   }, [sellerData?.id, lessons.length, fullyReadAutomations.size]);
 
   // Track "Open Overview Tab" task completion
+  const overviewTaskCompletedRef = useRef(false);
   useEffect(() => {
-    if (activeTab === 'overview' && sellerData?.id && lessons.length > 0) {
+    if (activeTab === 'overview' && sellerData?.id && lessons.length > 0 && !overviewTaskCompletedRef.current) {
       const overviewLesson = lessons.find(l => l.title === 'Open Overview Tab' && l.rank_required === 'Recruit');
-      if (overviewLesson && !completedLessons.has(overviewLesson.id)) {
+      if (overviewLesson && !completedLessons.has(overviewLesson.id) && !taskCompletionRef.current.has(overviewLesson.id)) {
+        overviewTaskCompletedRef.current = true;
+        taskCompletionRef.current.add(overviewLesson.id);
         addXP(overviewLesson.xp_reward, 'task_completed', `Completed: ${overviewLesson.title}`, { 
           lesson_id: overviewLesson.id 
         }).then(() => {
           setCompletedLessons(prev => new Set([...prev, overviewLesson.id]));
-          if (sellerData?.id) {
-            fetchProgressionData(sellerData.id);
-          }
+          // Don't call fetchProgressionData here - it will be called by other effects
         }).catch((error: any) => {
           console.error("Error completing overview tab task:", error);
+          overviewTaskCompletedRef.current = false;
+          taskCompletionRef.current.delete(overviewLesson.id);
         });
       }
     }
-  }, [activeTab, sellerData?.id, lessons.length]);
+    // Reset ref when tab changes away from overview
+    if (activeTab !== 'overview') {
+      overviewTaskCompletedRef.current = false;
+    }
+  }, [activeTab, sellerData?.id, lessons.length]); // Removed completedLessons from deps
 
   const fetchSellerData = async () => {
     try {
@@ -1175,9 +1186,7 @@ const PartnerDashboard = () => {
             lesson_id: copyLinkLesson.id 
           });
           setCompletedLessons(prev => new Set([...prev, copyLinkLesson.id]));
-          if (sellerData?.id) {
-            await fetchProgressionData(sellerData.id);
-          }
+          // Don't call fetchProgressionData here - it will be called by addXP's fetchSellerData
         } catch (error: any) {
           console.error("Error completing copy link task:", error);
         }
@@ -1188,6 +1197,12 @@ const PartnerDashboard = () => {
   const [loadingLessons, setLoadingLessons] = useState(true);
 
   const fetchProgressionData = async (sellerId: string, sellerRank?: PartnerRank) => {
+    // Prevent multiple simultaneous calls
+    if (fetchingProgressionRef.current) {
+      return;
+    }
+    
+    fetchingProgressionRef.current = true;
     try {
       setLoadingLessons(true);
       // Use passed rank or fallback to sellerData or 'Recruit'
@@ -1474,6 +1489,8 @@ const PartnerDashboard = () => {
     } catch (error: any) {
       console.error("Error fetching progression data:", error);
       setLoadingLessons(false);
+    } finally {
+      fetchingProgressionRef.current = false;
     }
   };
 
@@ -2060,9 +2077,7 @@ const PartnerDashboard = () => {
               lesson_id: bookmark1Lesson.id 
             });
             setCompletedLessons(prev => new Set([...prev, bookmark1Lesson.id]));
-            if (sellerData?.id) {
-              await fetchProgressionData(sellerData.id);
-            }
+            // Don't call fetchProgressionData here - it will be called by addXP's fetchSellerData
           } catch (error: any) {
             console.error("Error completing bookmark task:", error);
           }
@@ -2076,9 +2091,7 @@ const PartnerDashboard = () => {
               lesson_id: bookmark2Lesson.id 
             });
             setCompletedLessons(prev => new Set([...prev, bookmark2Lesson.id]));
-            if (sellerData?.id) {
-              await fetchProgressionData(sellerData.id);
-            }
+            // Don't call fetchProgressionData here - it will be called by addXP's fetchSellerData
             toast({
               title: "Task Completed!",
               description: `You earned ${bookmark2Lesson.xp_reward} XP for bookmarking two automations!`,
@@ -2146,9 +2159,7 @@ const PartnerDashboard = () => {
             });
             setCompletedLessons(prev => new Set([...prev, briefLesson.id]));
             setFullyReadAutomations(prev => new Set([...prev, selectedAutomationBrief.id]));
-            if (sellerData?.id) {
-              await fetchProgressionData(sellerData.id);
-            }
+            // Don't call fetchProgressionData here - it will be called by addXP's fetchSellerData
           } catch (error: any) {
             console.error("Error completing brief task:", error);
           }
@@ -2162,9 +2173,7 @@ const PartnerDashboard = () => {
               lesson_id: readFullLesson.id 
             });
             setCompletedLessons(prev => new Set([...prev, readFullLesson.id]));
-            if (sellerData?.id) {
-              await fetchProgressionData(sellerData.id);
-            }
+            // Don't call fetchProgressionData here - it will be called by addXP's fetchSellerData
             toast({
               title: "Task Completed!",
               description: `You earned ${readFullLesson.xp_reward} XP for reading a full automation!`,
@@ -2843,8 +2852,7 @@ const PartnerDashboard = () => {
       // Check weekly challenges
       await checkWeeklyChallenges('automation_assigned');
 
-      // Refresh client automations
-      await fetchProgressionData(sellerData?.id || '');
+      // Don't call fetchProgressionData here - it will be called by addXP's fetchSellerData if task was completed
 
       setSelectedClient("");
       setSelectedAutomation("");
@@ -3185,9 +3193,7 @@ const PartnerDashboard = () => {
             lesson_id: sendMessageLesson.id 
           });
           setCompletedLessons(prev => new Set([...prev, sendMessageLesson.id]));
-          if (sellerData?.id) {
-            await fetchProgressionData(sellerData.id);
-          }
+          // Don't call fetchProgressionData here - it will be called by addXP's fetchSellerData
         } catch (error: any) {
           console.error("Error completing send message task:", error);
         }
@@ -6056,10 +6062,7 @@ const PartnerDashboard = () => {
                                                   title: "Task Completed! 🎉",
                                                   description: `You've viewed 3 automations and earned ${automationPreviewLesson.xp_reward} XP!`,
                                                 });
-                                                // Refresh progression data to update XP and rank
-                                                if (sellerData?.id) {
-                                                  await fetchProgressionData(sellerData.id);
-                                                }
+                                                // Don't call fetchProgressionData here - it will be called by addXP's fetchSellerData
                                               } catch (error: any) {
                                                 console.error("Error completing automation preview task:", error);
                                                 toast({
