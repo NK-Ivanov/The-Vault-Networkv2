@@ -310,14 +310,16 @@ BEGIN
     module_id,
     module_title,
     module_description,
-    module_content
+    module_content,
+    quiz_id
   )
   VALUES (
     _learner_id,
     _token_record.module_id,
     _token_record.module_title,
     _token_record.module_description,
-    _token_record.module_content
+    _token_record.module_content,
+    _token_record.quiz_id
   );
   
   -- Increment token usage

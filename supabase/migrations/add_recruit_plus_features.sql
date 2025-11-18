@@ -150,3 +150,5 @@ COMMENT ON TABLE public.automation_briefs IS 'Detailed information about automat
 COMMENT ON TABLE public.partner_login_days IS 'Tracks unique login days for each partner';
 
 
+
+

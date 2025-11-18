@@ -31,6 +31,7 @@ const LearnerModule = () => {
   const [loading, setLoading] = useState(true);
   const [module, setModule] = useState<LearnerModule | null>(null);
   const [saving, setSaving] = useState(false);
+  const [quizLink, setQuizLink] = useState<string | null>(null);
 
   usePageMeta({
     title: module ? `${module.module_title} - The Vault Network` : "Learning Module",
@@ -61,7 +62,7 @@ const LearnerModule = () => {
         return;
       }
 
-      // Fetch module
+      // Fetch module record from database (with HTML content)
       const { data: moduleData, error } = await supabase
         .from("learner_modules")
         .select("*")
@@ -71,13 +72,25 @@ const LearnerModule = () => {
 
       if (error) throw error;
 
+      // Use module content directly from database (pasted HTML)
       setModule(moduleData);
       
-      // Update accessed_at
-      await supabase
-        .from("learner_modules")
-        .update({ accessed_at: new Date().toISOString() })
-        .eq("id", moduleId);
+      // Extract quiz link from HTML if present
+      if (moduleData.module_content && typeof moduleData.module_content === 'object' && moduleData.module_content.type === 'html') {
+        const html = moduleData.module_content.html || '';
+        const quizLinkMatch = html.match(/href=["']([^"']*\/quiz\?token=[^"']+)["']/i);
+        if (quizLinkMatch) {
+          setQuizLink(quizLinkMatch[1]);
+        }
+      }
+      
+      // Update accessed_at if not already set (but don't award XP here - that's done on button click)
+      if (!moduleData.accessed_at) {
+        await supabase
+          .from("learner_modules")
+          .update({ accessed_at: new Date().toISOString() })
+          .eq("id", moduleId);
+      }
     } catch (error: any) {
       console.error("Error fetching module:", error);
       toast({
@@ -163,78 +176,32 @@ const LearnerModule = () => {
     if (module.module_content && typeof module.module_content === 'object' && module.module_content.type === 'html') {
       const { html, styles } = module.module_content;
       
-      // Scope styles to module-html-content to avoid conflicts
-      const scopedStyles = styles 
-        ? styles.replace(/(\.page|body|h1|h2|h3|h4|p|ul|ol|li|a|\.gold|\.muted|\.callout|\.badge|\.diagram-box|\.helper-img)/g, '.module-html-content $1')
-               .replace(/\.module-html-content body/g, '.module-html-content')
-        : '';
-      
-      // Combine scoped styles with base module styles
-      const fullStyles = `
+      // Simple wrapper styles - just fix the black bars issue by overriding body padding
+      const wrapperStyles = `
         .module-html-wrapper {
-          background: #050505;
-          padding: 40px 0;
-          min-height: 100vh;
-          font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+          background: transparent !important;
+          padding: 0 !important;
+          margin: 0 !important;
+          width: 100%;
         }
-        ${scopedStyles}
-        .module-html-content {
-          font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        .module-html-wrapper body,
+        body {
+          padding: 0 !important;
+          margin: 0 !important;
         }
-        .module-html-content .page {
-          background: #ffffff !important;
-          max-width: 850px;
-          margin: 0 auto 40px auto;
-          padding: 64px 72px;
-          box-shadow: 0 12px 40px rgba(0, 0, 0, 0.6);
-          box-sizing: border-box;
+        .module-html-wrapper .page {
+          margin: 0 auto 40px auto !important;
         }
-        .module-html-content .cover {
-          background: #050505 !important;
-          color: #f7f7f7 !important;
-        }
-        .module-html-content h1,
-        .module-html-content h2,
-        .module-html-content h3,
-        .module-html-content h4 {
-          color: #111111 !important;
-          margin-top: 0;
-        }
-        .module-html-content p {
-          color: #111111 !important;
-          font-size: 14px;
-          line-height: 1.6;
-          margin: 0 0 10px 0;
-        }
-        .module-html-content ul,
-        .module-html-content ol {
-          color: #111111 !important;
-          font-size: 14px;
-          line-height: 1.6;
-        }
-        .module-html-content li {
-          color: #111111 !important;
-        }
-        .module-html-content .muted {
-          color: #555555 !important;
-        }
-        .module-html-content .gold {
-          color: #c99721 !important;
-        }
-        .module-html-content a {
-          color: #c99721 !important;
-          text-decoration: none;
-        }
-        .module-html-content a:hover {
-          text-decoration: underline;
+        .module-html-wrapper section {
+          margin: 0 auto !important;
         }
       `;
       
       return (
-        <div className="module-html-wrapper">
-          <style dangerouslySetInnerHTML={{ __html: fullStyles }} />
+        <div className="module-html-wrapper" style={{ border: 'none', outline: 'none' }}>
+          <style dangerouslySetInnerHTML={{ __html: wrapperStyles }} />
           <div 
-            className="module-html-content"
+            style={{ border: 'none', outline: 'none' }}
             dangerouslySetInnerHTML={{ __html: html }}
           />
         </div>
@@ -311,23 +278,23 @@ const LearnerModule = () => {
         <Button
           variant="ghost"
           onClick={() => navigate("/learner-dashboard")}
-          className="mb-6"
+          className="mb-6 text-white hover:text-white/80 hover:bg-white/10"
         >
           <ArrowLeft className="w-4 h-4 mr-2" />
           Back to Dashboard
         </Button>
 
         {/* Module Header */}
-        <Card className="mb-6 border-primary/20">
+        <Card className="mb-6 border-none bg-background">
           <CardHeader>
             <div className="flex items-start justify-between">
               <div className="flex-1">
                 <div className="flex items-center gap-3 mb-2">
-                  <BookOpen className="w-6 h-6 text-primary" />
-                  <CardTitle className="text-2xl">{module.module_title}</CardTitle>
+                  <BookOpen className="w-6 h-6 text-[#f5c84c]" />
+                  <CardTitle className="text-2xl text-[#f5c84c]">{module.module_title}</CardTitle>
                 </div>
                 {module.module_description && (
-                  <CardDescription className="text-base mt-2">
+                  <CardDescription className="text-base mt-2 text-[#f5c84c]/80">
                     {module.module_description}
                   </CardDescription>
                 )}
@@ -338,7 +305,7 @@ const LearnerModule = () => {
                   Completed
                 </Badge>
               ) : (
-                <Badge variant="outline" className="text-muted-foreground">
+                <Badge variant="outline" className="text-[#f5c84c] border-[#f5c84c]/30">
                   <Clock className="w-4 h-4 mr-1" />
                   In Progress
                 </Badge>
@@ -349,7 +316,7 @@ const LearnerModule = () => {
 
         {/* Module Content */}
         {module.module_content && typeof module.module_content === 'object' && module.module_content.type === 'html' ? (
-          <div className="w-full -mx-6 md:-mx-12">
+          <div className="w-full -mx-6 md:-mx-12 lg:-mx-24" style={{ display: 'flex', justifyContent: 'center' }}>
             {renderModuleContent()}
           </div>
         ) : (
@@ -366,11 +333,20 @@ const LearnerModule = () => {
 
         {/* Actions */}
         <div className="mt-6 flex gap-4">
-          {!module.completed && (
+          {!module.completed && quizLink && (
+            <Button
+              onClick={() => window.open(quizLink, '_blank')}
+              className="bg-[#f5c84c] hover:bg-[#f5c84c]/90 text-[#111111] border border-[#f5c84c]"
+            >
+              <BookOpen className="w-4 h-4 mr-2" />
+              Take Quiz
+            </Button>
+          )}
+          {!module.completed && !quizLink && (
             <Button
               onClick={markAsComplete}
               disabled={saving}
-              className="bg-primary hover:bg-primary/90 text-primary-foreground"
+              className="bg-[#f5c84c] hover:bg-[#f5c84c]/90 text-[#111111] border border-[#f5c84c]"
             >
               {saving ? (
                 <>
@@ -388,6 +364,7 @@ const LearnerModule = () => {
           <Button
             variant="outline"
             onClick={() => navigate("/learner-dashboard")}
+            className="border-[#f5c84c]/30 text-[#f5c84c] hover:bg-[#f5c84c]/10"
           >
             Return to Dashboard
           </Button>

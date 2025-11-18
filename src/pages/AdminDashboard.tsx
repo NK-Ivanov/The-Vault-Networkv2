@@ -14,12 +14,13 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
-import { CheckCircle, XCircle, Users, DollarSign, Package, Plus, Eye, Settings, Edit, Search, ArrowUpDown, TrendingUp, TrendingDown, BarChart3, PieChart, Activity, MessageSquare, AlertCircle, Send, LayoutDashboard, UserCog, Building2, Boxes, Link2, Ticket, Mail, HelpCircle, Trophy, Zap, BookOpen, Copy, Trash2 } from "lucide-react";
+import { CheckCircle, XCircle, Users, DollarSign, Package, Plus, Eye, Settings, Edit, Search, ArrowUpDown, TrendingUp, TrendingDown, BarChart3, PieChart, Activity, MessageSquare, AlertCircle, Send, LayoutDashboard, UserCog, Building2, Boxes, Link2, Ticket, Mail, HelpCircle, Trophy, Zap, BookOpen, Copy, Trash2, Upload, Image as ImageIcon, X } from "lucide-react";
 import { ChartContainer, ChartTooltip, ChartTooltipContent } from "@/components/ui/chart";
 import { BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid, ResponsiveContainer, PieChart as RechartsPieChart, Cell } from "recharts";
 import { useToast } from "@/hooks/use-toast";
 import { callNetlifyFunction } from "@/lib/netlify-functions";
 import { getNextRank, getPreviousRank, getRankInfo, getTasksForRank, type PartnerRank } from "@/lib/partner-progression";
+// Removed module config import - using manual HTML pasting instead
 import { Checkbox } from "@/components/ui/checkbox";
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
@@ -245,11 +246,42 @@ const AdminDashboard = () => {
     module_title: "",
     module_description: "",
     module_content_html: "",
+    quiz_link: "", // Quiz link to add to HTML
     expires_at: "",
     max_uses: "",
   });
   const [creatingModule, setCreatingModule] = useState(false);
   const [moduleHTMLPreview, setModuleHTMLPreview] = useState("");
+  const [uploadingImage, setUploadingImage] = useState(false);
+  const [moduleImages, setModuleImages] = useState<{ url: string; filename: string }[]>([]);
+  const [selectedModuleForImages, setSelectedModuleForImages] = useState("");
+  const [deletingModuleToken, setDeletingModuleToken] = useState<string | null>(null);
+  const [sendingDiscordNotification, setSendingDiscordNotification] = useState<string | null>(null);
+  
+  // Quiz management state
+  const [quizzes, setQuizzes] = useState<any[]>([]);
+  const [loadingQuizzes, setLoadingQuizzes] = useState(false);
+  const [newQuiz, setNewQuiz] = useState({
+    title: "",
+    description: "",
+    module_id: "",
+    passing_score: "70",
+    time_limit_minutes: "",
+    max_attempts: "3",
+  });
+  const [quizQuestions, setQuizQuestions] = useState<any[]>([]);
+  const [creatingQuiz, setCreatingQuiz] = useState(false);
+  const [selectedQuizForLink, setSelectedQuizForLink] = useState("");
+  const [newQuizToken, setNewQuizToken] = useState({
+    quiz_id: "",
+    link_title: "",
+    expires_at: "",
+    max_uses: "",
+  });
+  const [quizTokens, setQuizTokens] = useState<any[]>([]);
+  const [loadingQuizTokens, setLoadingQuizTokens] = useState(false);
+  const [creatingQuizToken, setCreatingQuizToken] = useState(false);
+  const [deletingQuizToken, setDeletingQuizToken] = useState<string | null>(null);
   
   // Vault Network client management state
   const [vaultNetworkSellerId, setVaultNetworkSellerId] = useState<string | null>(null);
@@ -333,6 +365,8 @@ const AdminDashboard = () => {
       fetchAdminData();
       fetchAnalyticsData();
       fetchModuleTokens();
+      fetchQuizzes();
+      fetchQuizTokens();
     } catch (error: any) {
       toast({
         title: "Error checking permissions",
@@ -502,6 +536,228 @@ const AdminDashboard = () => {
     }
   };
 
+  const fetchQuizzes = async () => {
+    setLoadingQuizzes(true);
+    try {
+      const { data, error } = await supabase
+        .from("quizzes")
+        .select("*")
+        .order("created_at", { ascending: false });
+
+      if (error) throw error;
+      setQuizzes(data || []);
+    } catch (error: any) {
+      console.error("Error fetching quizzes:", error);
+      toast({
+        title: "Error",
+        description: "Failed to load quizzes",
+        variant: "destructive",
+      });
+    } finally {
+      setLoadingQuizzes(false);
+    }
+  };
+
+  const fetchQuizTokens = async () => {
+    setLoadingQuizTokens(true);
+    try {
+      const { data, error } = await supabase
+        .from("quiz_access_tokens")
+        .select(`
+          *,
+          quizzes (
+            id,
+            title,
+            description
+          )
+        `)
+        .order("created_at", { ascending: false });
+
+      if (error) throw error;
+      setQuizTokens(data || []);
+    } catch (error: any) {
+      console.error("Error fetching quiz tokens:", error);
+      toast({
+        title: "Error",
+        description: "Failed to load quiz links",
+        variant: "destructive",
+      });
+    } finally {
+      setLoadingQuizTokens(false);
+    }
+  };
+
+  const handleCreateQuiz = async (questions: any[]) => {
+    if (!newQuiz.title || questions.length === 0) {
+      toast({
+        title: "Missing fields",
+        description: "Quiz title and at least one question are required",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setCreatingQuiz(true);
+    try {
+      // Create quiz
+      const { data: quizData, error: quizError } = await supabase
+        .from("quizzes")
+        .insert({
+          title: newQuiz.title,
+          description: newQuiz.description || null,
+          module_id: newQuiz.module_id || null,
+          passing_score: parseInt(newQuiz.passing_score),
+          time_limit_minutes: newQuiz.time_limit_minutes ? parseInt(newQuiz.time_limit_minutes) : null,
+          max_attempts: parseInt(newQuiz.max_attempts),
+          created_by: user?.id,
+        })
+        .select()
+        .single();
+
+      if (quizError) throw quizError;
+
+      // Create questions
+      const questionsToInsert = questions.map((q, index) => ({
+        quiz_id: quizData.id,
+        question_number: index + 1,
+        question_text: q.question,
+        option_a: q.optionA,
+        option_b: q.optionB,
+        option_c: q.optionC,
+        option_d: q.optionD,
+        correct_answer: q.correctAnswer,
+        points: 1,
+      }));
+
+      const { error: questionsError } = await supabase
+        .from("quiz_questions")
+        .insert(questionsToInsert);
+
+      if (questionsError) throw questionsError;
+
+      toast({
+        title: "Quiz Created!",
+        description: `"${newQuiz.title}" has been created with ${questions.length} questions`,
+      });
+
+      // Reset form
+      setNewQuiz({
+        title: "",
+        description: "",
+        module_id: "",
+        passing_score: "70",
+        time_limit_minutes: "",
+        max_attempts: "3",
+      });
+      setQuizQuestions([]);
+
+      // Refresh quizzes
+      await fetchQuizzes();
+    } catch (error: any) {
+      console.error("Error creating quiz:", error);
+      toast({
+        title: "Error",
+        description: error.message || "Failed to create quiz",
+        variant: "destructive",
+      });
+    } finally {
+      setCreatingQuiz(false);
+    }
+  };
+
+  const handleCreateQuizToken = async () => {
+    if (!newQuizToken.quiz_id) {
+      toast({
+        title: "Missing fields",
+        description: "Please select a quiz",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setCreatingQuizToken(true);
+    try {
+      // Generate a random token
+      const token = `quiz_${Math.random().toString(36).substring(2, 15)}${Math.random().toString(36).substring(2, 15)}`;
+      
+      const linkTitle = newQuizToken.link_title || "Quiz Link";
+
+      const { data, error } = await supabase
+        .from("quiz_access_tokens")
+        .insert({
+          token,
+          quiz_id: newQuizToken.quiz_id,
+          link_title: linkTitle,
+          expires_at: newQuizToken.expires_at || null,
+          max_uses: newQuizToken.max_uses ? parseInt(newQuizToken.max_uses) : null,
+          current_uses: 0,
+          is_active: true,
+          created_by: user?.id,
+        })
+        .select()
+        .single();
+
+      if (error) throw error;
+
+      toast({
+        title: "Quiz Link Created!",
+        description: "Share this link for learners to take the quiz",
+      });
+
+      // Reset form
+      setNewQuizToken({
+        quiz_id: "",
+        link_title: "",
+        expires_at: "",
+        max_uses: "",
+      });
+
+      // Refresh tokens
+      await fetchQuizTokens();
+    } catch (error: any) {
+      console.error("Error creating quiz token:", error);
+      toast({
+        title: "Error",
+        description: error.message || "Failed to create quiz link",
+        variant: "destructive",
+      });
+    } finally {
+      setCreatingQuizToken(false);
+    }
+  };
+
+  const handleDeleteQuizToken = async (tokenId: string) => {
+    if (!confirm("Are you sure you want to delete this quiz link? This action cannot be undone.")) {
+      return;
+    }
+
+    setDeletingQuizToken(tokenId);
+    try {
+      const { error } = await supabase
+        .from("quiz_access_tokens")
+        .delete()
+        .eq("id", tokenId);
+
+      if (error) throw error;
+
+      toast({
+        title: "Quiz Link Deleted",
+        description: "The quiz access link has been successfully deleted",
+      });
+
+      await fetchQuizTokens();
+    } catch (error: any) {
+      console.error("Error deleting quiz token:", error);
+      toast({
+        title: "Error",
+        description: error.message || "Failed to delete quiz link",
+        variant: "destructive",
+      });
+    } finally {
+      setDeletingQuizToken(null);
+    }
+  };
+
   const fetchModuleTokens = async () => {
     setLoadingModules(true);
     try {
@@ -524,6 +780,195 @@ const AdminDashboard = () => {
     }
   };
 
+  const handleImageUpload = async (file: File, moduleId: string) => {
+    if (!file) return null;
+
+    try {
+      // Create a unique filename with module ID prefix
+      const fileExt = file.name.split('.').pop();
+      const fileName = `${moduleId}/${Date.now()}-${Math.random().toString(36).substring(2, 15)}.${fileExt}`;
+      const filePath = fileName;
+
+      // Upload to Supabase Storage (bucket: module-images)
+      const { data, error: uploadError } = await supabase.storage
+        .from('module-images')
+        .upload(filePath, file, {
+          cacheControl: '3600',
+          upsert: false
+        });
+
+      if (uploadError) {
+        // If bucket doesn't exist, try to create it or use a fallback
+        if (uploadError.message.includes('Bucket not found') || uploadError.message.includes('not found')) {
+          throw new Error("Storage Bucket Not Found. Please create a 'module-images' bucket in Supabase Storage with public access");
+        }
+        throw uploadError;
+      }
+
+      // Get public URL from Supabase Storage
+      const { data: urlData } = supabase.storage
+        .from('module-images')
+        .getPublicUrl(filePath);
+
+      const publicUrl = urlData.publicUrl;
+      
+      // Use the Supabase public URL directly
+      // If you have a CDN/custom domain configured, you can replace the domain here
+      // For now, we'll use the Supabase URL which works immediately
+      const vaultnetUrl = publicUrl;
+
+      return { url: vaultnetUrl, filename: file.name };
+    } catch (error: any) {
+      console.error("Error uploading image:", error);
+      throw error;
+    }
+  };
+
+  const handleMultipleImageUpload = async (files: File[], moduleId: string) => {
+    if (!files || files.length === 0 || !moduleId) return;
+
+    setUploadingImage(true);
+    const uploadedImages: { url: string; filename: string }[] = [];
+    const failedUploads: string[] = [];
+
+    try {
+      // Upload all files in parallel
+      const uploadPromises = files.map(async (file) => {
+        try {
+          const result = await handleImageUpload(file, moduleId);
+          if (result) {
+            uploadedImages.push(result);
+          }
+        } catch (error: any) {
+          console.error(`Failed to upload ${file.name}:`, error);
+          failedUploads.push(file.name);
+        }
+      });
+
+      await Promise.all(uploadPromises);
+
+      // Add all successfully uploaded images to the list
+      if (uploadedImages.length > 0) {
+        setModuleImages(prev => [...prev, ...uploadedImages]);
+        
+        // Copy the last uploaded image URL to clipboard
+        const lastUrl = uploadedImages[uploadedImages.length - 1].url;
+        navigator.clipboard.writeText(lastUrl);
+
+        toast({
+          title: `${uploadedImages.length} Image${uploadedImages.length > 1 ? 's' : ''} Uploaded!`,
+          description: failedUploads.length > 0 
+            ? `${failedUploads.length} image(s) failed to upload: ${failedUploads.join(', ')}`
+            : `All images uploaded successfully. Last URL copied to clipboard.`,
+        });
+      } else if (failedUploads.length > 0) {
+        toast({
+          title: "Upload Failed",
+          description: `Failed to upload all images. Make sure the 'module-images' storage bucket exists and is public.`,
+          variant: "destructive",
+        });
+      }
+    } catch (error: any) {
+      console.error("Error uploading images:", error);
+      toast({
+        title: "Upload Failed",
+        description: error.message || "Failed to upload images. Make sure the 'module-images' storage bucket exists and is public.",
+        variant: "destructive",
+      });
+    } finally {
+      setUploadingImage(false);
+    }
+  };
+
+  const handleDeleteModuleToken = async (tokenId: string) => {
+    if (!confirm("Are you sure you want to delete this module access link? This action cannot be undone.")) {
+      return;
+    }
+
+    setDeletingModuleToken(tokenId);
+    try {
+      const { error } = await supabase
+        .from("module_access_tokens")
+        .delete()
+        .eq("id", tokenId);
+
+      if (error) throw error;
+
+      toast({
+        title: "Module Link Deleted",
+        description: "The module access link has been successfully deleted",
+      });
+
+      // Refresh tokens
+      await fetchModuleTokens();
+    } catch (error: any) {
+      console.error("Error deleting module token:", error);
+      toast({
+        title: "Error",
+        description: error.message || "Failed to delete module access link",
+        variant: "destructive",
+      });
+    } finally {
+      setDeletingModuleToken(null);
+    }
+  };
+
+  const handleSendDiscordNotification = async (token: any) => {
+    setSendingDiscordNotification(token.id);
+    try {
+      const moduleLink = `${window.location.origin}/learner-dashboard?token=${token.token}`;
+      const webhookUrl = "https://discord.com/api/webhooks/1440081454741848185/XP546Z4FmaIKtdbIR3sbcsKLurcMpF52dAXRsi8nxW9rAOU4956jMYVEIvj5_osU7IbS";
+
+      // Create Discord embed message
+      // Discord color is decimal: #f5c84c = 16119244
+      const embed = {
+        title: "📚 New Module Available!",
+        description: `**${token.module_title}**\n\n${token.module_description || "A new learning module is now available."}`,
+        color: 16119244, // Gold color #f5c84c in decimal
+        fields: [
+          {
+            name: "🔗 Add to Your Dashboard",
+            value: `[Click here to add this module](${moduleLink})`,
+            inline: false
+          }
+        ],
+        footer: {
+          text: "The Vault Network Academy"
+        },
+        timestamp: new Date().toISOString()
+      };
+
+      const response = await fetch(webhookUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          embeds: [embed]
+        }),
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`Discord webhook failed: ${response.status} ${errorText}`);
+      }
+
+      toast({
+        title: "Discord Notification Sent!",
+        description: "The module has been announced in Discord",
+      });
+    } catch (error: any) {
+      console.error("Error sending Discord notification:", error);
+      toast({
+        title: "Error",
+        description: error.message || "Failed to send Discord notification",
+        variant: "destructive",
+      });
+    } finally {
+      setSendingDiscordNotification(null);
+    }
+  };
+
   const handleCreateModuleToken = async () => {
     if (!newModuleToken.module_id || !newModuleToken.module_title) {
       toast({
@@ -539,12 +984,32 @@ const AdminDashboard = () => {
       // Generate a random token
       const token = `learn_${Math.random().toString(36).substring(2, 15)}${Math.random().toString(36).substring(2, 15)}`;
       
-      // Parse HTML content if provided
+      // Parse HTML content if provided - don't modify it, just store as-is
       const moduleContent = newModuleToken.module_content_html ? {
         type: 'html',
         html: newModuleToken.module_content_html,
         styles: moduleHTMLPreview || ''
       } : null;
+
+      // Extract quiz_id from quiz_link if provided
+      let quizId = null;
+      if (newModuleToken.quiz_link) {
+        // Extract token from quiz link
+        const quizTokenMatch = newModuleToken.quiz_link.match(/token=([^&]+)/);
+        if (quizTokenMatch) {
+          const quizToken = quizTokenMatch[1];
+          // Get quiz_id from quiz_access_tokens
+          const { data: tokenData } = await supabase
+            .from("quiz_access_tokens")
+            .select("quiz_id")
+            .eq("token", quizToken)
+            .single();
+          
+          if (tokenData) {
+            quizId = tokenData.quiz_id;
+          }
+        }
+      }
 
       const { data, error } = await supabase
         .from("module_access_tokens")
@@ -554,6 +1019,7 @@ const AdminDashboard = () => {
           module_title: newModuleToken.module_title,
           module_description: newModuleToken.module_description || null,
           module_content: moduleContent,
+          quiz_id: quizId,
           expires_at: newModuleToken.expires_at || null,
           max_uses: newModuleToken.max_uses ? parseInt(newModuleToken.max_uses) : null,
           current_uses: 0,
@@ -565,10 +1031,22 @@ const AdminDashboard = () => {
 
       if (error) throw error;
 
+      // Generate the module link
+      const moduleLink = `${window.location.origin}/learner-dashboard?token=${token}`;
+
       toast({
         title: "Module Token Created!",
         description: "Share this link in Discord for learners to access the module",
       });
+
+      // Store the created module data for Discord notification
+      const createdModuleData = {
+        id: data.id,
+        token: token,
+        module_title: newModuleToken.module_title,
+        module_description: newModuleToken.module_description,
+        module_link: moduleLink,
+      };
 
       // Reset form
       setNewModuleToken({
@@ -576,10 +1054,13 @@ const AdminDashboard = () => {
         module_title: "",
         module_description: "",
         module_content_html: "",
+        quiz_link: "",
         expires_at: "",
         max_uses: "",
       });
       setModuleHTMLPreview("");
+      setModuleImages([]);
+      setSelectedModuleForImages("");
 
       // Refresh tokens
       await fetchModuleTokens();
@@ -2842,6 +3323,10 @@ const AdminDashboard = () => {
                     <BookOpen className="w-4 h-4" />
                     <span className="hidden sm:inline">Modules</span>
                   </TabsTrigger>
+                  <TabsTrigger value="quizzes" className="flex items-center justify-center gap-2 data-[state=active]:bg-background">
+                    <HelpCircle className="w-4 h-4" />
+                    <span className="hidden sm:inline">Quizzes</span>
+                  </TabsTrigger>
                 </TabsList>
 
                 <TabsContent value="analytics">
@@ -4511,84 +4996,303 @@ const AdminDashboard = () => {
                           Create a shareable link for learners to access a module through Discord
                         </CardDescription>
                       </CardHeader>
-                      <CardContent className="space-y-4">
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                          <div className="space-y-2">
-                            <Label htmlFor="module-id">Module ID *</Label>
-                            <Input
-                              id="module-id"
-                              placeholder="foundations-of-business-automation"
-                              value={newModuleToken.module_id}
-                              onChange={(e) => setNewModuleToken({ ...newModuleToken, module_id: e.target.value })}
-                              required
-                            />
+                      <CardContent className="space-y-6">
+                        {/* Step 1: Module ID and Basic Info */}
+                        <div className="space-y-4">
+                          <h3 className="text-sm font-semibold text-foreground">Step 1: Module Information</h3>
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div className="space-y-2">
+                              <Label htmlFor="module-id">Module ID *</Label>
+                              <Input
+                                id="module-id"
+                                placeholder="module-1-foundations"
+                                value={newModuleToken.module_id}
+                                onChange={(e) => {
+                                  setNewModuleToken({ ...newModuleToken, module_id: e.target.value });
+                                  setSelectedModuleForImages(e.target.value);
+                                }}
+                                required
+                              />
+                            </div>
+                            <div className="space-y-2">
+                              <Label htmlFor="module-title">Module Title *</Label>
+                              <Input
+                                id="module-title"
+                                placeholder="Module 1: Foundations of Business Automation"
+                                value={newModuleToken.module_title}
+                                onChange={(e) => setNewModuleToken({ ...newModuleToken, module_title: e.target.value })}
+                                required
+                              />
+                            </div>
                           </div>
                           <div className="space-y-2">
-                            <Label htmlFor="module-title">Module Title *</Label>
-                            <Input
-                              id="module-title"
-                              placeholder="Module 1: Foundations of Business Automation"
-                              value={newModuleToken.module_title}
-                              onChange={(e) => setNewModuleToken({ ...newModuleToken, module_title: e.target.value })}
-                              required
+                            <Label htmlFor="module-description">Description</Label>
+                            <Textarea
+                              id="module-description"
+                              placeholder="Learn how automation saves time, reduces errors..."
+                              value={newModuleToken.module_description}
+                              onChange={(e) => setNewModuleToken({ ...newModuleToken, module_description: e.target.value })}
+                              rows={2}
                             />
                           </div>
                         </div>
-                        <div className="space-y-2">
-                          <Label htmlFor="module-description">Description</Label>
-                          <Textarea
-                            id="module-description"
-                            placeholder="Learn how automation saves time, reduces errors..."
-                            value={newModuleToken.module_description}
-                            onChange={(e) => setNewModuleToken({ ...newModuleToken, module_description: e.target.value })}
-                            rows={2}
-                          />
-                        </div>
-                        <div className="space-y-2">
-                          <Label htmlFor="module-html">HTML Content</Label>
-                          <Textarea
-                            id="module-html"
-                            placeholder="Paste the HTML content from the mockup file (body content)"
-                            value={newModuleToken.module_content_html}
-                            onChange={(e) => {
-                              setNewModuleToken({ ...newModuleToken, module_content_html: e.target.value });
-                              // Extract styles if present
-                              const htmlMatch = e.target.value.match(/<style>([\s\S]*?)<\/style>/);
-                              if (htmlMatch) {
-                                setModuleHTMLPreview(htmlMatch[1]);
-                              }
-                            }}
-                            rows={10}
-                            className="font-mono text-xs"
-                          />
+
+                        {/* Step 2: Image Upload */}
+                        <div className="space-y-4 border-t pt-4">
+                          <h3 className="text-sm font-semibold text-foreground">Step 2: Upload Images (Optional)</h3>
                           <p className="text-xs text-muted-foreground">
-                            Paste the full HTML body content from the mockup file. The styles will be extracted automatically.
+                            Upload images for this module. You'll get vaultnet.work URLs to use in your HTML code.
                           </p>
+                          
+                          {newModuleToken.module_id ? (
+                            <div className="space-y-3">
+                              <div className="flex items-center gap-2">
+                                <Input
+                                  type="file"
+                                  accept="image/*"
+                                  multiple
+                                  onChange={(e) => {
+                                    const files = Array.from(e.target.files || []);
+                                    if (files.length > 0 && newModuleToken.module_id) {
+                                      handleMultipleImageUpload(files, newModuleToken.module_id);
+                                    }
+                                    // Reset input
+                                    e.target.value = '';
+                                  }}
+                                  disabled={uploadingImage}
+                                  className="flex-1"
+                                />
+                                <Button
+                                  type="button"
+                                  variant="outline"
+                                  disabled={uploadingImage || !newModuleToken.module_id}
+                                  onClick={() => {
+                                    const input = document.createElement('input');
+                                    input.type = 'file';
+                                    input.accept = 'image/*';
+                                    input.multiple = true;
+                                    input.onchange = (e: any) => {
+                                      const files = Array.from(e.target.files || []);
+                                      if (files.length > 0 && newModuleToken.module_id) {
+                                        handleMultipleImageUpload(files, newModuleToken.module_id);
+                                      }
+                                    };
+                                    input.click();
+                                  }}
+                                >
+                                  {uploadingImage ? (
+                                    <>
+                                      <Activity className="w-4 h-4 mr-2 animate-spin" />
+                                      Uploading...
+                                    </>
+                                  ) : (
+                                    <>
+                                      <Upload className="w-4 h-4 mr-2" />
+                                      Upload Multiple
+                                    </>
+                                  )}
+                                </Button>
+                              </div>
+                              {uploadingImage && (
+                                <p className="text-xs text-muted-foreground italic">
+                                  Uploading images... Please wait.
+                                </p>
+                              )}
+
+                              {moduleImages.length > 0 && (
+                                <div className="space-y-2">
+                                  <Label>Uploaded Images:</Label>
+                                  <div className="space-y-2 max-h-48 overflow-y-auto">
+                                    {moduleImages.map((img, idx) => (
+                                      <div key={idx} className="flex items-center gap-2 p-2 bg-muted rounded-lg">
+                                        <ImageIcon className="w-4 h-4 text-muted-foreground flex-shrink-0" />
+                                        <div className="flex-1 min-w-0">
+                                          <p className="text-xs font-medium truncate">{img.filename}</p>
+                                          <Input
+                                            value={img.url}
+                                            readOnly
+                                            className="text-xs font-mono mt-1"
+                                            onClick={(e) => (e.target as HTMLInputElement).select()}
+                                          />
+                                        </div>
+                                        <Button
+                                          variant="ghost"
+                                          size="sm"
+                                          onClick={() => {
+                                            navigator.clipboard.writeText(img.url);
+                                            toast({
+                                              title: "Copied!",
+                                              description: "Image URL copied to clipboard",
+                                            });
+                                          }}
+                                        >
+                                          <Copy className="w-4 h-4" />
+                                        </Button>
+                                        <Button
+                                          variant="ghost"
+                                          size="sm"
+                                          onClick={() => {
+                                            setModuleImages(prev => prev.filter((_, i) => i !== idx));
+                                          }}
+                                        >
+                                          <X className="w-4 h-4" />
+                                        </Button>
+                                      </div>
+                                    ))}
+                                  </div>
+                                </div>
+                              )}
+                            </div>
+                          ) : (
+                            <p className="text-xs text-muted-foreground italic">
+                              Enter a Module ID first to upload images
+                            </p>
+                          )}
                         </div>
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+
+                        {/* Step 3: HTML Content */}
+                        <div className="space-y-4 border-t pt-4">
+                          <h3 className="text-sm font-semibold text-foreground">Step 3: Paste HTML Content *</h3>
                           <div className="space-y-2">
-                            <Label htmlFor="expires-at">Expires At (Optional)</Label>
-                            <Input
-                              id="expires-at"
-                              type="datetime-local"
-                              value={newModuleToken.expires_at}
-                              onChange={(e) => setNewModuleToken({ ...newModuleToken, expires_at: e.target.value })}
+                            <Label htmlFor="module-html">HTML Content</Label>
+                            <Textarea
+                              id="module-html"
+                              placeholder="Paste the HTML content from your module file (body content)"
+                              value={newModuleToken.module_content_html}
+                              onChange={(e) => {
+                                setNewModuleToken({ ...newModuleToken, module_content_html: e.target.value });
+                                // Extract styles if present
+                                const htmlMatch = e.target.value.match(/<style[^>]*>([\s\S]*?)<\/style>/i);
+                                if (htmlMatch) {
+                                  setModuleHTMLPreview(htmlMatch[1]);
+                                }
+                              }}
+                              rows={12}
+                              className="font-mono text-xs"
                             />
-                          </div>
-                          <div className="space-y-2">
-                            <Label htmlFor="max-uses">Max Uses (Optional)</Label>
-                            <Input
-                              id="max-uses"
-                              type="number"
-                              placeholder="Unlimited"
-                              value={newModuleToken.max_uses}
-                              onChange={(e) => setNewModuleToken({ ...newModuleToken, max_uses: e.target.value })}
-                            />
+                            <p className="text-xs text-muted-foreground">
+                              Paste the full HTML body content from your module file. Use the image URLs from Step 2 in your HTML.
+                            </p>
                           </div>
                         </div>
+
+                        {/* Step 4: Assign Quiz (Optional) */}
+                        <div className="space-y-4 border-t pt-4">
+                          <h3 className="text-sm font-semibold text-foreground">Step 4: Assign Quiz (Optional)</h3>
+                          <div className="space-y-2">
+                            <Label htmlFor="quiz-link-select">Select Quiz Link</Label>
+                            <div className="space-y-2">
+                              <Select
+                                value={newModuleToken.quiz_link ? newModuleToken.quiz_link.split('token=')[1] : "none"}
+                                onValueChange={(tokenValue) => {
+                                  if (tokenValue && tokenValue !== "none") {
+                                    const quizLink = `${window.location.origin}/quiz?token=${tokenValue}`;
+                                    setNewModuleToken({ ...newModuleToken, quiz_link: quizLink });
+                                  } else {
+                                    setNewModuleToken({ ...newModuleToken, quiz_link: "" });
+                                  }
+                                }}
+                              >
+                                <SelectTrigger id="quiz-link-select">
+                                  <SelectValue placeholder="Choose a quiz link (optional)..." />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  <SelectItem value="none">None (No quiz)</SelectItem>
+                                  {quizTokens.filter(t => t.is_active).map((token) => {
+                                    const quiz = token.quizzes as any;
+                                    const isExpired = token.expires_at && new Date(token.expires_at) < new Date();
+                                    const isMaxedOut = token.max_uses && token.current_uses >= token.max_uses;
+                                    return (
+                                      <SelectItem 
+                                        key={token.id} 
+                                        value={token.token}
+                                        disabled={isExpired || isMaxedOut}
+                                      >
+                                        {token.link_title || quiz?.title} {isExpired ? '(Expired)' : isMaxedOut ? '(Maxed Out)' : ''}
+                                      </SelectItem>
+                                    );
+                                  })}
+                                </SelectContent>
+                              </Select>
+                              {newModuleToken.quiz_link && (
+                                <Button
+                                  type="button"
+                                  variant="ghost"
+                                  size="sm"
+                                  onClick={() => setNewModuleToken({ ...newModuleToken, quiz_link: "" })}
+                                  className="text-xs"
+                                >
+                                  Clear Quiz Link
+                                </Button>
+                              )}
+                            </div>
+                            {newModuleToken.quiz_link && (
+                              <div className="bg-primary/5 border border-primary/20 rounded-lg p-3">
+                                <p className="text-xs font-medium text-foreground mb-1">Quiz Link:</p>
+                                <div className="flex items-center gap-2">
+                                  <Input
+                                    value={newModuleToken.quiz_link}
+                                    readOnly
+                                    className="text-xs font-mono flex-1"
+                                  />
+                                  <Button
+                                    variant="outline"
+                                    size="sm"
+                                    onClick={() => {
+                                      navigator.clipboard.writeText(newModuleToken.quiz_link);
+                                      toast({
+                                        title: "Copied!",
+                                        description: "Quiz link copied to clipboard",
+                                      });
+                                    }}
+                                  >
+                                    <Copy className="w-4 h-4" />
+                                  </Button>
+                                </div>
+                                <p className="text-xs text-muted-foreground mt-2">
+                                  Add this link to your HTML as a button. Example: &lt;a href="{newModuleToken.quiz_link}"&gt;Take Quiz&lt;/a&gt;
+                                </p>
+                              </div>
+                            )}
+                            <p className="text-xs text-muted-foreground">
+                              Select a quiz link to assign to this module. You can add this link as a button in your HTML content.
+                            </p>
+                          </div>
+                        </div>
+
+                        {/* Step 5: Link Settings */}
+                        <div className="space-y-4 border-t pt-4">
+                          <h3 className="text-sm font-semibold text-foreground">Step 5: Link Settings</h3>
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div className="space-y-2">
+                              <Label htmlFor="expires-at">Expires At (Optional)</Label>
+                              <Input
+                                id="expires-at"
+                                type="datetime-local"
+                                value={newModuleToken.expires_at}
+                                onChange={(e) => setNewModuleToken({ ...newModuleToken, expires_at: e.target.value })}
+                              />
+                            </div>
+                            <div className="space-y-2">
+                              <Label htmlFor="max-uses">Max Uses (Optional)</Label>
+                              <Input
+                                id="max-uses"
+                                type="number"
+                                min="1"
+                                placeholder="Unlimited"
+                                value={newModuleToken.max_uses}
+                                onChange={(e) => setNewModuleToken({ ...newModuleToken, max_uses: e.target.value })}
+                              />
+                              <p className="text-xs text-muted-foreground">
+                                Leave empty for unlimited uses
+                              </p>
+                            </div>
+                          </div>
+                        </div>
+
                         <Button
                           onClick={handleCreateModuleToken}
-                          disabled={creatingModule || !newModuleToken.module_id || !newModuleToken.module_title}
+                          disabled={creatingModule || !newModuleToken.module_id || !newModuleToken.module_title || !newModuleToken.module_content_html}
                           className="w-full"
                         >
                           {creatingModule ? (
@@ -4599,7 +5303,7 @@ const AdminDashboard = () => {
                           ) : (
                             <>
                               <Plus className="mr-2 h-4 w-4" />
-                              Create Module Link
+                              Create Module Access Link
                             </>
                           )}
                         </Button>
@@ -4688,12 +5392,418 @@ const AdminDashboard = () => {
                                           <Copy className="w-4 h-4 mr-2" />
                                           Copy Link
                                         </Button>
+                                        <Button
+                                          variant="default"
+                                          size="sm"
+                                          onClick={() => handleSendDiscordNotification(token)}
+                                          disabled={sendingDiscordNotification === token.id || !token.is_active || isExpired || isMaxedOut}
+                                          className="bg-[#f5c84c] hover:bg-[#f5c84c]/90 text-[#111111]"
+                                        >
+                                          {sendingDiscordNotification === token.id ? (
+                                            <>
+                                              <Activity className="w-4 h-4 mr-2 animate-spin" />
+                                              Sending...
+                                            </>
+                                          ) : (
+                                            <>
+                                              <MessageSquare className="w-4 h-4 mr-2" />
+                                              Send to Discord
+                                            </>
+                                          )}
+                                        </Button>
+                                        <Button
+                                          variant="destructive"
+                                          size="sm"
+                                          onClick={() => handleDeleteModuleToken(token.id)}
+                                          disabled={deletingModuleToken === token.id}
+                                        >
+                                          {deletingModuleToken === token.id ? (
+                                            <>
+                                              <Activity className="w-4 h-4 mr-2 animate-spin" />
+                                              Deleting...
+                                            </>
+                                          ) : (
+                                            <>
+                                              <Trash2 className="w-4 h-4 mr-2" />
+                                              Delete
+                                            </>
+                                          )}
+                                        </Button>
                                       </div>
                                     </div>
                                   </CardContent>
                                 </Card>
                               );
                             })}
+                          </div>
+                        )}
+                      </CardContent>
+                    </Card>
+                  </div>
+                </TabsContent>
+
+                <TabsContent value="quizzes">
+                  <div className="space-y-6">
+                    {/* Create Quiz Link */}
+                    <Card>
+                      <CardHeader>
+                        <CardTitle className="flex items-center gap-2">
+                          <HelpCircle className="w-5 h-5" />
+                          Create Quiz Access Link
+                        </CardTitle>
+                        <CardDescription>
+                          Create a shareable link for learners to take a quiz
+                        </CardDescription>
+                      </CardHeader>
+                      <CardContent className="space-y-4">
+                        <div className="space-y-2">
+                          <Label htmlFor="quiz-select">Select Quiz *</Label>
+                          <Select
+                            value={newQuizToken.quiz_id}
+                            onValueChange={(value) => {
+                              const selectedQuiz = quizzes.find(q => q.id === value);
+                              setNewQuizToken({ 
+                                ...newQuizToken, 
+                                quiz_id: value,
+                                link_title: selectedQuiz?.title || ""
+                              });
+                            }}
+                          >
+                            <SelectTrigger id="quiz-select">
+                              <SelectValue placeholder="Choose a quiz..." />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {quizzes.filter(q => q.is_active).map((quiz) => (
+                                <SelectItem key={quiz.id} value={quiz.id}>
+                                  {quiz.title} ({quiz.module_id || 'No module'})
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                          {newQuizToken.quiz_id && (() => {
+                            const selectedQuiz = quizzes.find(q => q.id === newQuizToken.quiz_id);
+                            return selectedQuiz ? (
+                              <p className="text-xs text-muted-foreground mt-1">
+                                {selectedQuiz.description || 'No description'}
+                              </p>
+                            ) : null;
+                          })()}
+                        </div>
+                        <div className="space-y-2">
+                          <Label htmlFor="quiz-link-title">Link Title (Optional - defaults to quiz title)</Label>
+                          <Input
+                            id="quiz-link-title"
+                            placeholder="Custom title for this shareable link"
+                            value={newQuizToken.link_title}
+                            onChange={(e) => setNewQuizToken({ ...newQuizToken, link_title: e.target.value })}
+                          />
+                        </div>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                          <div className="space-y-2">
+                            <Label htmlFor="quiz-expires-at">Expires At (Optional)</Label>
+                            <Input
+                              id="quiz-expires-at"
+                              type="datetime-local"
+                              value={newQuizToken.expires_at}
+                              onChange={(e) => setNewQuizToken({ ...newQuizToken, expires_at: e.target.value })}
+                            />
+                          </div>
+                          <div className="space-y-2">
+                            <Label htmlFor="quiz-max-uses">Max Uses (Optional)</Label>
+                            <Input
+                              id="quiz-max-uses"
+                              type="number"
+                              min="1"
+                              placeholder="Unlimited"
+                              value={newQuizToken.max_uses}
+                              onChange={(e) => setNewQuizToken({ ...newQuizToken, max_uses: e.target.value })}
+                            />
+                          </div>
+                        </div>
+                        <Button
+                          onClick={handleCreateQuizToken}
+                          disabled={creatingQuizToken || !newQuizToken.quiz_id}
+                          className="w-full"
+                        >
+                          {creatingQuizToken ? (
+                            <>
+                              <Activity className="mr-2 h-4 w-4 animate-spin" />
+                              Creating...
+                            </>
+                          ) : (
+                            <>
+                              <Plus className="mr-2 h-4 w-4" />
+                              Create Quiz Link
+                            </>
+                          )}
+                        </Button>
+                      </CardContent>
+                    </Card>
+
+                    {/* Existing Quiz Links */}
+                    <Card>
+                      <CardHeader>
+                        <CardTitle className="flex items-center gap-2">
+                          <Link2 className="w-5 h-5" />
+                          Quiz Access Links
+                        </CardTitle>
+                        <CardDescription>
+                          All active quiz access links. Share these in your module HTML.
+                        </CardDescription>
+                      </CardHeader>
+                      <CardContent>
+                        {loadingQuizTokens ? (
+                          <div className="text-center py-8">
+                            <Activity className="w-6 h-6 animate-spin text-primary mx-auto mb-2" />
+                            <p className="text-muted-foreground">Loading quiz links...</p>
+                          </div>
+                        ) : quizTokens.length === 0 ? (
+                          <div className="text-center py-8">
+                            <HelpCircle className="w-12 h-12 text-muted-foreground mx-auto mb-4 opacity-50" />
+                            <p className="text-muted-foreground">No quiz links created yet</p>
+                            <p className="text-sm text-muted-foreground mt-2">
+                              Create your first quiz link above
+                            </p>
+                          </div>
+                        ) : (
+                          <div className="space-y-4">
+                            {quizTokens.map((token) => {
+                              const quizLink = `${window.location.origin}/quiz?token=${token.token}`;
+                              const isExpired = token.expires_at && new Date(token.expires_at) < new Date();
+                              const isMaxedOut = token.max_uses && token.current_uses >= token.max_uses;
+                              const quiz = token.quizzes as any;
+                              
+                              return (
+                                <Card key={token.id} className={!token.is_active || isExpired || isMaxedOut ? "opacity-60" : ""}>
+                                  <CardContent className="pt-6">
+                                    <div className="space-y-3">
+                                      <div className="flex items-start justify-between">
+                                        <div className="flex-1">
+                                          <h4 className="font-semibold text-lg">{token.link_title || quiz?.title}</h4>
+                                          {quiz?.description && (
+                                            <p className="text-sm text-muted-foreground mt-1">
+                                              {quiz.description}
+                                            </p>
+                                          )}
+                                          <div className="flex items-center gap-4 mt-2 text-xs text-muted-foreground">
+                                            <span>Quiz: {quiz?.title}</span>
+                                            <span>•</span>
+                                            <span>Uses: {token.current_uses}{token.max_uses ? ` / ${token.max_uses}` : ''}</span>
+                                            {token.expires_at && (
+                                              <>
+                                                <span>•</span>
+                                                <span>
+                                                  {isExpired ? 'Expired' : `Expires: ${new Date(token.expires_at).toLocaleDateString()}`}
+                                                </span>
+                                              </>
+                                            )}
+                                          </div>
+                                        </div>
+                                        <Badge variant={token.is_active && !isExpired && !isMaxedOut ? "default" : "secondary"}>
+                                          {!token.is_active ? "Inactive" : isExpired ? "Expired" : isMaxedOut ? "Maxed Out" : "Active"}
+                                        </Badge>
+                                      </div>
+                                      <div className="flex items-center gap-2 pt-2 border-t">
+                                        <Input
+                                          value={quizLink}
+                                          readOnly
+                                          className="flex-1 font-mono text-xs"
+                                        />
+                                        <Button
+                                          variant="outline"
+                                          size="sm"
+                                          onClick={() => {
+                                            navigator.clipboard.writeText(quizLink);
+                                            toast({
+                                              title: "Copied!",
+                                              description: "Quiz link copied to clipboard",
+                                            });
+                                          }}
+                                        >
+                                          <Copy className="w-4 h-4 mr-2" />
+                                          Copy Link
+                                        </Button>
+                                        <Button
+                                          variant="destructive"
+                                          size="sm"
+                                          onClick={() => handleDeleteQuizToken(token.id)}
+                                          disabled={deletingQuizToken === token.id}
+                                        >
+                                          {deletingQuizToken === token.id ? (
+                                            <>
+                                              <Activity className="w-4 h-4 mr-2 animate-spin" />
+                                              Deleting...
+                                            </>
+                                          ) : (
+                                            <>
+                                              <Trash2 className="w-4 h-4 mr-2" />
+                                              Delete
+                                            </>
+                                          )}
+                                        </Button>
+                                      </div>
+                                    </div>
+                                  </CardContent>
+                                </Card>
+                              );
+                            })}
+                          </div>
+                        )}
+                      </CardContent>
+                    </Card>
+
+                    {/* Create New Quiz */}
+                    <Card>
+                      <CardHeader>
+                        <CardTitle className="flex items-center gap-2">
+                          <Plus className="w-5 h-5" />
+                          Create New Quiz
+                        </CardTitle>
+                        <CardDescription>
+                          Create a new quiz with questions. You can then create a shareable link for it.
+                        </CardDescription>
+                      </CardHeader>
+                      <CardContent className="space-y-4">
+                        <div className="bg-primary/5 border border-primary/20 rounded-lg p-4">
+                          <p className="text-sm text-foreground font-medium mb-2">📝 Quick Quiz Creation</p>
+                          <p className="text-xs text-muted-foreground mb-3">
+                            To create the "Foundations of Business Automation" quiz, run the SQL migration file:
+                          </p>
+                          <code className="text-xs bg-background p-2 rounded block">
+                            supabase/migrations/create_foundations_quiz.sql
+                          </code>
+                          <p className="text-xs text-muted-foreground mt-3">
+                            This will create the quiz with all 25 questions. Then you can create a shareable link above.
+                          </p>
+                        </div>
+                        <div className="space-y-4">
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div className="space-y-2">
+                              <Label htmlFor="quiz-title">Quiz Title *</Label>
+                              <Input
+                                id="quiz-title"
+                                placeholder="Foundations of Business Automation"
+                                value={newQuiz.title}
+                                onChange={(e) => setNewQuiz({ ...newQuiz, title: e.target.value })}
+                              />
+                            </div>
+                            <div className="space-y-2">
+                              <Label htmlFor="quiz-module-id">Module ID (Optional)</Label>
+                              <Input
+                                id="quiz-module-id"
+                                placeholder="module-1-foundations"
+                                value={newQuiz.module_id}
+                                onChange={(e) => setNewQuiz({ ...newQuiz, module_id: e.target.value })}
+                              />
+                            </div>
+                          </div>
+                          <div className="space-y-2">
+                            <Label htmlFor="quiz-desc">Description</Label>
+                            <Textarea
+                              id="quiz-desc"
+                              placeholder="Test your knowledge of business automation..."
+                              value={newQuiz.description}
+                              onChange={(e) => setNewQuiz({ ...newQuiz, description: e.target.value })}
+                              rows={2}
+                            />
+                          </div>
+                          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                            <div className="space-y-2">
+                              <Label htmlFor="quiz-passing">Passing Score (%)</Label>
+                              <Input
+                                id="quiz-passing"
+                                type="number"
+                                min="0"
+                                max="100"
+                                value={newQuiz.passing_score}
+                                onChange={(e) => setNewQuiz({ ...newQuiz, passing_score: e.target.value })}
+                              />
+                            </div>
+                            <div className="space-y-2">
+                              <Label htmlFor="quiz-time">Time Limit (minutes, optional)</Label>
+                              <Input
+                                id="quiz-time"
+                                type="number"
+                                min="1"
+                                placeholder="No limit"
+                                value={newQuiz.time_limit_minutes}
+                                onChange={(e) => setNewQuiz({ ...newQuiz, time_limit_minutes: e.target.value })}
+                              />
+                            </div>
+                            <div className="space-y-2">
+                              <Label htmlFor="quiz-attempts">Max Attempts</Label>
+                              <Input
+                                id="quiz-attempts"
+                                type="number"
+                                min="1"
+                                value={newQuiz.max_attempts}
+                                onChange={(e) => setNewQuiz({ ...newQuiz, max_attempts: e.target.value })}
+                              />
+                            </div>
+                          </div>
+                        </div>
+                        <div className="bg-muted/50 rounded-lg p-4">
+                          <p className="text-sm font-medium mb-2">Quiz Questions</p>
+                          <p className="text-xs text-muted-foreground">
+                            For now, quizzes are created via SQL migrations. Use the migration file provided above to create the Foundations quiz, or create your own migration following the same pattern.
+                          </p>
+                        </div>
+                      </CardContent>
+                    </Card>
+
+                    {/* Existing Quizzes */}
+                    <Card>
+                      <CardHeader>
+                        <CardTitle className="flex items-center gap-2">
+                          <BookOpen className="w-5 h-5" />
+                          All Quizzes
+                        </CardTitle>
+                        <CardDescription>
+                          View all created quizzes
+                        </CardDescription>
+                      </CardHeader>
+                      <CardContent>
+                        {loadingQuizzes ? (
+                          <div className="text-center py-8">
+                            <Activity className="w-6 h-6 animate-spin text-primary mx-auto mb-2" />
+                            <p className="text-muted-foreground">Loading quizzes...</p>
+                          </div>
+                        ) : quizzes.length === 0 ? (
+                          <div className="text-center py-8">
+                            <HelpCircle className="w-12 h-12 text-muted-foreground mx-auto mb-4 opacity-50" />
+                            <p className="text-muted-foreground">No quizzes created yet</p>
+                            <p className="text-sm text-muted-foreground mt-2">
+                              Create quizzes using SQL migrations or the form above
+                            </p>
+                          </div>
+                        ) : (
+                          <div className="space-y-3">
+                            {quizzes.map((quiz) => (
+                              <Card key={quiz.id}>
+                                <CardContent className="pt-6">
+                                  <div className="flex items-start justify-between">
+                                    <div className="flex-1">
+                                      <h4 className="font-semibold text-lg">{quiz.title}</h4>
+                                      {quiz.description && (
+                                        <p className="text-sm text-muted-foreground mt-1">
+                                          {quiz.description}
+                                        </p>
+                                      )}
+                                      <div className="flex items-center gap-4 mt-2 text-xs text-muted-foreground">
+                                        <span>Module: {quiz.module_id || 'None'}</span>
+                                        <span>•</span>
+                                        <span>Passing: {quiz.passing_score}%</span>
+                                        <span>•</span>
+                                        <span>Max Attempts: {quiz.max_attempts}</span>
+                                      </div>
+                                    </div>
+                                    <Badge variant={quiz.is_active ? "default" : "secondary"}>
+                                      {quiz.is_active ? "Active" : "Inactive"}
+                                    </Badge>
+                                  </div>
+                                </CardContent>
+                              </Card>
+                            ))}
                           </div>
                         )}
                       </CardContent>

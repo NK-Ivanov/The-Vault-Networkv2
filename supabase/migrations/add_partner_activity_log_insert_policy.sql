@@ -19,3 +19,5 @@ CREATE POLICY "Sellers can insert their own activity log"
 
 
 
+
+

@@ -58,6 +58,21 @@ const Navigation = () => {
     }
   }, [user?.id]); // Only depend on user.id, not the whole user object
 
+  // Additional check: if user exists but role is null (and wasn't just set), fetch it
+  // This handles cases where the cache was cleared but the first useEffect didn't trigger
+  useEffect(() => {
+    if (user && userRole === null && !fetchingRef.current) {
+      // Small delay to avoid race conditions with the first useEffect
+      const timeoutId = setTimeout(() => {
+        if (user && userRole === null && !fetchingRef.current) {
+          fetchingRef.current = true;
+          fetchUserRole();
+        }
+      }, 100);
+      return () => clearTimeout(timeoutId);
+    }
+  }, [user?.id, userRole]);
+
   useEffect(() => {
     if (user) {
       fetchNotifications();
@@ -153,6 +168,30 @@ const Navigation = () => {
         role = "learner";
       }
       
+      // Fallback: If no role found in user_roles, check learners table
+      if (!role) {
+        const { data: learnerData } = await supabase
+          .from("learners")
+          .select("id")
+          .eq("user_id", user.id)
+          .maybeSingle();
+        
+        if (learnerData) {
+          // User exists in learners table but doesn't have role - assign it
+          const { error: roleError } = await supabase
+            .from("user_roles")
+            .insert({ user_id: user.id, role: "learner" });
+          
+          if (!roleError) {
+            role = "learner";
+            console.log("✅ Assigned learner role to user");
+          } else {
+            console.error("Error assigning learner role:", roleError);
+          }
+        }
+      }
+      
+      console.log("🔍 User role fetched:", { userId: user.id, role, rolesList });
       setUserRole(role);
       
       // Cache the role
@@ -213,6 +252,8 @@ const Navigation = () => {
         return "Partner";
       case "client":
         return "Business";
+      case "learner":
+        return "Learner";
       default:
         return null;
     }
@@ -232,6 +273,24 @@ const Navigation = () => {
 
   const dashboardPath = getDashboardPath();
   const accountType = getAccountTypeLabel();
+  
+  // Debug logging (only log when values actually change, not on every render)
+  const prevDebugRef = useRef<string>('');
+  useEffect(() => {
+    if (user) {
+      const debugKey = `${user.id}-${userRole}-${dashboardPath}-${accountType}`;
+      if (prevDebugRef.current !== debugKey) {
+        console.log("🔍 Navigation Debug:", {
+          userId: user.id,
+          userRole,
+          dashboardPath,
+          accountType,
+          hasUser: !!user
+        });
+        prevDebugRef.current = debugKey;
+      }
+    }
+  }, [user?.id, userRole, dashboardPath, accountType]);
 
   return (
     <>

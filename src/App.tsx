@@ -18,6 +18,8 @@ import AutomationDetail from "./pages/AutomationDetail";
 import Learners from "./pages/Learners";
 import LearnerDashboard from "./pages/LearnerDashboard";
 import LearnerModule from "./pages/LearnerModule";
+import LearnerProgression from "./pages/LearnerProgression";
+import Quiz from "./pages/Quiz";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -44,6 +46,8 @@ const App = () => (
             <Route path="/learners" element={<Learners />} />
             <Route path="/learner-dashboard" element={<LearnerDashboard />} />
             <Route path="/learner-module/:moduleId" element={<LearnerModule />} />
+            <Route path="/learner-progression" element={<LearnerProgression />} />
+            <Route path="/quiz" element={<Quiz />} />
             {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
             <Route path="*" element={<NotFound />} />
           </Routes>
