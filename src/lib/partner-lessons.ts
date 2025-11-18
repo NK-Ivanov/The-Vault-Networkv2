@@ -2149,3 +2149,11 @@ export const getLessonById = (id: string): PartnerLesson | undefined => {
   return ALL_LESSONS.find(lesson => lesson.id === id);
 };
 
+// Helper function to check if a lesson should be counted as a task for rank advancement
+// Counts: tasks, quizzes, and courses with quizzes
+export const isCountableTask = (lesson: PartnerLesson): boolean => {
+  return lesson.lesson_type === 'task' || 
+         lesson.lesson_type === 'quiz' || 
+         (lesson.lesson_type === 'course' && lesson.quiz_questions && lesson.quiz_questions.length > 0);
+};
+

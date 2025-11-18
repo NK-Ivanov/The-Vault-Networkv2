@@ -11,7 +11,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { DollarSign, Users, TrendingUp, Package, Copy, Check, CheckCircle, XCircle, MessageSquare, AlertCircle, HelpCircle, Send, RefreshCw, LayoutDashboard, Building2, Boxes, CreditCard, Ticket, Mail, Trophy, MessageCircle, Phone, Zap, Bookmark, BookmarkCheck, FileText } from "lucide-react";
+import { DollarSign, Users, TrendingUp, Package, Copy, Check, CheckCircle, XCircle, MessageSquare, AlertCircle, HelpCircle, Send, RefreshCw, LayoutDashboard, Building2, Boxes, CreditCard, Ticket, Mail, Trophy, MessageCircle, Phone, Zap, Bookmark, BookmarkCheck, FileText, ArrowRight } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -20,7 +20,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { isTabUnlocked, getTabUnlockRequirement, calculateProgressToNextRank, getNextRank, getRankInfo, RANK_INFO, getTasksForRank, type PartnerRank } from "@/lib/partner-progression";
 import { getWeeklyChallenges, getCurrentWeek, type WeeklyChallenge } from "@/lib/weekly-challenges";
-import { getLessonsForRank, type PartnerLesson as HardcodedLesson } from "@/lib/partner-lessons";
+import { getLessonsForRank, type PartnerLesson as HardcodedLesson, isCountableTask, getLessonById } from "@/lib/partner-lessons";
 import { BookOpen, Target, Lock } from "lucide-react";
 import { Progress } from "@/components/ui/progress";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
@@ -522,6 +522,8 @@ const PartnerDashboard = () => {
   const [showRanksDialog, setShowRanksDialog] = useState(false);
   const [showVerifiedRankPopup, setShowVerifiedRankPopup] = useState(false);
   const [showPartnerProWelcomePopup, setShowPartnerProWelcomePopup] = useState(false);
+  const [showRankUpModal, setShowRankUpModal] = useState(false);
+  const [rankUpData, setRankUpData] = useState<{ oldRank: string; newRank: string } | null>(null);
   const [expandedLessonId, setExpandedLessonId] = useState<string | undefined>(undefined);
   const [showCourseDialog, setShowCourseDialog] = useState(false);
   const [selectedCourse, setSelectedCourse] = useState<PartnerLesson | null>(null);
@@ -1236,9 +1238,24 @@ const PartnerDashboard = () => {
 
     setUpdatingReferralCode(true);
     try {
+      // Store old referral code before updating to check if it actually changed
+      const oldReferralCode = sellerData?.referral_code || '';
+      const newReferralCodeUpper = newReferralCode.trim().toUpperCase();
+      
+      // Check if referral code is actually changing
+      if (oldReferralCode === newReferralCodeUpper) {
+        toast({
+          title: "No change detected",
+          description: "The referral code is the same as your current one.",
+          variant: "destructive",
+        });
+        setUpdatingReferralCode(false);
+        return;
+      }
+
       const { error } = await supabase
         .from("sellers")
-        .update({ referral_code: newReferralCode.trim().toUpperCase() })
+        .update({ referral_code: newReferralCodeUpper })
         .eq("id", sellerData?.id);
 
       if (error) {
@@ -1253,12 +1270,15 @@ const PartnerDashboard = () => {
         description: "Your referral code has been updated successfully.",
       });
 
-      // Complete "Edit Referral Code" task if not already completed
+      // Complete "Edit Referral Code" task if not already completed AND code actually changed
+      // Only complete if old and new codes are different (verified above)
       const editReferralCodeLesson = lessons.find((l: any) => l.id === 'stage-4-verified-14b');
-      if (editReferralCodeLesson && !completedLessons.has(editReferralCodeLesson.id)) {
+      if (editReferralCodeLesson && !completedLessons.has(editReferralCodeLesson.id) && oldReferralCode !== newReferralCodeUpper) {
         try {
           await addXP(editReferralCodeLesson.xp_reward, 'task_completed', `Completed: ${editReferralCodeLesson.title}`, { 
-            lesson_id: editReferralCodeLesson.id 
+            lesson_id: editReferralCodeLesson.id,
+            old_referral_code: oldReferralCode,
+            new_referral_code: newReferralCodeUpper
           });
           setCompletedLessons(prev => new Set([...prev, editReferralCodeLesson.id]));
           toast({
@@ -1374,10 +1394,10 @@ const PartnerDashboard = () => {
         console.warn("Error fetching task completions:", taskCompletionsError);
       }
       
-      // Fetch seller's current data to check if they have a saved script
+      // Fetch seller's current data to check if they have a saved script and referral code
       const { data: sellerDataCheck } = await supabase
         .from("sellers")
-        .select("custom_sales_script")
+        .select("custom_sales_script, referral_code")
         .eq("id", sellerId)
         .maybeSingle();
       
@@ -1427,6 +1447,33 @@ const PartnerDashboard = () => {
               // Only count as completed if not admin bypass OR if demo client actually exists
               if (wasAdminBypass && !hasDemoClient) {
                 return null; // Don't count admin bypass if no demo client exists
+              }
+            }
+            
+            // Special check for "Edit Referral Code" task (stage-4-verified-14b)
+            // Only mark as completed if the referral code was actually changed
+            if (lessonId === 'stage-4-verified-14b') {
+              const wasAdminBypass = tc.metadata?.admin_bypass === true;
+              const oldCode = tc.metadata?.old_referral_code || null;
+              const newCode = tc.metadata?.new_referral_code || null;
+              const currentCode = sellerDataCheck?.referral_code || null;
+              
+              // Check if referral code was actually changed (not admin bypass)
+              if (wasAdminBypass) {
+                // For admin bypass, verify that referral code exists and is not empty
+                if (!currentCode || currentCode.trim().length === 0) {
+                  return null; // Don't count admin bypass if no referral code exists
+                }
+              } else {
+                // For regular completion, MUST have old and new codes in metadata AND they must be different
+                if (!oldCode || !newCode) {
+                  return null; // Don't count if metadata doesn't show the change (old completion before fix)
+                }
+                if (oldCode === newCode) {
+                  return null; // Don't count if codes weren't actually different
+                }
+                // Also verify current code matches the new code from completion (or if code was changed again, still valid if old/new were different)
+                // This allows for subsequent changes while still validating the original completion
               }
             }
             
@@ -1663,12 +1710,12 @@ const PartnerDashboard = () => {
         // Check "Mark First Sale" task (stage-5-verified-19)
         const markFirstSaleLesson = lessonsData.find((l: any) => l.id === 'stage-5-verified-19');
         if (markFirstSaleLesson && !fetchedCompleted.has(markFirstSaleLesson.id)) {
-          // Check if seller has any paid transactions
+          // Check if seller has any completed transactions
           const { data: paidTransactionsData } = await supabase
             .from("transactions")
             .select("id")
             .eq("seller_id", sellerId)
-            .eq("payment_status", "paid")
+            .eq("status", "completed")
             .limit(1);
 
           if (paidTransactionsData && paidTransactionsData.length > 0) {
@@ -2153,7 +2200,7 @@ const PartnerDashboard = () => {
           const embed = {
             title: "🎉 Rank Up!",
             description: `**${businessName}** has ranked up to **${data.new_rank}**!`,
-            color: 0x00ff00, // Green color
+            color: 16119244, // Gold color #f5c84c (Vault Network yellow)
             fields: [
               {
                 name: "Previous Rank",
@@ -2281,11 +2328,35 @@ const PartnerDashboard = () => {
     const targetSellerId = sellerIdOverride || sellerData?.id;
     if (!targetSellerId) {
       console.error("Cannot add XP: sellerData.id is missing");
-      return;
+      return { rankChanged: false, oldRank: null, newRank: null };
+    }
+    
+    // Get current rank from database before adding XP
+    let oldRank = 'Recruit';
+    try {
+      const { data: currentSeller } = await supabase
+        .from("sellers")
+        .select("current_rank, current_xp")
+        .eq("id", targetSellerId)
+        .maybeSingle();
+      
+      if (currentSeller?.current_rank) {
+        oldRank = currentSeller.current_rank;
+      }
+      
+      console.log("🔍 [RANK-UP DEBUG] Before adding XP:", {
+        currentRank: currentSeller?.current_rank || 'Recruit',
+        currentXP: currentSeller?.current_xp || 0,
+        xpToAdd: xpAmount,
+        eventType,
+        lessonId: metadata?.lesson_id
+      });
+    } catch (error) {
+      console.warn("Could not fetch current rank before adding XP:", error);
     }
     
     try {
-      console.log("Adding XP:", { xpAmount, eventType, description, metadata, sellerId: targetSellerId });
+      console.log("➕ [XP] Adding XP:", { xpAmount, eventType, description, metadata, sellerId: targetSellerId });
       
       const { data, error } = await supabase.rpc('add_seller_xp', {
         _seller_id: targetSellerId,
@@ -2305,26 +2376,98 @@ const PartnerDashboard = () => {
         throw error;
       }
       
-      console.log("XP added successfully:", data);
+      console.log("✅ [XP] XP added successfully:", data);
       
       // Refresh seller data to get updated XP and rank (this is critical!)
       await fetchSellerData();
       
-      // Refresh progression data to update completion status and lessons
-      // Use targetSellerId instead of sellerData.id since sellerData might not be updated yet
+      // Get new rank after XP was added and check for rank-up event
+      let newRank = oldRank;
+      let rankUpDetected = false;
       if (targetSellerId) {
-        const updatedSeller = await supabase
+        const { data: updatedSeller } = await supabase
           .from("sellers")
-          .select("current_rank")
+          .select("current_rank, current_xp")
           .eq("id", targetSellerId)
           .maybeSingle();
         
         if (updatedSeller?.current_rank) {
+          newRank = updatedSeller.current_rank;
+          
+          console.log("🔍 [RANK-UP DEBUG] After adding XP:", {
+            oldRank,
+            newRank,
+            oldXP: 'unknown',
+            newXP: updatedSeller.current_xp || 0,
+            rankChanged: oldRank !== newRank
+          });
+          
+          // Check if rank changed
+          if (oldRank !== newRank) {
+            console.warn("⚠️ [RANK-UP] RANK CHANGED DETECTED!", {
+              oldRank,
+              newRank,
+              lessonId: metadata?.lesson_id,
+              eventType
+            });
+            
+            rankUpDetected = true;
+            // Check for recent rank-up event in activity log (within last 5 seconds)
+            const { data: rankUpEvent } = await supabase
+              .from("partner_activity_log")
+              .select("metadata, created_at")
+              .eq("seller_id", targetSellerId)
+              .eq("event_type", "rank_up")
+              .order("created_at", { ascending: false })
+              .limit(1)
+              .maybeSingle();
+            
+            if (rankUpEvent) {
+              const rankUpTime = new Date(rankUpEvent.created_at).getTime();
+              const now = Date.now();
+              const secondsSinceRankUp = (now - rankUpTime) / 1000;
+              
+              console.log("📋 [RANK-UP] Rank-up event found:", {
+                oldRank: rankUpEvent.metadata?.old_rank,
+                newRank: rankUpEvent.metadata?.new_rank,
+                secondsSinceRankUp,
+                willShowModal: secondsSinceRankUp < 5
+              });
+              
+              // If rank-up happened within last 5 seconds, show modal
+              if (secondsSinceRankUp < 5) {
+                const oldRankFromEvent = rankUpEvent.metadata?.old_rank;
+                const newRankFromEvent = rankUpEvent.metadata?.new_rank;
+                if (oldRankFromEvent && newRankFromEvent) {
+                  console.log("🎉 [RANK-UP] Showing rank-up modal:", { oldRankFromEvent, newRankFromEvent });
+                  setRankUpData({ oldRank: oldRankFromEvent, newRank: newRankFromEvent });
+                  setShowRankUpModal(true);
+                }
+              }
+            } else {
+              console.warn("⚠️ [RANK-UP] Rank changed but no rank-up event found in activity log!");
+            }
+          } else {
+            console.log("✅ [RANK-UP] No rank change - staying at", oldRank);
+          }
+          
           await fetchProgressionData(targetSellerId, updatedSeller.current_rank as PartnerRank);
         }
       }
       
+      // Check if rank changed (fallback if event check didn't work)
+      const rankChanged = oldRank !== newRank || rankUpDetected;
+      
+      console.log("📊 [RANK-UP DEBUG] Final result:", {
+        rankChanged,
+        oldRank,
+        newRank,
+        rankUpDetected
+      });
+      
       showXPNotification(xpAmount, description);
+      
+      return { rankChanged, oldRank, newRank };
     } catch (error: any) {
       console.error("Error adding XP:", error);
       toast({
@@ -2351,15 +2494,65 @@ const PartnerDashboard = () => {
         // For tasks, we'll handle them individually based on the task
         // This will be handled by specific task handlers
         try {
-          await addXP(lesson.xp_reward, 'task_completed', `Completed: ${lesson.title}`, { lesson_id: lesson.id });
+          console.log("📝 [TASK] Completing task:", {
+            taskId: lesson.id,
+            taskTitle: lesson.title,
+            xpReward: lesson.xp_reward,
+            currentRank: sellerData?.current_rank
+          });
+          
+          const xpResult = await addXP(lesson.xp_reward, 'task_completed', `Completed: ${lesson.title}`, { lesson_id: lesson.id });
           // Mark as completed
           setCompletedLessons(prev => new Set([...prev, lesson.id]));
-          toast({
-            title: "Task Completed!",
-            description: `You earned ${lesson.xp_reward} XP for completing: ${lesson.title}`,
+          
+          console.log("✅ [TASK] Task completion result:", {
+            taskId: lesson.id,
+            rankChanged: xpResult?.rankChanged,
+            oldRank: xpResult?.oldRank,
+            newRank: xpResult?.newRank
           });
+          
+          // Check task completion status after task completion
+          let taskCompletionInfo: any = null;
+          if (sellerData?.current_rank) {
+            const visibleLessonsForRank = lessons.filter(l => l.rank_required === sellerData.current_rank);
+            const currentRankTasks = visibleLessonsForRank.filter(l => isCountableTask(l)).map(l => l.id);
+            const completedTasks = currentRankTasks.filter(id => {
+              const isCompleted = completedLessons.has(id) || id === lesson.id; // Include just completed task
+              return isCompleted;
+            });
+            
+            taskCompletionInfo = {
+              currentRank: sellerData.current_rank,
+              totalTasks: currentRankTasks.length,
+              completedTasks: completedTasks.length,
+              completedTaskIds: completedTasks,
+              missingTaskIds: currentRankTasks.filter(id => !completedTasks.includes(id)),
+              justCompletedTask: lesson.id,
+              allTaskIds: currentRankTasks
+            };
+            
+            console.log("📊 [TASK] Task completion status after completion:", taskCompletionInfo);
+          }
+          
+          // Check if user ranked up (addXP already shows modal if rank changed)
+          if (xpResult?.rankChanged && xpResult.oldRank && xpResult.newRank) {
+            // Modal is already shown by addXP, just log for debugging
+            console.warn("⚠️ [TASK] RANK UP DETECTED IN TASK COMPLETION!", {
+              taskId: lesson.id,
+              taskTitle: lesson.title,
+              oldRank: xpResult.oldRank,
+              newRank: xpResult.newRank,
+              taskCompletionInfo
+            });
+          } else {
+            toast({
+              title: "Task Completed!",
+              description: `You earned ${lesson.xp_reward} XP for completing: ${lesson.title}`,
+            });
+          }
         } catch (error) {
-          console.error("Error completing task:", error);
+          console.error("❌ [TASK] Error completing task:", error);
         }
       }
     } catch (error: any) {
@@ -2416,7 +2609,7 @@ const PartnerDashboard = () => {
 
       // Award XP (this will also create an activity_log entry via the RPC function)
       // addXP already refreshes seller data and progression data, so no need to refresh again
-      await addXP(selectedLesson.xp_reward, 'quiz_completed', `Completed quiz: ${selectedLesson.title}`, {
+      const xpResult = await addXP(selectedLesson.xp_reward, 'quiz_completed', `Completed quiz: ${selectedLesson.title}`, {
         lesson_id: selectedLesson.id,
         score,
         answers: userAnswers,
@@ -2424,15 +2617,36 @@ const PartnerDashboard = () => {
       });
 
       // Mark as completed (addXP already refreshes progression data)
-      setCompletedLessons(prev => new Set([...prev, selectedLesson.id]));
+      const updatedCompletedLessons = new Set([...completedLessons, selectedLesson.id]);
+      setCompletedLessons(updatedCompletedLessons);
       
       // Check weekly challenges
       await checkWeeklyChallenges('quiz_completed');
       
-      toast({
-        title: "Quiz Completed!",
-        description: `You scored ${score}% and earned ${selectedLesson.xp_reward} XP!`,
-      });
+      // Check if user ranked up
+      if (xpResult?.rankChanged && xpResult.oldRank && xpResult.newRank) {
+        setRankUpData({ oldRank: xpResult.oldRank, newRank: xpResult.newRank });
+        setShowRankUpModal(true);
+      }
+      
+      // Check if all lessons in current stage are completed (use updated set)
+      const currentStage = selectedLesson.stage;
+      const stageLessons = lessons.filter(l => l.stage === currentStage);
+      const completedStageLessons = stageLessons.filter(l => updatedCompletedLessons.has(l.id));
+      const allStageLessonsCompleted = stageLessons.length > 0 && completedStageLessons.length === stageLessons.length;
+      
+      if (allStageLessonsCompleted) {
+        toast({
+          title: "🎉 Stage Complete!",
+          description: `You've completed all ${stageLessons.length} lessons in Stage ${currentStage}!`,
+          duration: 5000,
+        });
+      } else {
+        toast({
+          title: "Quiz Completed!",
+          description: `You scored ${score}% and earned ${selectedLesson.xp_reward} XP! (${completedStageLessons.length}/${stageLessons.length} lessons completed in this stage)`,
+        });
+      }
 
       setShowQuizDialog(false);
       setSelectedLesson(null);
@@ -3976,19 +4190,34 @@ const PartnerDashboard = () => {
                       }
                       
                       const progress = calculateProgressToNextRank(sellerData.current_xp || 0, sellerData.current_rank as PartnerRank);
-                      // Get tasks required for the NEXT rank (what user needs to complete to advance)
-                      // getTasksForRank already returns all tasks needed (including previous rank tasks)
-                      const allRequiredTasks = getTasksForRank(nextRank);
-                      // Filter to only count tasks/quizzes (not courses)
-                      const nextRankTasks = allRequiredTasks.filter(taskId => {
-                        const lesson = lessons.find(l => l.id === taskId);
-                        return lesson && (lesson.lesson_type === 'task' || lesson.lesson_type === 'quiz');
-                      });
-                      const completedTasks = nextRankTasks.filter(taskId => completedLessons.has(taskId));
-                      const allTasksCompleted = nextRankTasks.length === 0 || completedTasks.length === nextRankTasks.length;
+                      // Get tasks required for the CURRENT rank - only count tasks visible in the UI (rank_required === currentRank)
+                      // This matches what's displayed in the Learning Journey section
+                      const currentRank = sellerData.current_rank;
+                      // Filter lessons to only show current rank (matches UI display)
+                      const visibleLessons = lessons.filter(lesson => lesson.rank_required === currentRank);
+                      // Filter to count only tasks, quizzes, and courses with quizzes (courses without quizzes don't count)
+                      const currentRankTasks = visibleLessons.filter(lesson => isCountableTask(lesson)).map(lesson => lesson.id);
+                      const completedTasks = currentRankTasks.filter(taskId => completedLessons.has(taskId));
+                      const allTasksCompleted = currentRankTasks.length === 0 || completedTasks.length === currentRankTasks.length;
                       const nextRankThreshold = nextRank ? getRankInfo(nextRank).xpThreshold : 0;
                       const xpThresholdMet = (sellerData.current_xp || 0) >= nextRankThreshold;
                       const canAdvance = allTasksCompleted && xpThresholdMet;
+                      
+                      // Debug logging for rank advancement check
+                      console.log("🔍 [RANK-ADVANCE] Checking advancement requirements:", {
+                        currentRank,
+                        nextRank,
+                        currentXP: sellerData.current_xp || 0,
+                        nextRankThreshold,
+                        xpThresholdMet,
+                        totalTasksForCurrentRank: currentRankTasks.length,
+                        completedTasksForCurrentRank: completedTasks.length,
+                        allTasksCompleted,
+                        canAdvance,
+                        taskIds: currentRankTasks,
+                        completedTaskIds: completedTasks,
+                        missingTaskIds: currentRankTasks.filter(id => !completedTasks.includes(id))
+                      });
                       
                       return (
                         <>
@@ -4036,10 +4265,10 @@ const PartnerDashboard = () => {
                                     Complete all tasks to advance
                                   </p>
                                   <p className="text-xs text-muted-foreground">
-                                    You have enough XP, but you need to complete all {nextRankTasks.length} task{nextRankTasks.length !== 1 ? 's' : ''} for {nextRank} rank before advancing.
+                                    You have enough XP, but you need to complete all {currentRankTasks.length} task{currentRankTasks.length !== 1 ? 's' : ''} for {currentRank} rank before advancing to {nextRank}.
                                   </p>
                                   <p className="text-xs text-muted-foreground mt-1">
-                                    Completed: {completedTasks.length} / {nextRankTasks.length} tasks
+                                    Completed: {completedTasks.length} / {currentRankTasks.length} task{currentRankTasks.length !== 1 ? 's' : ''}
                                   </p>
                                 </div>
                               </div>
@@ -4131,6 +4360,45 @@ const PartnerDashboard = () => {
                     Continue
                   </Button>
                 </div>
+              </div>
+            </DialogContent>
+          </Dialog>
+
+          {/* Rank Up Modal */}
+          <Dialog open={showRankUpModal} onOpenChange={setShowRankUpModal}>
+            <DialogContent className="max-w-2xl">
+              <DialogHeader>
+                <DialogTitle className="text-2xl text-primary flex items-center gap-2">
+                  <Trophy className="w-6 h-6" />
+                  🎉 Rank Up!
+                </DialogTitle>
+                <DialogDescription className="text-base pt-2">
+                  Congratulations! You've advanced to a new rank!
+                </DialogDescription>
+              </DialogHeader>
+              <div className="space-y-4 py-4">
+                <div className="p-4 bg-gradient-to-r from-primary/20 to-primary/10 border border-primary/30 rounded-lg">
+                  <div className="flex items-center justify-center gap-4 mb-4">
+                    <div className="text-center">
+                      <p className="text-sm text-muted-foreground mb-1">Previous Rank</p>
+                      <p className="text-lg font-semibold">{rankUpData?.oldRank || 'Unknown'}</p>
+                    </div>
+                    <ArrowRight className="w-6 h-6 text-primary" />
+                    <div className="text-center">
+                      <p className="text-sm text-muted-foreground mb-1">New Rank</p>
+                      <p className="text-xl font-bold text-primary">{rankUpData?.newRank || 'Unknown'}</p>
+                    </div>
+                  </div>
+                  <p className="text-sm text-foreground text-center">
+                    You've reached a new milestone! Keep completing lessons and tasks to continue your journey.
+                  </p>
+                </div>
+                <Button
+                  onClick={() => setShowRankUpModal(false)}
+                  className="w-full bg-primary hover:bg-primary/90 text-primary-foreground"
+                >
+                  Continue
+                </Button>
               </div>
             </DialogContent>
           </Dialog>
@@ -4584,7 +4852,9 @@ const PartnerDashboard = () => {
                         <div className="p-4 bg-background rounded-lg border border-border">
                           <div className="flex items-center justify-between mb-2">
                             <span className="font-semibold text-sm">Login Streak</span>
-                            <Badge variant="outline">{sellerData?.login_streak || 0} days</Badge>
+                            <Badge variant="outline" className="text-primary border-primary">
+                              {sellerData?.login_streak || 0} {sellerData?.login_streak === 1 ? 'day' : 'days'}
+                            </Badge>
                           </div>
                           <p className="text-xs text-muted-foreground">
                             {sellerData?.login_streak && sellerData.login_streak >= 3 
@@ -5969,19 +6239,33 @@ const PartnerDashboard = () => {
                                   // For other ranks, show normal progression
                                   if (!nextRank) return null;
                                   
-                                  // Get all tasks needed for the NEXT rank (what user needs to complete to advance)
-                                  // getTasksForRank already returns all tasks needed (including previous rank tasks)
-                                  const allRequiredTasks = getTasksForRank(nextRank);
-                                  // Filter to only count tasks/quizzes (not courses)
-                                  const nextRankTasks = allRequiredTasks.filter(taskId => {
-                                    const lesson = lessons.find(l => l.id === taskId);
-                                    return lesson && (lesson.lesson_type === 'task' || lesson.lesson_type === 'quiz');
-                                  });
-                                  const completedNextRankTasks = nextRankTasks.filter(taskId => completedLessons.has(taskId));
-                                  const allTasksCompleted = nextRankTasks.length === 0 || completedNextRankTasks.length === nextRankTasks.length;
+                                  // Check tasks for CURRENT rank - only count tasks visible in the UI (rank_required === currentRank)
+                                  // This matches what's displayed in the Learning Journey section
+                                  // Filter lessons to only show current rank (matches UI display)
+                                  const visibleLessons = lessons.filter(lesson => lesson.rank_required === currentRank);
+                                  // Filter to count only tasks, quizzes, and courses with quizzes (courses without quizzes don't count)
+                                  const currentRankTasks = visibleLessons.filter(lesson => isCountableTask(lesson)).map(lesson => lesson.id);
+                                  const completedCurrentRankTasks = currentRankTasks.filter(taskId => completedLessons.has(taskId));
+                                  const allTasksCompleted = currentRankTasks.length === 0 || completedCurrentRankTasks.length === currentRankTasks.length;
                                   const nextRankThreshold = nextRank ? getRankInfo(nextRank).xpThreshold : 0;
                                   const xpThresholdMet = (sellerData?.current_xp || 0) >= nextRankThreshold;
                                   const canAdvance = allTasksCompleted && xpThresholdMet;
+                                  
+                                  // Debug logging for rank advancement check (in progress section)
+                                  console.log("🔍 [RANK-ADVANCE] Progress section check:", {
+                                    currentRank,
+                                    nextRank,
+                                    currentXP: sellerData?.current_xp || 0,
+                                    nextRankThreshold,
+                                    xpThresholdMet,
+                                    totalTasksForCurrentRank: currentRankTasks.length,
+                                    completedTasksForCurrentRank: completedCurrentRankTasks.length,
+                                    allTasksCompleted,
+                                    canAdvance,
+                                    taskIds: currentRankTasks,
+                                    completedTaskIds: completedCurrentRankTasks,
+                                    missingTaskIds: currentRankTasks.filter(id => !completedCurrentRankTasks.includes(id))
+                                  });
                                   
                                   return (
                                     <div className="mt-6 pt-6 border-t border-border">
@@ -6012,11 +6296,11 @@ const PartnerDashboard = () => {
                                                   <div className="flex items-start gap-2 mb-2">
                                                     <AlertCircle className="w-4 h-4 text-accent flex-shrink-0 mt-0.5" />
                                                     <p className="text-sm text-muted-foreground">
-                                                      <strong className="text-accent">Complete all tasks:</strong> You have enough XP, but you need to complete all {nextRankTasks.length} task{nextRankTasks.length !== 1 ? 's' : ''} for {nextRank} rank.
+                                                      <strong className="text-accent">Complete all tasks:</strong> You have enough XP, but you need to complete all {currentRankTasks.length} task{currentRankTasks.length !== 1 ? 's' : ''} for {currentRank} rank before advancing to {nextRank}.
                                                     </p>
                                                   </div>
                                                   <p className="text-xs text-muted-foreground ml-6">
-                                                    Completed: {completedNextRankTasks.length} / {nextRankTasks.length} tasks
+                                                    Completed: {completedCurrentRankTasks.length} / {currentRankTasks.length} task{currentRankTasks.length !== 1 ? 's' : ''}
                                                   </p>
                                                 </div>
                                               )}
