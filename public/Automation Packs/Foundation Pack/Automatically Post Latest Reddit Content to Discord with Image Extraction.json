@@ -1,0 +1,281 @@
+{
+  "name": "Automatically Post Latest Reddit Content to Discord with Image Extraction",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "minutes",
+              "minutesInterval": 15
+            }
+          ]
+        }
+      },
+      "id": "93d15b82-9ce5-4189-8913-1f29bea05a23",
+      "name": "Schedule Trigger",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "position": [
+        448,
+        592
+      ],
+      "typeVersion": 1.2
+    },
+    {
+      "parameters": {
+        "content": "## Fetch and filter reddit posts\n- Fetches latest post from a subreddit, filters out aome postIDs from mod posts.\n- Add another one if nessecary",
+        "height": 440,
+        "width": 600
+      },
+      "id": "4bd7becf-e6cc-4975-a098-441accc2d24b",
+      "name": "Sticky Note",
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        720,
+        432
+      ],
+      "typeVersion": 1
+    },
+    {
+      "parameters": {
+        "operation": "getAll",
+        "subreddit": "news",
+        "limit": 3,
+        "filters": {}
+      },
+      "id": "2602f8be-c1c3-4403-9b61-714bbfe517e7",
+      "name": "Fetch latest reddit posts",
+      "type": "n8n-nodes-base.reddit",
+      "position": [
+        816,
+        592
+      ],
+      "typeVersion": 1
+    },
+    {
+      "parameters": {
+        "content": "## Post fetching and URL extraction\n- Fetches per post data, extracts direct URL for image.",
+        "height": 440,
+        "width": 560,
+        "color": 7
+      },
+      "id": "1c24ec32-b231-4139-967d-677dad046ac6",
+      "name": "Sticky Note2",
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        1328,
+        432
+      ],
+      "typeVersion": 1
+    },
+    {
+      "parameters": {
+        "content": "## Post To platforms\n- Send Direct image + context to social media platforms",
+        "height": 440,
+        "width": 280,
+        "color": 3
+      },
+      "id": "fc5bca77-baaa-4e68-ae8c-4c246aea43bc",
+      "name": "Sticky Note3",
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        1920,
+        432
+      ],
+      "typeVersion": 1
+    },
+    {
+      "parameters": {
+        "content": "## Scheduling\n- Set up the frequency of time to check for new posts\n",
+        "height": 440,
+        "width": 320,
+        "color": 5
+      },
+      "id": "38f3aa18-95db-4814-9383-801d22b66cee",
+      "name": "Sticky Note4",
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        368,
+        432
+      ],
+      "typeVersion": 1
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "version": 2,
+            "leftValue": "",
+            "caseSensitive": true,
+            "typeValidation": "strict"
+          },
+          "combinator": "and",
+          "conditions": [
+            {
+              "id": "7e7d515c-16f4-4fe7-9636-8282f53ac104",
+              "operator": {
+                "name": "filter.operator.equals",
+                "type": "string",
+                "operation": "equals"
+              },
+              "leftValue": "={{ $json.author_fullname }}",
+              "rightValue": "t2_6l4z3"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "2331d25e-9468-4787-871f-8692ff0b8546",
+      "name": "Filter out announcement posts",
+      "type": "n8n-nodes-base.if",
+      "position": [
+        1040,
+        592
+      ],
+      "typeVersion": 2.2
+    },
+    {
+      "parameters": {
+        "operation": "get",
+        "subreddit": "news",
+        "postId": "={{ $('Filter out announcement posts').item.json.id }}"
+      },
+      "id": "a8126cca-1674-478a-878a-a69d1d002959",
+      "name": "Fetch Reddit Post",
+      "type": "n8n-nodes-base.reddit",
+      "position": [
+        1392,
+        592
+      ],
+      "typeVersion": 1
+    },
+    {
+      "parameters": {
+        "jsCode": "return items.map(item => {\n  const mediaMetadata = item.json.media_metadata;\n  if (!mediaMetadata) return { directUrl: null };\n  \n  const mediaKey = Object.keys(mediaMetadata)[0];\n  const media = mediaMetadata[mediaKey];\n  if (!media || !media.s || !media.s.u) return { directUrl: null };\n\n  let url = media.s.u.replace(/&amp;/g, '&');\n  \n  const match = url.match(/([a-z0-9]+)\\.(jpg|png|gif)/i);\n  if (!match) return { directUrl: null };\n  \n  const imageName = match[1];\n  const extension = match[2];\n  \n  const directUrl = `https://i.redd.it/${imageName}.${extension}`;\n  \n  return { directUrl };\n});\n"
+      },
+      "id": "85e63030-ed64-4f82-a2a5-c4aeecbb4679",
+      "name": "Extract Image URL",
+      "type": "n8n-nodes-base.code",
+      "position": [
+        1696,
+        592
+      ],
+      "typeVersion": 2
+    },
+    {
+      "parameters": {
+        "authentication": "webhook",
+        "content": "=New post on reddit:\n{{ $('Fetch Reddit Post').item.json.title }}\n{{ $json.directUrl }}\n{{ $('Filter out announcement posts').item.json.url_overridden_by_dest }}",
+        "options": {}
+      },
+      "id": "c11ecaf3-9f82-47cd-bc86-0a17b1c869db",
+      "name": "Send to discord",
+      "type": "n8n-nodes-base.discord",
+      "position": [
+        2016,
+        592
+      ],
+      "webhookId": "0b28872f-2769-4474-a1bc-0a95228cd934",
+      "typeVersion": 2
+    },
+    {
+      "parameters": {
+        "content": "## SETUP\n- Set up a reddit account including reddit app, copy client/id secret.\n- Configure redirect URL as n8n base url.\n- Configure subreddit in both reddit nodes.\n- Add a webhook to discord.",
+        "width": 940,
+        "color": 6
+      },
+      "id": "63672e8c-1ebc-44ca-845c-2a17ad0acc40",
+      "name": "Sticky Note1",
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        368,
+        240
+      ],
+      "typeVersion": 1
+    },
+    {
+      "parameters": {
+        "content": "![Sticky Note Image](https://cdn.discordapp.com/attachments/1421922857595834368/1422243054559035492/banner.png?ex=68e1e550&is=68e093d0&hm=7f4b2ad03acfb637d9ba3177654240de26ebf97100596366c4e3c1b99ffdfe23&)",
+        "height": 304,
+        "width": 768
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        368,
+        -64
+      ],
+      "id": "53a86940-2646-4dfb-a307-7dda9680122a",
+      "name": "Sticky Note5"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Schedule Trigger": {
+      "main": [
+        [
+          {
+            "node": "Fetch latest reddit posts",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract Image URL": {
+      "main": [
+        [
+          {
+            "node": "Send to discord",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Reddit Post": {
+      "main": [
+        [
+          {
+            "node": "Extract Image URL",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch latest reddit posts": {
+      "main": [
+        [
+          {
+            "node": "Filter out announcement posts",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Filter out announcement posts": {
+      "main": [
+        [],
+        [
+          {
+            "node": "Fetch Reddit Post",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "",
+  "meta": {
+    "templateId": "5105",
+    "instanceId": "37203d6f9688077f4a5f9120b53471928bcb51453b38659512b9883b88ff7240"
+  },
+  "tags": []
+}

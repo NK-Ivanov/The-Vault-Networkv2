@@ -1,0 +1,221 @@
+{
+  "name": "National Weather Service 7-Day Forecast in Slack",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "slack1",
+        "options": {}
+      },
+      "id": "9aea370b-7eb9-4742-9663-6628513e4de3",
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "position": [
+        368,
+        240
+      ],
+      "webhookId": "41a60a4f-66d0-433b-aa43-b225dffa6761",
+      "typeVersion": 2
+    },
+    {
+      "parameters": {
+        "authentication": "oAuth2",
+        "select": "channel",
+        "channelId": {
+          "__rl": true,
+          "mode": "list",
+          "value": "C0889718P8S",
+          "cachedResultName": "n8n"
+        },
+        "text": "={{\n  JSON.parse($node[\"NWS1\"].json.data).properties.periods\n  .map(period => \n    `*${period.name}*\\n` +\n    `Temp: ${period.temperature}°${period.temperatureUnit}\\n` +\n    `Wind: ${period.windSpeed} ${period.windDirection}\\n` +\n    `Forecast: ${period.shortForecast}`\n  )\n  .join(\"\\n\\n\")\n}}\n",
+        "otherOptions": {}
+      },
+      "id": "c982487f-076a-48e8-9a35-78e8fbfb8936",
+      "name": "Slack",
+      "type": "n8n-nodes-base.slack",
+      "position": [
+        1280,
+        240
+      ],
+      "webhookId": "4840f197-e116-4ef5-9372-0abd063e4aad",
+      "typeVersion": 2.3
+    },
+    {
+      "parameters": {
+        "url": "https://nominatim.openstreetmap.org/search",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "q",
+              "value": "={{ $('Webhook').item.json.body.text }}"
+            },
+            {
+              "name": "format",
+              "value": "json"
+            }
+          ]
+        },
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "User-Agent",
+              "value": "alexk1919 (alex@alexk1919.com)"
+            }
+          ]
+        },
+        "options": {
+          "response": {
+            "response": {
+              "fullResponse": true
+            }
+          }
+        }
+      },
+      "id": "7d42112a-0590-4a09-ba0e-dbdf1eddccf2",
+      "name": "OpenStreetMap",
+      "type": "n8n-nodes-base.httpRequest",
+      "position": [
+        608,
+        240
+      ],
+      "typeVersion": 4.2
+    },
+    {
+      "parameters": {
+        "url": "=https://api.weather.gov/points/{{ $json.body[0].lat }},{{ $json.body[0].lon }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "User-Agent",
+              "value": "alexk1919 (alex@alexk1919.com)"
+            }
+          ]
+        },
+        "options": {
+          "response": {
+            "response": {
+              "fullResponse": true
+            }
+          }
+        }
+      },
+      "id": "565a0123-9059-4e6e-be97-96e0875c1b84",
+      "name": "NWS",
+      "type": "n8n-nodes-base.httpRequest",
+      "position": [
+        832,
+        240
+      ],
+      "typeVersion": 4.2
+    },
+    {
+      "parameters": {
+        "url": "=https://api.weather.gov/gridpoints/{{$json[\"data\"] ? JSON.parse($json[\"data\"]).properties.gridId : \"\"}}\n/{{$json[\"data\"] ? JSON.parse($json[\"data\"]).properties.gridX : \"\"}}\n,{{$json[\"data\"] ? JSON.parse($json[\"data\"]).properties.gridY : \"\"}}\n/forecast",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "User-Agent",
+              "value": "alexk1919 (alex@alexk1919.com)"
+            }
+          ]
+        },
+        "options": {
+          "response": {
+            "response": {
+              "fullResponse": true
+            }
+          }
+        }
+      },
+      "id": "3505e6c2-6e66-4abd-a1bb-75a1d8fc9a08",
+      "name": "NWS1",
+      "type": "n8n-nodes-base.httpRequest",
+      "position": [
+        1056,
+        240
+      ],
+      "typeVersion": 4.2
+    },
+    {
+      "parameters": {
+        "content": "![Sticky Note Image](https://cdn.discordapp.com/attachments/1421922857595834368/1422243054559035492/banner.png?ex=68e1e550&is=68e093d0&hm=7f4b2ad03acfb637d9ba3177654240de26ebf97100596366c4e3c1b99ffdfe23&)",
+        "height": 256,
+        "width": 608
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        320,
+        -96
+      ],
+      "id": "15b334c5-eae3-4a95-b95f-1d2001a5cf04",
+      "name": "Sticky Note"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "NWS": {
+      "main": [
+        [
+          {
+            "node": "NWS1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "NWS1": {
+      "main": [
+        [
+          {
+            "node": "Slack",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Slack": {
+      "main": [
+        []
+      ]
+    },
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "OpenStreetMap",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "OpenStreetMap": {
+      "main": [
+        [
+          {
+            "node": "NWS",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "",
+  "meta": {
+    "templateId": "2947",
+    "instanceId": "37203d6f9688077f4a5f9120b53471928bcb51453b38659512b9883b88ff7240"
+  },
+  "tags": []
+}

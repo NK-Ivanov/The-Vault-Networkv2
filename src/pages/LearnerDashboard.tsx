@@ -8,6 +8,7 @@ import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 import { BookOpen, GraduationCap, Lock, CheckCircle2, Clock, ArrowRight, RefreshCw, Plus, Trophy, TrendingUp, Sparkles } from "lucide-react";
+import TemplateLibrary from "@/components/TemplateLibrary";
 import { Progress } from "@/components/ui/progress";
 import { useAuth } from "@/hooks/useAuth";
 import { usePageMeta } from "@/hooks/usePageMeta";
@@ -976,6 +977,23 @@ const LearnerDashboard = () => {
               </CardContent>
             </Card>
           )}
+        </div>
+
+        {/* n8n Template Library Section */}
+        <div className="mb-8">
+          <Card className="bg-primary/5 border-primary/20">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                n8n Template Library
+              </CardTitle>
+              <CardDescription>
+                Browse and download ready-to-use n8n workflow templates from our Foundation Pack
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <TemplateLibrary />
+            </CardContent>
+          </Card>
         </div>
 
         {/* Info Section */}

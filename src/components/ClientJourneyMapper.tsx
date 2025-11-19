@@ -92,6 +92,29 @@ const ClientJourneyMapper: React.FC<ClientJourneyMapperProps> = ({
     setJourneySteps(newSteps);
   };
 
+  const addStep = () => {
+    const newStepId = String(Date.now());
+    const newStep: JourneyStep = {
+      id: newStepId,
+      step_name: `Step ${journeySteps.length + 1}`,
+      description: ''
+    };
+    setJourneySteps([...journeySteps, newStep]);
+  };
+
+  const removeStep = (index: number) => {
+    if (journeySteps.length <= 1) {
+      toast({
+        title: "Cannot remove step",
+        description: "Journey must have at least one step.",
+        variant: "destructive",
+      });
+      return;
+    }
+    const newSteps = journeySteps.filter((_, i) => i !== index);
+    setJourneySteps(newSteps);
+  };
+
   const handleSaveJourney = async () => {
     if (!journeyName.trim()) {
       toast({
@@ -307,7 +330,18 @@ const ClientJourneyMapper: React.FC<ClientJourneyMapperProps> = ({
               </div>
 
               <div className="space-y-4">
-                <Label>Journey Steps</Label>
+                <div className="flex items-center justify-between">
+                  <Label>Journey Steps</Label>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={addStep}
+                  >
+                    <Plus className="w-4 h-4 mr-1" />
+                    Add Step
+                  </Button>
+                </div>
                 {journeySteps.map((step, index) => (
                   <Card key={step.id} className="border-border bg-muted/20">
                     <CardContent className="pt-4">
@@ -322,6 +356,17 @@ const ClientJourneyMapper: React.FC<ClientJourneyMapperProps> = ({
                             placeholder="Step name"
                             className="flex-1"
                           />
+                          {journeySteps.length > 1 && (
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => removeStep(index)}
+                              className="text-destructive hover:text-destructive"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </Button>
+                          )}
                         </div>
                         <Textarea
                           value={step.description}

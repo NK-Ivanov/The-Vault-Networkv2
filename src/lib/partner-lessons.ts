@@ -2516,10 +2516,169 @@ Once they pay, your commission activates and the setup begins.`,
     ],
     quiz_answers: [0, 1, 2, 1, 2, 1, 0, 2, 0, 3, 3, 3],
     xp_reward: 700,
+    order_index: 11
+  },
+  {
+    id: 'stage-5-partner-12',
+    stage: 5,
+    rank_required: 'Partner',
+    lesson_type: 'task',
+    title: 'Review Setup vs Monthly Pricing for 3 Automations',
+    content: `Compare setup fee and monthly retainer for 3 automations and summarise which industries each fits.
+
+**Why:** Teaches pricing structure before selling.
+
+**How to complete:** 
+- Click the "Earnings Calculator" button on the Earnings tab
+- Select 3 different automations
+- Compare their setup fees and monthly prices
+- Summarize which industries each automation fits
+
+This task will help you understand pricing structure and prepare you for selling automations to clients.`,
+    xp_reward: 600,
+    order_index: 12
+  },
+  {
+    id: 'stage-5-partner-13',
+    stage: 5,
+    rank_required: 'Partner',
+    lesson_type: 'task',
+    title: 'Create Your Personal Sales Script Variation',
+    content: `Using the Scripts tab, customize one script specifically for a business type you want to target.
+
+**Why:** Prepares Partner Plus outreach without making them actually do outreach.
+
+**How to complete:**
+- Go to the Sales Scripts tab
+- Select a script template
+- Customize it for a specific automation or business type
+- Add a tag for which automation this is relevant to
+- Save your script
+
+You can select from 6 templates:
+1. Conversational DM Script
+2. Professional Email Template
+3. Consultative Pitch Outline
+4. Soft Outreach Message
+5. Follow-Up Message
+6. Short Value Pitch
+
+Edit and save your custom script to complete this task.`,
+    xp_reward: 750,
+    order_index: 13
+  },
+  {
+    id: 'stage-5-partner-14',
+    stage: 5,
+    rank_required: 'Partner',
+    lesson_type: 'task',
+    title: 'Record a 30-Second Value Explanation (Text Only)',
+    content: `Write a explanation of how 3 automations save time and money.
+
+**Why:** Builds clarity in speaking to real clients later.
+
+**How to complete:**
+- Go to the Automations tab
+- Click "Add Note" on at least 3 different automations
+- Add personal notes explaining how each automation saves time and money
+- Save your notes for each automation
+
+These notes are private and help you prepare for speaking with clients.`,
+    xp_reward: 600,
+    order_index: 14
+  },
+  {
+    id: 'stage-5-partner-15',
+    stage: 5,
+    rank_required: 'Partner',
+    lesson_type: 'task',
+    title: 'Earnings Projection Exercise',
+    content: `Using any automation's setup + monthly fees, calculate how much monthly commission you would earn with 3 clients.
+
+**Why:** Helps partners understand earning potential before closing.
+
+**How to complete:**
+- Click the "Earnings Calculator" button on the Earnings tab
+- Select an automation
+- Set clients per automation to 3
+- Review your projected monthly commission earnings
+
+This exercise helps you understand your earning potential and motivates you to close deals.`,
+    xp_reward: 500,
+    order_index: 15
+  },
+  {
+    id: 'stage-5-partner-16',
+    stage: 5,
+    rank_required: 'Partner',
+    lesson_type: 'task',
+    title: 'Map a Client Journey From Click to Activation',
+    content: `Write the journey:
+
+- Client clicks referral link
+- Creates account
+- Chooses automation
+- Pays setup fee
+- Goes through onboarding
+
+**Why:** Teaches process flow without adding prospects manually.
+
+**How to complete:**
+- Go to the Overview tab
+- Click "Map Client Journey (Click to Activation)" button
+- Fill out each step of the journey with descriptions
+- Save your journey mapping
+
+This helps you understand the complete client journey and prepares you for real client interactions.`,
+    xp_reward: 700,
     order_index: 16
   },
   {
-    id: generateId(5, 'Verified', 17),
+    id: 'stage-5-partner-17',
+    stage: 5,
+    rank_required: 'Partner',
+    lesson_type: 'task',
+    title: 'Review All Bookmarked Automations',
+    content: `Must open and read all bookmarked automations when you press view page for that automation.
+
+**Why:** Makes the partner knowledgeable and confident about their niche.
+
+**How to complete:**
+- Go to the Automations tab
+- Find all your bookmarked automations
+- Click "View Page" on each bookmarked automation
+- Read through the automation details completely
+
+You need to view and read all your bookmarked automations to complete this task.`,
+    xp_reward: 550,
+    order_index: 17
+  },
+  {
+    id: 'stage-5-partner-18',
+    stage: 5,
+    rank_required: 'Partner',
+    lesson_type: 'task',
+    title: 'Write Your Own Setup Process Explanation',
+    content: `Explain in your own words:
+
+• how setup works
+• what the client can expect
+• how long it takes
+
+**Why:** Prepares partners for answering real client questions later.
+
+**How to complete:**
+- Go to the Overview tab
+- Click "Write Setup Process Explanation" button
+- Write your explanation covering how setup works, what clients can expect, and how long it takes
+- Save your explanation
+
+This helps you prepare for answering real client questions about the setup process.`,
+    xp_reward: 650,
+    order_index: 18
+  },
+  {
+    id: generateId(5, 'Verified', 19),
     stage: 5,
     rank_required: 'Partner Plus',
     lesson_type: 'task',
@@ -2528,10 +2687,10 @@ Once they pay, your commission activates and the setup begins.`,
 
 When they sign up and create a business account, they'll be assigned to you and you'll earn 1,500 XP!`,
     xp_reward: 1500,
-    order_index: 17
+    order_index: 19
   },
   {
-    id: generateId(5, 'Verified', 18),
+    id: generateId(5, 'Verified', 20),
     stage: 5,
     rank_required: 'Partner Plus',
     lesson_type: 'task',
@@ -2545,10 +2704,10 @@ When they sign up and create a business account, they'll be assigned to you and 
 
 You'll earn 1,000 XP when you complete this!`,
     xp_reward: 1000,
-    order_index: 18
+    order_index: 20
   },
   {
-    id: generateId(5, 'Verified', 19),
+    id: generateId(5, 'Verified', 21),
     stage: 5,
     rank_required: 'Partner Plus',
     lesson_type: 'task',
@@ -2557,10 +2716,10 @@ You'll earn 1,000 XP when you complete this!`,
 
 This is a major milestone - celebrate your success!`,
     xp_reward: 2000,
-    order_index: 19
+    order_index: 21
   },
   {
-    id: generateId(5, 'Verified', 20),
+    id: generateId(5, 'Verified', 22),
     stage: 5,
     rank_required: 'Partner Plus',
     lesson_type: 'task',
@@ -2575,7 +2734,7 @@ This is a major milestone - celebrate your success!`,
 Your case study helps other partners learn and may be featured!`,
     xp_reward: 500,
     unlock_action: 'stage_6',
-    order_index: 20
+    order_index: 22
   }
 ];
 
@@ -2583,7 +2742,7 @@ Your case study helps other partners learn and may be featured!`,
 // XP Range: 10,000+
 const stage6Lessons: PartnerLesson[] = [
   {
-    id: generateId(6, 'Seller Pro', 21),
+    id: generateId(6, 'Seller Pro', 23),
     stage: 6,
     rank_required: 'Seller Pro',
     lesson_type: 'course',
@@ -2663,7 +2822,7 @@ Continue earning XP through:
     ],
     quiz_answers: [1, 2, 2, null],
     xp_reward: 500,
-    order_index: 21
+    order_index: 23
   }
 ];
 

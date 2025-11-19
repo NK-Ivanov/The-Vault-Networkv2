@@ -188,11 +188,9 @@ const EarningsCalculator: React.FC<EarningsCalculatorProps> = ({
   };
 
   const trackCalculatorUsage = async () => {
-    if (hasUsedCalculator) return;
-
     try {
-      // Track calculator usage
-      await supabase.from('partner_activity_log').insert({
+      // Track calculator usage (allow multiple saves, just track activity)
+      const { error: insertError } = await supabase.from('partner_activity_log').insert({
         seller_id: sellerId,
         event_type: 'earnings_calculator_used',
         xp_value: 0,
@@ -204,20 +202,30 @@ const EarningsCalculator: React.FC<EarningsCalculatorProps> = ({
         },
       });
 
-      setHasUsedCalculator(true);
+      if (insertError) {
+        console.error('Error inserting calculator usage:', insertError);
+      } else {
+        // Only set hasUsedCalculator after successful insert
+        if (!hasUsedCalculator) {
+          setHasUsedCalculator(true);
+        }
+      }
 
-      // Check for task completion
+      // Always check for task completion when Save & Track is clicked
       // Task 1: Review Setup vs Monthly Pricing for 3 Automations (600 XP)
-      if (selectedRows.length >= 3) {
+      // Need at least 3 different automations
+      if (selectedRows.length >= 3 && onComplete) {
         const uniqueAutomationIds = new Set(selectedRows.map(row => row.automationId));
-        if (uniqueAutomationIds.size >= 3 && onComplete) {
+        if (uniqueAutomationIds.size >= 3) {
+          // Call onComplete for task1
           onComplete('task1');
         }
       }
 
-      // Task 4: Earnings Projection Exercise (500 XP) - using calculator with 3 clients
+      // Task 4: Earnings Projection Exercise (500 XP) - using calculator with 3 clients total
       const totalClients = selectedRows.reduce((sum, row) => sum + row.clientsPerAutomation, 0);
       if (totalClients >= 3 && onComplete) {
+        // Call onComplete for task4
         onComplete('task4');
       }
     } catch (error: any) {

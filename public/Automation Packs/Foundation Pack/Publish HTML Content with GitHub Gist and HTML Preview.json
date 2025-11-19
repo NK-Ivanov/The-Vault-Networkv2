@@ -1,0 +1,142 @@
+{
+  "name": "Publish HTML Content with GitHub Gist and HTML Preview",
+  "nodes": [
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.github.com/gists",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "User-Agent",
+              "value": "n8n"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"description\": \"Auto-rendered HTML\",\n  \"public\": false,\n  \"files\": {\n    \"report.html\": {\n      \"content\": {{ JSON.stringify($json.html) }}\n    }\n  }\n} ",
+        "options": {}
+      },
+      "id": "27b9084e-f5ac-4352-a83b-c9ba07fc83f1",
+      "name": "Create Gist",
+      "type": "n8n-nodes-base.httpRequest",
+      "position": [
+        576,
+        448
+      ],
+      "retryOnFail": true,
+      "typeVersion": 4.2,
+      "waitBetweenTries": 5000
+    },
+    {
+      "parameters": {
+        "workflowInputs": {
+          "values": [
+            {
+              "name": "html"
+            }
+          ]
+        }
+      },
+      "id": "81a700fe-209e-427a-be64-2094e708420e",
+      "name": "When Executed by Another Workflow",
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "position": [
+        368,
+        448
+      ],
+      "typeVersion": 1.1
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "1627b23c-18a5-4180-ac01-534e65172481",
+              "name": "URL",
+              "type": "string",
+              "value": "={{ \"https://htmlpreview.github.io/?\" + $json.files[\"report.html\"].raw_url }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "34b106bf-39de-4aed-86fa-56df8cd1db85",
+      "name": "Set URL",
+      "type": "n8n-nodes-base.set",
+      "position": [
+        800,
+        448
+      ],
+      "typeVersion": 3.4
+    },
+    {
+      "parameters": {
+        "content": "## Add GitHub API key to \"Create Gist\" node\nFirst, add your API key to the auth header in the create gist node.\n\nThen, you can pass HTML reports into this workflow as the input and receive a URL where the HTML is displayed as the output.",
+        "width": 520
+      },
+      "id": "0e4f5280-7cae-4ff2-9407-9b72b5cfeb59",
+      "name": "Sticky Note",
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        368,
+        240
+      ],
+      "typeVersion": 1
+    },
+    {
+      "parameters": {
+        "content": "![Sticky Note Image](https://cdn.discordapp.com/attachments/1421922857595834368/1422243054559035492/banner.png?ex=68e1e550&is=68e093d0&hm=7f4b2ad03acfb637d9ba3177654240de26ebf97100596366c4e3c1b99ffdfe23&)",
+        "height": 240,
+        "width": 560
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        352,
+        -16
+      ],
+      "id": "0fa1d331-37ae-4db8-a1c8-543446724cd1",
+      "name": "Sticky Note1"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Create Gist": {
+      "main": [
+        [
+          {
+            "node": "Set URL",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "When Executed by Another Workflow": {
+      "main": [
+        [
+          {
+            "node": "Create Gist",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "",
+  "meta": {
+    "templateId": "6674",
+    "instanceId": "37203d6f9688077f4a5f9120b53471928bcb51453b38659512b9883b88ff7240"
+  },
+  "tags": []
+}

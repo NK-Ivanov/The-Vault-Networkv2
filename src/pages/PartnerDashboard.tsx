@@ -15,6 +15,7 @@ import { DollarSign, Users, TrendingUp, Package, Copy, Check, CheckCircle, XCirc
 import EarningsCalculator from "@/components/EarningsCalculator";
 import ClientJourneyMapper from "@/components/ClientJourneyMapper";
 import SetupProcessExplanation from "@/components/SetupProcessExplanation";
+import TemplateLibrary from "@/components/TemplateLibrary";
 import { useToast } from "@/hooks/use-toast";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -6044,6 +6045,21 @@ If you are curious, I can show you exactly how it works. It only takes a minute 
                     </Card>
                   )}
 
+                  {/* n8n Template Library */}
+                  <Card className="bg-card border-border">
+                    <CardHeader>
+                      <CardTitle className="text-base sm:text-lg text-primary">
+                        n8n Template Library
+                      </CardTitle>
+                      <CardDescription className="text-xs sm:text-sm">
+                        Browse and download ready-to-use n8n workflow templates from our Foundation Pack
+                      </CardDescription>
+                    </CardHeader>
+                    <CardContent>
+                      <TemplateLibrary />
+                    </CardContent>
+                  </Card>
+
                   {/* Current Stage Lessons */}
                   <Card className="bg-card border-border">
                     <CardHeader>
@@ -6996,6 +7012,232 @@ If you are curious, I can show you exactly how it works. It only takes a minute 
                                               className="w-full"
                                             >
                                               Go to Clients Tab
+                                            </Button>
+                                          </div>
+                                        )}
+                                        
+                                                {lesson.title === 'Review Setup vs Monthly Pricing for 3 Automations' && (
+                                          <div className="p-4 bg-muted/50 rounded-lg space-y-3">
+                                            <div>
+                                              <p className="text-sm text-muted-foreground mb-3">
+                                                Compare setup fee and monthly retainer for 3 automations and summarize which industries each fits. This helps you understand pricing structure before selling.
+                                              </p>
+                                              <ol className="text-sm text-muted-foreground space-y-2 list-decimal list-inside mb-3">
+                                                <li>Click the "Earnings Calculator" button on the Earnings tab</li>
+                                                <li>Select 3 different automations</li>
+                                                <li>Compare their setup fees and monthly prices</li>
+                                                <li>Review your projected earnings</li>
+                                              </ol>
+                                            </div>
+                                            <Button
+                                              onClick={() => {
+                                                setActiveTab('earnings');
+                                                setTimeout(() => {
+                                                  setShowEarningsCalculator(true);
+                                                }, 300);
+                                              }}
+                                              variant="outline"
+                                              size="sm"
+                                              disabled={isCompleted || !canAccess}
+                                              className="w-full"
+                                            >
+                                              {isCompleted ? 'Task Completed' : 'Open Earnings Calculator'}
+                                            </Button>
+                                          </div>
+                                        )}
+                                        
+                                                {lesson.title === 'Create Your Personal Sales Script Variation' && (
+                                          <div className="p-4 bg-muted/50 rounded-lg space-y-3">
+                                            <div>
+                                              <p className="text-sm text-muted-foreground mb-3">
+                                                Customize one script specifically for a business type you want to target. You can choose from 6 templates and add automation tags.
+                                              </p>
+                                              <ol className="text-sm text-muted-foreground space-y-2 list-decimal list-inside mb-3">
+                                                <li>Go to the Sales Scripts tab</li>
+                                                <li>Select a script template</li>
+                                                <li>Customize it for a specific automation or business type</li>
+                                                <li>Add a tag for which automation this is relevant to</li>
+                                                <li>Save your script</li>
+                                              </ol>
+                                            </div>
+                                            <Button
+                                              onClick={() => {
+                                                setActiveTab('sales-scripts');
+                                              }}
+                                              variant="outline"
+                                              size="sm"
+                                              disabled={isCompleted || !canAccess}
+                                              className="w-full"
+                                            >
+                                              {isCompleted ? 'Task Completed' : 'Go to Sales Scripts'}
+                                            </Button>
+                                          </div>
+                                        )}
+                                        
+                                                {lesson.title === 'Record a 30-Second Value Explanation (Text Only)' && (
+                                          <div className="p-4 bg-muted/50 rounded-lg space-y-3">
+                                            <div>
+                                              <p className="text-sm text-muted-foreground mb-3">
+                                                Write an explanation of how 3 automations save time and money. These notes help you prepare for speaking with clients.
+                                              </p>
+                                              <div className="flex items-center gap-2 mt-2 mb-3">
+                                                <Progress 
+                                                  value={(automationNotes.size / 3) * 100} 
+                                                  className="h-2 flex-1"
+                                                />
+                                                <span className="text-xs font-semibold text-primary whitespace-nowrap">
+                                                  {automationNotes.size} / 3 notes added
+                                                </span>
+                                              </div>
+                                              <ol className="text-sm text-muted-foreground space-y-2 list-decimal list-inside mb-3">
+                                                <li>Go to the Automations tab</li>
+                                                <li>Click "Add Note" on at least 3 different automations</li>
+                                                <li>Write notes explaining how each automation saves time and money</li>
+                                                <li>Save your notes for each automation</li>
+                                              </ol>
+                                            </div>
+                                            <Button
+                                              onClick={() => {
+                                                setActiveTab('automations');
+                                              }}
+                                              variant="outline"
+                                              size="sm"
+                                              disabled={isCompleted || !canAccess}
+                                              className="w-full"
+                                            >
+                                              {isCompleted ? 'Task Completed' : 'Go to Automations'}
+                                            </Button>
+                                          </div>
+                                        )}
+                                        
+                                                {lesson.title === 'Earnings Projection Exercise' && (
+                                          <div className="p-4 bg-muted/50 rounded-lg space-y-3">
+                                            <div>
+                                              <p className="text-sm text-muted-foreground mb-3">
+                                                Using any automation's setup + monthly fees, calculate how much monthly commission you would earn with 3 clients. This helps you understand earning potential.
+                                              </p>
+                                              <ol className="text-sm text-muted-foreground space-y-2 list-decimal list-inside mb-3">
+                                                <li>Click the "Earnings Calculator" button on the Earnings tab</li>
+                                                <li>Select an automation</li>
+                                                <li>Set clients per automation to 3</li>
+                                                <li>Review your projected monthly commission earnings</li>
+                                              </ol>
+                                            </div>
+                                            <Button
+                                              onClick={() => {
+                                                setActiveTab('earnings');
+                                                setTimeout(() => {
+                                                  setShowEarningsCalculator(true);
+                                                }, 300);
+                                              }}
+                                              variant="outline"
+                                              size="sm"
+                                              disabled={isCompleted || !canAccess}
+                                              className="w-full"
+                                            >
+                                              {isCompleted ? 'Task Completed' : 'Open Earnings Calculator'}
+                                            </Button>
+                                          </div>
+                                        )}
+                                        
+                                                {lesson.title === 'Map a Client Journey From Click to Activation' && (
+                                          <div className="p-4 bg-muted/50 rounded-lg space-y-3">
+                                            <div>
+                                              <p className="text-sm text-muted-foreground mb-3">
+                                                Map out the complete client journey from when they click your referral link to when their automation is activated.
+                                              </p>
+                                              <ol className="text-sm text-muted-foreground space-y-2 list-decimal list-inside mb-3">
+                                                <li>Go to the Overview tab</li>
+                                                <li>Click "Map Client Journey (Click to Activation)" button</li>
+                                                <li>Fill out each step of the journey with descriptions</li>
+                                                <li>Save your journey mapping</li>
+                                              </ol>
+                                            </div>
+                                            <Button
+                                              onClick={() => {
+                                                setActiveTab('overview');
+                                                setTimeout(() => {
+                                                  setShowJourneyMapper(true);
+                                                }, 300);
+                                              }}
+                                              variant="outline"
+                                              size="sm"
+                                              disabled={isCompleted || !canAccess}
+                                              className="w-full"
+                                            >
+                                              {isCompleted ? 'Task Completed' : 'Open Client Journey Mapper'}
+                                            </Button>
+                                          </div>
+                                        )}
+                                        
+                                                {lesson.title === 'Review All Bookmarked Automations' && (
+                                          <div className="p-4 bg-muted/50 rounded-lg space-y-3">
+                                            <div>
+                                              <p className="text-sm text-muted-foreground mb-3">
+                                                Must open and read all bookmarked automations when you press "View Page" for that automation. This makes you knowledgeable and confident about your niche.
+                                              </p>
+                                              <div className="flex items-center gap-2 mt-2 mb-3">
+                                                <Progress 
+                                                  value={bookmarkedAutomations.size > 0 ? (reviewedBookmarkedAutomations.size / bookmarkedAutomations.size) * 100 : 0} 
+                                                  className="h-2 flex-1"
+                                                />
+                                                <span className="text-xs font-semibold text-primary whitespace-nowrap">
+                                                  {reviewedBookmarkedAutomations.size} / {bookmarkedAutomations.size} reviewed
+                                                </span>
+                                              </div>
+                                              <ol className="text-sm text-muted-foreground space-y-2 list-decimal list-inside mb-3">
+                                                <li>Go to the Automations tab</li>
+                                                <li>Find all your bookmarked automations</li>
+                                                <li>Click "View Page" on each bookmarked automation</li>
+                                                <li>Read through the automation details completely</li>
+                                              </ol>
+                                            </div>
+                                            <Button
+                                              onClick={() => {
+                                                setActiveTab('automations');
+                                              }}
+                                              variant="outline"
+                                              size="sm"
+                                              disabled={isCompleted || !canAccess || bookmarkedAutomations.size === 0}
+                                              className="w-full"
+                                            >
+                                              {isCompleted ? 'Task Completed' : bookmarkedAutomations.size === 0 ? 'Bookmark Automations First' : 'Go to Automations'}
+                                            </Button>
+                                          </div>
+                                        )}
+                                        
+                                                {lesson.title === 'Write Your Own Setup Process Explanation' && (
+                                          <div className="p-4 bg-muted/50 rounded-lg space-y-3">
+                                            <div>
+                                              <p className="text-sm text-muted-foreground mb-3">
+                                                Explain in your own words how setup works, what the client can expect, and how long it takes. This prepares you for answering real client questions.
+                                              </p>
+                                              <ol className="text-sm text-muted-foreground space-y-2 list-decimal list-inside mb-3">
+                                                <li>Go to the Overview tab</li>
+                                                <li>Click "Write Setup Process Explanation" button</li>
+                                                <li>Write your explanation covering:
+                                                  <ul className="list-disc list-inside ml-4 mt-1">
+                                                    <li>How setup works</li>
+                                                    <li>What the client can expect</li>
+                                                    <li>How long it takes</li>
+                                                  </ul>
+                                                </li>
+                                                <li>Save your explanation</li>
+                                              </ol>
+                                            </div>
+                                            <Button
+                                              onClick={() => {
+                                                setActiveTab('overview');
+                                                setTimeout(() => {
+                                                  setShowSetupExplanation(true);
+                                                }, 300);
+                                              }}
+                                              variant="outline"
+                                              size="sm"
+                                              disabled={isCompleted || !canAccess}
+                                              className="w-full"
+                                            >
+                                              {isCompleted ? 'Task Completed' : 'Open Setup Process Explanation'}
                                             </Button>
                                           </div>
                                         )}
@@ -9015,12 +9257,12 @@ If you are curious, I can show you exactly how it works. It only takes a minute 
                             <SelectValue placeholder="Select a template to get started" />
                           </SelectTrigger>
                           <SelectContent>
-                            <SelectItem value="conversational">✅ 1. Conversational DM Script (Short, Simple, Effective)</SelectItem>
-                            <SelectItem value="email">✅ 2. Professional Email Template (Polished + Credible)</SelectItem>
-                            <SelectItem value="pitch">✅ 3. Consultative Pitch Outline (Strategic Format)</SelectItem>
-                            <SelectItem value="soft_outreach">✅ 4. Soft Outreach Message (Friendly + Non-Salesy)</SelectItem>
-                            <SelectItem value="follow_up">✅ 5. Follow-Up Message (Polite, Helpful, Value-First)</SelectItem>
-                            <SelectItem value="short_value">✅ 6. Short Value Pitch (Fast, Clear, Straight to the Point)</SelectItem>
+                            <SelectItem value="conversational">Conversational DM Script (Short, Simple, Effective)</SelectItem>
+                            <SelectItem value="email">Professional Email Template (Polished + Credible)</SelectItem>
+                            <SelectItem value="pitch">Consultative Pitch Outline (Strategic Format)</SelectItem>
+                            <SelectItem value="soft_outreach">Soft Outreach Message (Friendly + Non-Salesy)</SelectItem>
+                            <SelectItem value="follow_up">Follow-Up Message (Polite, Helpful, Value-First)</SelectItem>
+                            <SelectItem value="short_value">Short Value Pitch (Fast, Clear, Straight to the Point)</SelectItem>
                           </SelectContent>
                         </Select>
                         <p className="text-xs text-muted-foreground">

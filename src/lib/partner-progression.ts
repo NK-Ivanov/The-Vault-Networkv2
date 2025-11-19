@@ -27,13 +27,13 @@ export const RANK_INFO: Record<PartnerRank, RankInfo> = {
     rank: 'Apprentice',
     commissionRate: 30,
     xpThreshold: 1000,
-    unlocks: ['automation_suggestions'] // Unlocks "Suggest New Automation" task
+    unlocks: ['automation_suggestions', 'leaderboard'] // Unlocks "Suggest New Automation" task and leaderboard
   },
   'Apprentice Plus': {
     rank: 'Apprentice Plus',
     commissionRate: 30,
     xpThreshold: 1000, // Same threshold as Apprentice, it's a sub-stage
-    unlocks: []
+    unlocks: ['explore_automations', 'bookmark_multiple'] // Unlocks "Explore Five Automations" and "Bookmark Two Automations" tasks
   },
   'Agent': {
     rank: 'Agent',
@@ -45,31 +45,31 @@ export const RANK_INFO: Record<PartnerRank, RankInfo> = {
     rank: 'Agent Plus',
     commissionRate: 33,
     xpThreshold: 2500, // Same threshold as Agent, it's a sub-stage
-    unlocks: []
+    unlocks: ['sales_foundations', 'outreach_process'] // Unlocks "Sales Foundations" and "The Outreach Process" courses
   },
   'Verified': {
     rank: 'Verified',
     commissionRate: 36,
     xpThreshold: 4500,
-    unlocks: ['clients_demo', 'referral_link'] // Unlocks "Add Demo Client", "Assign Demo Automation", "Pitch Reflection", "Invite Friend" tasks
+    unlocks: ['clients_demo', 'edit_referral_code'] // Unlocks "Add Demo Client", "Assign Demo Automation", "Edit Referral Code" tasks
   },
   'Verified Plus': {
     rank: 'Verified Plus',
     commissionRate: 36,
     xpThreshold: 4500, // Same threshold as Verified, it's a sub-stage
-    unlocks: []
+    unlocks: ['demo_client_notes', 'demo_automation_plan', 'referral_funnel', 'objections_handling'] // Unlocks demo client deep dive, automation planning, referral funnel, and objections course
   },
   'Partner': {
     rank: 'Partner',
     commissionRate: 40,
     xpThreshold: 7000,
-    unlocks: ['earnings', 'leaderboard', 'clients_real'] // Unlocks "Invite First Real Client", "Assign First Automation", "Mark First Sale", "Submit Case Summary" tasks
+    unlocks: ['earnings', 'clients_real', 'earnings_calculator', 'sales_script_variations', 'automation_notes', 'client_journey_mapper', 'setup_explanation'] // Unlocks earnings tab, real clients, and all Partner rank tasks (calculator, script variations, notes, journey mapper, setup explanation)
   },
   'Partner Plus': {
     rank: 'Partner Plus',
     commissionRate: 40,
     xpThreshold: 7000, // Same threshold as Partner, it's a sub-stage
-    unlocks: []
+    unlocks: ['real_client_management', 'case_studies'] // Unlocks "Invite First Real Client", "Assign First Automation", "Mark First Sale", "Submit Case Summary" tasks
   },
   'Partner Pro': {
     rank: 'Partner Pro',

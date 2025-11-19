@@ -1,0 +1,105 @@
+{
+  "name": "Parse Email Body Message",
+  "nodes": [
+    {
+      "parameters": {},
+      "name": "On clicking 'execute'",
+      "type": "n8n-nodes-base.manualTrigger",
+      "position": [
+        368,
+        240
+      ],
+      "typeVersion": 1,
+      "id": "6319fde0-3933-42e7-811f-0c505ca0d25b"
+    },
+    {
+      "parameters": {
+        "functionCode": "var obj = {};\nvar labels = item.labels.split(\",\");\nitem.labels.split(\",\").forEach(function(label) {\n  var re = labels.indexOf(label) === labels.length - 1 ? \"\\\\b\" + label + \"\\\\b[: ]+([^$]+)\" : \"\\\\b\" + label + \"\\\\b[: ]+([^\\\\n$]+)\";\n  var found = item.body.match(new RegExp(re, \"i\"));\n  if (found && found.length > 1) {\n    obj[label] = found[1].trim();\n  }\n});\n\nreturn obj;"
+      },
+      "name": "Email Parser Snippet",
+      "type": "n8n-nodes-base.functionItem",
+      "position": [
+        800,
+        240
+      ],
+      "typeVersion": 1,
+      "id": "a4ea95cd-9998-4017-840a-ce2288947ec4"
+    },
+    {
+      "parameters": {
+        "values": {
+          "number": [],
+          "string": [
+            {
+              "name": "body",
+              "value": "Name: Miquel\nEmail: miquel@aprenden8n.com\nSubject: Welcome aboard\nMessage: Hi Miquel!\n\nThank you for your signup!"
+            },
+            {
+              "name": "labels",
+              "value": "Name,Email,Subject,Message"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "name": "Set values",
+      "type": "n8n-nodes-base.set",
+      "position": [
+        592,
+        240
+      ],
+      "typeVersion": 1,
+      "id": "53078629-0ad5-4a65-8344-d164213817b7"
+    },
+    {
+      "parameters": {
+        "content": "![Sticky Note Image](https://cdn.discordapp.com/attachments/1421922857595834368/1422243054559035492/banner.png?ex=68e1e550&is=68e093d0&hm=7f4b2ad03acfb637d9ba3177654240de26ebf97100596366c4e3c1b99ffdfe23&)",
+        "height": 304,
+        "width": 752
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        256,
+        -176
+      ],
+      "id": "b202568e-84e9-4c60-9c09-e451a2443d46",
+      "name": "Sticky Note"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Set values": {
+      "main": [
+        [
+          {
+            "node": "Email Parser Snippet",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "On clicking 'execute'": {
+      "main": [
+        [
+          {
+            "node": "Set values",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "",
+  "meta": {
+    "templateId": "1453",
+    "instanceId": "37203d6f9688077f4a5f9120b53471928bcb51453b38659512b9883b88ff7240"
+  },
+  "tags": []
+}
