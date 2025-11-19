@@ -101,12 +101,26 @@ const Login = () => {
         description: "You've successfully logged in.",
       });
 
-      // Check for referral code in localStorage
+      // Check for referral codes in localStorage (both business and partner)
       const referralCode = localStorage.getItem("referral_code");
+      const partnerReferralCode = localStorage.getItem("partner_referral_code");
+      
+      // Check for referral code in redirect URL (for partner referrals)
+      const redirectRef = searchParams.get("ref");
+      if (redirectRef && !partnerReferralCode) {
+        // Save partner referral code from URL
+        localStorage.setItem("partner_referral_code", redirectRef);
+      }
       
       // If there's a redirect path (from form submission), go there first
       if (redirectPath) {
-        navigate(redirectPath);
+        // Preserve partner referral code in redirect URL if it exists
+        const finalPartnerRef = redirectRef || partnerReferralCode;
+        if (finalPartnerRef && redirectPath.includes("/partners")) {
+          navigate(`${redirectPath}${redirectPath.includes('?') ? '&' : '?'}ref=${encodeURIComponent(finalPartnerRef)}`);
+        } else {
+          navigate(redirectPath);
+        }
         return;
       }
       
@@ -120,8 +134,11 @@ const Login = () => {
       } else if (userRoles.includes("learner")) {
         navigate("/learner-dashboard");
       } else {
-        // No role assigned yet - redirect to for-businesses if referral code exists
-        if (referralCode) {
+        // No role assigned yet - check for partner referral code first, then business
+        if (partnerReferralCode || redirectRef) {
+          const refCode = redirectRef || partnerReferralCode;
+          navigate(`/partners?ref=${encodeURIComponent(refCode)}`);
+        } else if (referralCode) {
           navigate(`/for-businesses?ref=${referralCode}`);
         } else {
           navigate("/");
@@ -260,12 +277,26 @@ const Login = () => {
           description: "Welcome! You've been automatically logged in.",
         });
 
-        // Check for referral code in localStorage
+        // Check for referral codes in localStorage (both business and partner)
         const referralCode = localStorage.getItem("referral_code");
+        const partnerReferralCode = localStorage.getItem("partner_referral_code");
+        
+        // Check for referral code in redirect URL (for partner referrals)
+        const redirectRef = searchParams.get("ref");
+        if (redirectRef && !partnerReferralCode) {
+          // Save partner referral code from URL
+          localStorage.setItem("partner_referral_code", redirectRef);
+        }
         
         // If there's a redirect path (from form submission), go there first
         if (redirectPath) {
-          navigate(redirectPath);
+          // Preserve partner referral code in redirect URL if it exists
+          const finalPartnerRef = redirectRef || partnerReferralCode;
+          if (finalPartnerRef && redirectPath.includes("/partners")) {
+            navigate(`${redirectPath}${redirectPath.includes('?') ? '&' : '?'}ref=${encodeURIComponent(finalPartnerRef)}`);
+          } else {
+            navigate(redirectPath);
+          }
           return;
         }
         
@@ -279,8 +310,11 @@ const Login = () => {
         } else if (userRoles.includes("learner")) {
           navigate("/learner-dashboard");
         } else {
-          // No role assigned yet - redirect to for-businesses if referral code exists
-          if (referralCode) {
+          // No role assigned yet - check for partner referral code first, then business
+          if (partnerReferralCode || redirectRef) {
+            const refCode = redirectRef || partnerReferralCode;
+            navigate(`/partners?ref=${encodeURIComponent(refCode)}`);
+          } else if (referralCode) {
             navigate(`/for-businesses?ref=${referralCode}`);
           } else {
             navigate("/");

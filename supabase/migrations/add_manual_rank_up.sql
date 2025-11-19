@@ -17,10 +17,13 @@ DECLARE
   task_id TEXT;
   is_completed BOOLEAN;
   missing_tasks TEXT[];
+  completed_tasks TEXT[];
   next_rank_xp_threshold INTEGER;
   expected_progression TEXT[];
   current_index INTEGER;
   next_index INTEGER;
+  _countable_total INTEGER := 0;
+  _countable_completed INTEGER := 0;
 BEGIN
   -- Get current rank and XP
   SELECT s.current_rank, s.current_xp INTO current_rank_val, current_xp
@@ -81,18 +84,29 @@ BEGIN
   -- Only check tasks if the current rank has tasks required
   -- If current rank has no tasks (empty array), skip task checking and only require XP
   IF array_length(required_tasks, 1) > 0 THEN
-    -- Check if all tasks are completed
+    -- Check if all COUNTABLE tasks are completed (same logic as are_all_tasks_completed)
     missing_tasks := ARRAY[]::TEXT[];
+    completed_tasks := ARRAY[]::TEXT[];
+    _countable_total := 0;
+    _countable_completed := 0;
+    
     FOREACH task_id IN ARRAY required_tasks
     LOOP
-      is_completed := public.is_lesson_completed(_seller_id, task_id);
-      IF NOT is_completed THEN
-        missing_tasks := array_append(missing_tasks, task_id);
+      -- Only check countable tasks (tasks, quizzes, courses with quizzes - not courses without quizzes)
+      IF public.is_countable_task(task_id) THEN
+        _countable_total := _countable_total + 1;
+        is_completed := public.is_lesson_completed(_seller_id, task_id);
+        IF is_completed THEN
+          _countable_completed := _countable_completed + 1;
+          completed_tasks := array_append(completed_tasks, task_id);
+        ELSE
+          missing_tasks := array_append(missing_tasks, task_id);
+        END IF;
       END IF;
     END LOOP;
     
-    -- Check if can advance
-    can_advance := array_length(missing_tasks, 1) IS NULL;
+    -- Check if can advance (all countable tasks must be completed)
+    can_advance := (_countable_total = 0) OR (_countable_total = _countable_completed);
     
     IF NOT can_advance THEN
       RETURN jsonb_build_object(
@@ -101,8 +115,9 @@ BEGIN
         'message', 'Complete all tasks for ' || current_rank_val || ' rank to advance',
         'current_rank', current_rank_val,
         'next_rank', new_rank_val,
-        'completed_tasks', array_length(required_tasks, 1) - array_length(missing_tasks, 1),
-        'total_tasks', array_length(required_tasks, 1),
+        'completed_tasks', _countable_completed,
+        'total_tasks', _countable_total,
+        'completed_task_ids', completed_tasks,
         'missing_tasks', missing_tasks
       );
     END IF;

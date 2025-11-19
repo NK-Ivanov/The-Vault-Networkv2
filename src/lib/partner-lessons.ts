@@ -1882,6 +1882,289 @@ When they sign up using your referral link, you'll earn XP and help grow the Vau
     xp_reward: 1200,
     unlock_action: 'stage_5',
     order_index: 15
+  },
+  {
+    id: 'stage-4-verified-plus-16',
+    stage: 4,
+    rank_required: 'Verified Plus',
+    lesson_type: 'task',
+    title: 'Demo Client Deep Dive',
+    content: `Open your demo client and update all fields (industry, size, needs, problem).
+
+**Task:**
+1. Go to the Clients tab
+2. Click on your demo client to open the client detail page
+3. Update all fields:
+   - Industry
+   - Size
+   - Needs
+   - Problem
+
+**Why:** Helps you simulate real client prep and prepare for working with actual businesses.`,
+    xp_reward: 600,
+    order_index: 16
+  },
+  {
+    id: 'stage-4-verified-plus-17',
+    stage: 4,
+    rank_required: 'Verified Plus',
+    lesson_type: 'task',
+    title: 'Create a Demo Automation Plan',
+    content: `Assign two automations to your demo client and write a short note explaining why they fit.
+
+**Task:**
+1. Go to the Clients tab
+2. Select your demo client
+3. Assign two different automations
+4. For each automation, write a note explaining why it fits this client's needs
+
+**Why:** Builds pre-sales consulting skills and helps you think strategically about automation recommendations.`,
+    xp_reward: 700,
+    order_index: 17
+  },
+  {
+    id: 'stage-4-verified-plus-18',
+    stage: 4,
+    rank_required: 'Verified Plus',
+    lesson_type: 'task',
+    title: 'Referral Funnel Exercise',
+    content: `Edit your referral code and get at least 5 people to click your link.
+
+**Task:**
+1. Edit your referral code in the Overview tab
+2. Share your referral link with at least 5 people
+3. The system will track clicks (self-clicks don't count)
+
+**Why:** Teaches you how viral loops work and helps you understand the power of referral marketing.`,
+    xp_reward: 400,
+    order_index: 18
+  },
+  {
+    id: 'stage-4-verified-plus-19',
+    stage: 4,
+    rank_required: 'Verified Plus',
+    lesson_type: 'course',
+    title: 'Handling Objections 101',
+    content: `## Slide 1: Welcome to Handling Objections
+
+Master the art of turning objections into opportunities! This course will teach you how to handle common client concerns effectively and build confidence in your sales approach.
+
+## Slide 2: Understanding Objections
+
+**What are Objections?**
+- Questions or concerns from prospects
+- Signs they're considering your offer
+- Opportunities to provide value and build trust
+- Not rejections - they're engagement signals!
+
+**Why Prospects Object:**
+- Need more information
+- Concerns about cost or value
+- Uncertainty about fit or timing
+- Past negative experiences
+- Fear of making the wrong decision
+
+## Slide 3: The Objection Mindset
+
+**Best Mindset:**
+Treat objections as signs the prospect is considering your offer - they're engaged and thinking seriously!
+
+**Avoid:**
+- Assuming they're attacking you
+- Thinking they're not interested
+- Ending the conversation quickly
+- Becoming defensive or frustrated
+
+## Slide 4: Common Objection #1 - "It's Too Expensive"
+
+**Best Response:**
+Acknowledge the concern and explain the value it returns.
+
+**Example:**
+"I understand cost is important. Let's look at the value: This automation saves your team 10 hours per week. At $30/hour, that's $1,200/month in saved labor costs. The automation costs $300/month - you're saving $900/month while scaling your operations."
+
+**Key Points:**
+- Don't immediately discount
+- Show ROI clearly
+- Compare to alternatives
+- Focus on value, not price
+
+## Slide 5: Common Objection #2 - "I Need More Time to Think"
+
+**Best Response:**
+Ask what part they want to review in more detail.
+
+**Example:**
+"I totally understand wanting to think it through. What specific part would you like to review? Is it the setup process, the pricing, or how it fits with your current systems? I can provide more detail on whatever you need."
+
+**Key Points:**
+- Don't pressure for immediate decision
+- Don't repeat the entire pitch
+- Identify specific concerns
+- Offer helpful information
+
+## Slide 6: Common Objection #3 - "We Already Have Someone Handling This"
+
+**Best Response:**
+Explain how your solution can work alongside what they already use.
+
+**Example:**
+"That's great that you have someone handling this! Our automation actually works alongside your existing team member. It handles the repetitive tasks, freeing them up for higher-value work. Think of it as giving them a powerful assistant that never gets tired or makes mistakes."
+
+**Key Points:**
+- Don't suggest replacing their current person
+- Position as enhancement, not replacement
+- Show how it complements existing setup
+- Emphasize efficiency gains
+
+## Slide 7: Common Objection #4 - "We're Not Sure if It's the Right Fit"
+
+**Best Response:**
+They are still deciding if the solution is the right fit - this is a natural part of the process.
+
+**Example:**
+"That's a great question! Let me help you understand the fit. Based on what you've told me about [their situation], this automation specifically addresses [their pain point]. I've worked with similar businesses and seen [specific outcome]. What specific concerns do you have about the fit?"
+
+**Key Points:**
+- Address their specific situation
+- Provide relevant examples
+- Ask clarifying questions
+- Don't oversell or overpromise
+
+## Slide 8: The Power of Follow-Up Messages
+
+**Main Purpose:**
+To guide the conversation and give useful reminders - not to apply pressure.
+
+**What Makes Follow-Up Effective:**
+- Adding new insight that helps the prospect decide
+- Sharing relevant case studies or examples
+- Addressing specific concerns they raised
+- Providing helpful resources
+
+**Avoid:**
+- Repeating the same message
+- Talking only about your goals
+- Sending discounts every time
+- Applying pressure or urgency
+
+## Slide 9: What to Avoid When Responding to Objections
+
+**Avoid:**
+- Showing frustration or becoming defensive
+- Assuming the worst about their intentions
+- Ignoring their concerns
+- Being pushy or aggressive
+
+**Instead:**
+- Stay calm and listen carefully
+- Ask questions to understand the concern
+- Reflect what they meant in your own words
+- Provide helpful information
+
+## Slide 10: Key Takeaways
+
+- **Objections are opportunities** - they show engagement
+- **Listen first** - understand before responding
+- **Focus on value** - always connect back to benefits
+- **Stay consultative** - help, don't sell
+- **Follow up thoughtfully** - provide value, not pressure
+- **Stay positive** - objections mean they're considering!
+
+Ready to test your knowledge? Complete the quiz to earn your XP!`,
+    quiz_questions: [
+      {
+        question: "Why do most prospects hesitate when offered an automation?",
+        type: "multiple_choice",
+        options: [
+          "They are still deciding if the solution is the right fit",
+          "They usually think automations require advanced knowledge",
+          "They believe the system will replace their whole staff",
+          "They feel unsure how long the setup will take"
+        ],
+        correct: 0
+      },
+      {
+        question: "What is the best response to someone saying the price is too high?",
+        type: "multiple_choice",
+        options: [
+          "Agree that maybe the timing is not ideal",
+          "Acknowledge the concern and explain the value it returns",
+          "Offer a large discount to close the deal quickly",
+          "Change the subject to avoid talking about the cost"
+        ],
+        correct: 1
+      },
+      {
+        question: "What should you do when a prospect says they need more time to think?",
+        type: "multiple_choice",
+        options: [
+          "Ask what part they want to review in more detail",
+          "Repeat the full pitch from the beginning",
+          "Suggest they make a decision immediately",
+          "Tell them they might lose the offer soon"
+        ],
+        correct: 0
+      },
+      {
+        question: "What is the best reply when someone says they already have a person handling this?",
+        type: "multiple_choice",
+        options: [
+          "Suggest replacing their current person with your system",
+          "Say they might not need any upgrade at all",
+          "Mention that their current setup is probably outdated",
+          "Explain how your solution can work alongside what they already use"
+        ],
+        correct: 3
+      },
+      {
+        question: "What is the main purpose of follow-up messages?",
+        type: "multiple_choice",
+        options: [
+          "To guide the conversation and give useful reminders",
+          "To apply pressure until the prospect responds",
+          "To show that the seller is waiting for a decision",
+          "To send repeated messages until they reply"
+        ],
+        correct: 0
+      },
+      {
+        question: "What makes a follow-up message effective?",
+        type: "multiple_choice",
+        options: [
+          "Adding a new insight that helps the prospect decide",
+          "Repeating the same message from last time",
+          "Talking only about your own goals and targets",
+          "Sending a discount every time you follow up"
+        ],
+        correct: 0
+      },
+      {
+        question: "What should you avoid when responding to objections?",
+        type: "multiple_choice",
+        options: [
+          "Staying calm and listening carefully",
+          "Asking questions to understand the concern",
+          "Reflecting what the prospect meant in your own words",
+          "Showing frustration or becoming defensive"
+        ],
+        correct: 3
+      },
+      {
+        question: "What is the best mindset to have when you hear an objection?",
+        type: "multiple_choice",
+        options: [
+          "Assume the prospect is attacking you personally",
+          "Think they are not interested at all",
+          "End the conversation as quickly as possible",
+          "Treat it as a sign the prospect is considering the offer"
+        ],
+        correct: 3
+      }
+    ],
+    quiz_answers: [0, 1, 0, 3, 0, 0, 3, 3],
+    xp_reward: 600,
+    order_index: 19
   }
 ];
 
@@ -1894,83 +2177,344 @@ const stage5Lessons: PartnerLesson[] = [
     rank_required: 'Partner',
     lesson_type: 'course',
     title: 'How to Close Deals',
-    content: `# Setup + Monthly Pricing
+    content: `# Slide 1 — Introduction
 
-Every automation requires two payments:
-1. **Setup Fee**: One-time payment for initial configuration
-2. **Monthly Retainer**: Recurring payment for ongoing service
+Closing deals is one of the most important skills as a Vault Network Partner.
 
-Both payments generate commission for you!
+This course teaches you how to guide a client from first interest to final payment with clarity and confidence.
 
-# Payment Processing
+# Slide 2 — Understanding the Offer
 
-All payments process through Vault Network:
-- Clients pay Vault Network directly
-- You don't handle payments
-- Commission is automatically calculated
-- Payments appear in your Earnings tab
+Every automation consists of two parts:
 
-# Managing Client Expectations
+• A setup package
 
-**Be Clear About:**
-- What the automation does (and doesn't do)
-- Timeline for setup and activation
-- Ongoing support process
-- How to request changes or updates
+• A monthly retainer
 
-**Set Realistic Expectations:**
-- Setup takes time (usually 1-2 weeks)
-- Some customization may be needed
-- Vault Network handles technical support
+Your role is to present the value clearly and help the client choose the best option for their business.
 
-# Support Ticket Etiquette
+# Slide 3 — Setup Fee Explained
+
+The setup fee covers:
+
+• Full system configuration
+
+• Customization to the client's business
+
+• Integration with their tools
+
+• Testing and quality checks
+
+This is a one-time payment that generates commission for you.
+
+# Slide 4 — Monthly Pricing Explained
+
+The monthly retainer covers:
+
+• Ongoing maintenance
+
+• System monitoring
+
+• Technical support
+
+• Updates and improvements
+
+• Automation reliability
+
+This is recurring revenue that builds long-term commissions.
+
+# Slide 5 — How Payments Work
+
+• Clients pay Vault Network directly
+
+• You never collect or handle money
+
+• Commissions are tracked automatically
+
+• All payments appear inside the Earnings tab
+
+This keeps everything simple, secure and transparent.
+
+# Slide 6 — Preparing for the Close
+
+Before presenting pricing, make sure you:
+
+• Understand the client's problem
+
+• Select the right automation
+
+• Explain the transformation, not the features
+
+• Show the ROI clearly
+
+Closing becomes easy when the client already sees the value.
+
+# Slide 7 — Presenting the Offer
+
+Present the cost confidently:
+
+• Start with the setup fee
+
+• Then explain the monthly support
+
+• Connect every price point to the value it delivers
+
+Keep it simple. Keep it clear. Avoid over-explaining.
+
+# Slide 8 — Handling Price Concerns
+
+Clients may hesitate because:
+
+• They fear risk
+
+• They don't understand ROI
+
+• They need clarity
+
+Respond calmly by explaining:
+
+• Time saved
+
+• Errors reduced
+
+• Revenue gained
+
+Price becomes a non-issue once value is clear.
+
+# Slide 9 — Timeline and Expectations
+
+Be clear about project flow:
+
+• Setup usually takes 1–2 weeks
+
+• Some custom adjustments may be required
+
+• Clients receive updates during the process
+
+Clear timelines prevent misunderstandings and build trust.
+
+# Slide 10 — What Automations Do (and Don't Do)
+
+Explain honestly:
+
+Automations DO:
+
+• Save time
+
+• Reduce manual work
+
+• Improve consistency
+
+Automations DON'T:
+
+• Replace entire teams instantly
+
+• Solve unrelated business issues
+
+• Work without the client's input
+
+Setting boundaries creates loyal clients.
+
+# Slide 11 — Support System Overview
 
 When clients need help:
-1. Direct them to create a support ticket
-2. You can view and respond to tickets in Support tab
-3. Escalate to Vault Network if needed
-4. Stay professional and helpful`,
+
+• They open a support ticket
+
+• You can view and respond inside the Support tab
+
+• Vault Network handles all heavy technical issues
+
+This ensures clients always have reliable assistance.
+
+# Slide 12 — Your Role in Support
+
+Your responsibility is to:
+
+• Keep communication polite and professional
+
+• Ask clarifying questions
+
+• Follow up when needed
+
+• Escalate when the issue is outside your control
+
+Partners who manage communication well close more deals.
+
+# Slide 13 — Following Up After the Pitch
+
+Not all clients buy immediately. Successful follow-ups include:
+
+• A quick reminder of the value
+
+• A helpful insight
+
+• A short check-in message
+
+Follow-up is where most deals are actually closed.
+
+# Slide 14 — Signs the Client is Ready to Buy
+
+Look for signals:
+
+• Asking about timeline
+
+• Asking about setup steps
+
+• Asking about price or payment
+
+• Asking what you need from them
+
+When you see these, move confidently to the close.
+
+# Slide 15 — Closing the Deal
+
+To close the deal smoothly:
+
+• Send them your referral link
+
+• Help them choose the right automation
+
+• Guide them through the purchase steps
+
+• Celebrate the win and thank them
+
+Once they pay, your commission activates and the setup begins.`,
     quiz_questions: [
       {
-        question: "What two payments does every automation require?",
+        question: "What does the setup fee mainly cover?",
         type: "multiple_choice",
         options: [
-          "Setup fee and monthly retainer",
-          "Deposit and final payment",
-          "Annual fee and setup fee",
-          "One-time payment only"
+          "Configuration and customization of the automation",
+          "The client's monthly support and updates",
+          "Advertising tools for the client",
+          "Additional training for partners"
         ],
         correct: 0
       },
       {
-        question: "How do clients contact Vault support?",
+        question: "What is the role of the monthly retainer?",
         type: "multiple_choice",
         options: [
-          "Call you directly",
-          "Create a support ticket",
-          "Email Vault Network",
-          "Post on social media"
+          "Funding upgrades for the client's website",
+          "Providing ongoing maintenance and support",
+          "Paying commissions to other partners",
+          "Covering one-time system installation"
         ],
         correct: 1
       },
       {
-        question: "How is your commission calculated?",
+        question: "How do clients make payments?",
         type: "multiple_choice",
         options: [
-          "You calculate it manually",
-          "Automatically by Vault Network",
-          "Client pays you directly",
-          "You invoice Vault Network"
+          "Directly to the partner",
+          "Through automatic bank transfers to the partner",
+          "Through Vault Network, where commissions are calculated",
+          "Through an external payment processor chosen by the client"
+        ],
+        correct: 2
+      },
+      {
+        question: "What should you confirm before presenting pricing?",
+        type: "multiple_choice",
+        options: [
+          "The exact discount the client wants",
+          "The specific problem the automation solves",
+          "The client's preferred payment schedule",
+          "Whether the client has used automations before"
         ],
         correct: 1
       },
       {
-        question: "What should you do if a client has a technical issue?",
-        type: "text_input",
-        hint: "Direct them to create a support ticket"
+        question: "What helps clients see the value in an automation?",
+        type: "multiple_choice",
+        options: [
+          "A long list of technical features",
+          "A comparison to unrelated tools",
+          "A clear explanation of the transformation and outcome",
+          "A detailed explanation of every node used"
+        ],
+        correct: 2
+      },
+      {
+        question: "Why do clients often raise price concerns?",
+        type: "multiple_choice",
+        options: [
+          "They want to negotiate for sport",
+          "They are unsure about the return on investment",
+          "They think partners handle technical work manually",
+          "They expect the system to include unlimited free upgrades"
+        ],
+        correct: 1
+      },
+      {
+        question: "Why is setting expectations important?",
+        type: "multiple_choice",
+        options: [
+          "It ensures clients understand the process clearly",
+          "It allows you to shorten the setup timeline",
+          "It guarantees the client will choose the most expensive plan",
+          "It removes the need for support tickets"
+        ],
+        correct: 0
+      },
+      {
+        question: "How should a partner handle support issues?",
+        type: "multiple_choice",
+        options: [
+          "Solve all technical problems alone",
+          "Ask the client to find outside help",
+          "Direct the client to open a support ticket",
+          "Recommend the client waits until the next update"
+        ],
+        correct: 2
+      },
+      {
+        question: "What makes a follow-up message effective?",
+        type: "multiple_choice",
+        options: [
+          "Adding a useful insight that helps the client decide",
+          "Sending the same message repeatedly",
+          "Asking why they have not replied",
+          "Focusing only on the partner's goals"
+        ],
+        correct: 0
+      },
+      {
+        question: "What is the purpose of follow-up messages?",
+        type: "multiple_choice",
+        options: [
+          "To repeat the pitch in every message",
+          "To ask the client for a decision immediately",
+          "To make the offer sound urgent",
+          "To keep communication active and helpful"
+        ],
+        correct: 3
+      },
+      {
+        question: "Which behaviour should you avoid when closing deals?",
+        type: "multiple_choice",
+        options: [
+          "Giving clear explanations",
+          "Asking helpful questions",
+          "Listening carefully to the client",
+          "Responding with frustration or defensiveness"
+        ],
+        correct: 3
+      },
+      {
+        question: "What is a strong sign that a client is ready to close?",
+        type: "multiple_choice",
+        options: [
+          "They stop replying for several days",
+          "They ask only about discounts",
+          "They ask unrelated questions",
+          "They ask about setup steps or timeline"
+        ],
+        correct: 3
       }
     ],
-    quiz_answers: [0, 1, 1, null],
+    quiz_answers: [0, 1, 2, 1, 2, 1, 0, 2, 0, 3, 3, 3],
     xp_reward: 700,
     order_index: 16
   },

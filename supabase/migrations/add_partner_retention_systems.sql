@@ -507,13 +507,16 @@ BEGIN
         last_login_date = today
     WHERE id = _seller_id;
 
-    -- Award streak bonuses
+    -- Award 200 XP for each login day
+    PERFORM public.add_seller_xp(_seller_id, 200, 'login_day', 'Daily login bonus', jsonb_build_object('login_date', today::TEXT));
+
+    -- Award streak milestone bonuses
     SELECT login_streak + 1 INTO current_streak FROM public.sellers WHERE id = _seller_id;
     
     IF current_streak = 3 THEN
-      PERFORM public.add_seller_xp(_seller_id, 50, 'login_streak_3', '3-day login streak');
+      PERFORM public.add_seller_xp(_seller_id, 50, 'login_streak_3', '3-day login streak milestone');
     ELSIF current_streak = 7 THEN
-      PERFORM public.add_seller_xp(_seller_id, 150, 'login_streak_7', '7-day login streak');
+      PERFORM public.add_seller_xp(_seller_id, 150, 'login_streak_7', '7-day login streak milestone');
     END IF;
   ELSIF last_login < today - INTERVAL '1 day' THEN
     -- Streak broken, reset to 1

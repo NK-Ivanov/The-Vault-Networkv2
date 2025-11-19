@@ -50,6 +50,53 @@ const ForBusinesses = () => {
     if (urlReferralCode) {
       // Save URL referral code to localStorage
       localStorage.setItem("referral_code", urlReferralCode);
+      
+      // Track referral link click (for Verified Plus "Referral Funnel Exercise" task)
+      const trackReferralClick = async () => {
+        try {
+          // Get seller ID from referral code
+          const { data: seller, error: sellerError } = await supabase
+            .from("sellers")
+            .select("id, user_id")
+            .eq("referral_code", urlReferralCode)
+            .eq("status", "approved")
+            .maybeSingle();
+          
+          if (seller && !sellerError) {
+            // Get current user ID (if logged in) to detect self-clicks
+            const { data: { user: currentUser } } = await supabase.auth.getUser();
+            const isSelfClick = currentUser && seller.user_id === currentUser.id;
+            
+            // Get IP address and user agent for tracking
+            const userAgent = navigator.userAgent;
+            const referrer = document.referrer || null;
+            
+            // Insert referral click
+            const { error: clickError } = await supabase
+              .from("referral_link_clicks")
+              .insert({
+                seller_id: seller.id,
+                referral_code: urlReferralCode,
+                is_self_click: isSelfClick || false,
+                user_agent: userAgent,
+                referrer_url: referrer,
+                metadata: {
+                  page: 'for-businesses',
+                  timestamp: new Date().toISOString()
+                }
+              });
+            
+            if (clickError) {
+              console.error("Error tracking referral click:", clickError);
+            }
+          }
+        } catch (error) {
+          console.error("Error tracking referral click:", error);
+        }
+      };
+      
+      // Track click (only once per page load)
+      trackReferralClick();
     } else if (storedReferralCode && !urlReferralCode) {
       // Restore referral code from localStorage to URL if not already in URL
       navigate(`/for-businesses?ref=${storedReferralCode}`, { replace: true });

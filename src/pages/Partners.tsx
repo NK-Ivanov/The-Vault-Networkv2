@@ -50,6 +50,53 @@ const Partners = () => {
       setReferralCode(ref);
       // Store in localStorage for later use
       localStorage.setItem("partner_referral_code", ref);
+      
+      // Track referral link click (for Verified Plus "Referral Funnel Exercise" task)
+      const trackReferralClick = async () => {
+        try {
+          // Get seller ID from referral code
+          const { data: seller, error: sellerError } = await supabase
+            .from("sellers")
+            .select("id, user_id")
+            .eq("referral_code", ref)
+            .eq("status", "approved")
+            .maybeSingle();
+          
+          if (seller && !sellerError) {
+            // Get current user ID (if logged in) to detect self-clicks
+            const { data: { user: currentUser } } = await supabase.auth.getUser();
+            const isSelfClick = currentUser && seller.user_id === currentUser.id;
+            
+            // Get IP address and user agent for tracking
+            const userAgent = navigator.userAgent;
+            const referrer = document.referrer || null;
+            
+            // Insert referral click
+            const { error: clickError } = await supabase
+              .from("referral_link_clicks")
+              .insert({
+                seller_id: seller.id,
+                referral_code: ref,
+                is_self_click: isSelfClick || false,
+                user_agent: userAgent,
+                referrer_url: referrer,
+                metadata: {
+                  page: 'partners',
+                  timestamp: new Date().toISOString()
+                }
+              });
+            
+            if (clickError) {
+              console.error("Error tracking referral click:", clickError);
+            }
+          }
+        } catch (error) {
+          console.error("Error tracking referral click:", error);
+        }
+      };
+      
+      // Track click (only once per page load)
+      trackReferralClick();
     } else {
       // Check localStorage for saved referral code
       const savedRef = localStorage.getItem("partner_referral_code");
@@ -124,7 +171,11 @@ const Partners = () => {
         website,
         about,
       }));
-      navigate("/login?redirect=/partners");
+      // Preserve referral code in redirect URL if it exists
+      const redirectUrl = referralCode 
+        ? `/login?redirect=/partners&ref=${encodeURIComponent(referralCode)}`
+        : "/login?redirect=/partners";
+      navigate(redirectUrl);
       return;
     }
 

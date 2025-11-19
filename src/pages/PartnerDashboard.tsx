@@ -1,4 +1,4 @@
-import { useEffect, useState, useRef, useCallback } from "react";
+import { useEffect, useState, useRef, useCallback, useMemo } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import Navigation from "@/components/Navigation";
 import Footer from "@/components/Footer";
@@ -48,20 +48,41 @@ const markdownToHtml = (markdown: string): string => {
     return items ? `<ol class="list-decimal list-inside mb-4 space-y-2 ml-4">${items}</ol>` : match;
   });
   
-  // Process bullet lists (after numbered lists)
-  html = html.replace(/((?:^[-*] .*$(?:\n|$))+)/gm, (match) => {
+  // Process bullet lists (after numbered lists) - handle both markdown and bullet character
+  // First, handle consecutive bullet lines (markdown style)
+  html = html.replace(/((?:^[-*•] .*$(?:\n|$))+)/gm, (match) => {
     const items = match
       .split('\n')
-      .filter(line => line.trim().match(/^[-*] /))
-      .map(line => line.replace(/^[-*] /, '').trim())
+      .filter(line => line.trim().match(/^[-*•] /))
+      .map(line => line.replace(/^[-*•] /, '').trim())
       .filter(item => item.length > 0)
       .map(item => {
         // Process bold text within list items
         let processed = item.replace(/\*\*(.*?)\*\*/g, '<strong class="font-semibold text-primary">$1</strong>');
-        return `<li class="text-sm text-foreground mb-2 leading-relaxed ml-4">${processed}</li>`;
+        return `<li class="text-base text-foreground mb-3 leading-relaxed ml-6 pl-2 relative before:content-['•'] before:absolute before:left-0 before:text-primary before:font-bold before:text-lg">${processed}</li>`;
       })
       .join('\n');
-    return items ? `<ul class="list-disc list-inside mb-4 space-y-2 ml-4">${items}</ul>` : match;
+    return items ? `<ul class="list-none mb-6 space-y-2">${items}</ul>` : match;
+  });
+  
+  // Also handle standalone bullet characters (•) that might be on separate lines with blank lines between
+  html = html.replace(/^•\s+(.+)$/gm, (match, content) => {
+    const processed = content.replace(/\*\*(.*?)\*\*/g, '<strong class="font-semibold text-primary">$1</strong>');
+    return `<li class="text-base text-foreground mb-3 leading-relaxed ml-6 pl-2 relative before:content-['•'] before:absolute before:left-0 before:text-primary before:font-bold before:text-lg">${processed}</li>`;
+  });
+  
+  // Group consecutive list items that aren't already in a ul tag
+  html = html.replace(/(<li[^>]*>.*?<\/li>)(\s*<li[^>]*>)/g, (match, first, second) => {
+    // Check if we're already inside a ul by looking backwards
+    const beforeMatch = html.substring(0, html.indexOf(match));
+    const lastUl = beforeMatch.lastIndexOf('<ul');
+    const lastLi = beforeMatch.lastIndexOf('<li');
+    if (lastUl < lastLi) {
+      // We're already in a ul, return as-is
+      return match;
+    }
+    // Wrap in ul if not already wrapped
+    return `<ul class="list-none mb-6 space-y-2">${first}${second}`;
   });
   
   // Headers with Vault colors and spacing
@@ -78,6 +99,10 @@ const markdownToHtml = (markdown: string): string => {
   // Process arrows and special formatting
   html = html.replace(/→/g, '<span class="text-primary mx-1">→</span>');
   
+  // Handle standalone bullet characters that weren't caught in list processing
+  // This handles cases where bullets are separated by blank lines
+  html = html.replace(/(<li[^>]*>.*?<\/li>)\s*\n\s*\n\s*(<li[^>]*>)/g, '$1\n$2');
+  
   // Split into paragraphs (by double newlines)
   const paragraphs = html.split(/\n\n+/);
   html = paragraphs
@@ -87,7 +112,7 @@ const markdownToHtml = (markdown: string): string => {
       // If already contains HTML tags (from headers/lists), return as-is
       if (trimmed.match(/^<[h|u|o|l]/)) return trimmed;
       // Otherwise wrap in paragraph with proper spacing
-      return `<p class="mb-4 text-sm text-foreground leading-relaxed">${trimmed.replace(/\n/g, '<br />')}</p>`;
+      return `<p class="mb-4 text-base text-foreground leading-relaxed">${trimmed.replace(/\n/g, '<br />')}</p>`;
     })
     .filter(p => p.length > 0)
     .join('\n');
@@ -142,6 +167,8 @@ interface ClientAutomationData {
   setup_status: 'pending_setup' | 'setup_in_progress' | 'setup_complete' | 'active';
   assigned_at: string;
   paid_at: string | null;
+  partner_note?: string; // Partner-only note explaining why this automation was assigned
+  automation_name?: string; // Flattened from automation.name
   client: {
     business_name: string;
     contact_name: string;
@@ -226,6 +253,7 @@ interface LeaderboardEntry {
   business_name: string;
   current_xp: number;
   current_rank: string;
+  login_streak: number;
   isCurrentUser: boolean;
 }
 
@@ -468,6 +496,16 @@ const PartnerDashboard = () => {
   const [selectedClient, setSelectedClient] = useState<string>("");
   const [selectedAutomation, setSelectedAutomation] = useState<string>("");
   const [assigning, setAssigning] = useState(false);
+  const [partnerNote, setPartnerNote] = useState<string>(""); // Partner note when assigning automation
+  const [selectedClientDetail, setSelectedClientDetail] = useState<ClientData | null>(null); // Client detail page
+  const [showClientDetail, setShowClientDetail] = useState(false); // Show client detail modal
+  const [editingClientNotes, setEditingClientNotes] = useState(false); // Editing client notes
+  const [clientIndustry, setClientIndustry] = useState<string>(""); // Client industry (partner note)
+  const [clientSize, setClientSize] = useState<string>(""); // Client size (partner note)
+  const [clientNeeds, setClientNeeds] = useState<string>(""); // Client needs (partner note)
+  const [clientProblem, setClientProblem] = useState<string>(""); // Client problem (partner note)
+  const [savingClientNotes, setSavingClientNotes] = useState(false); // Saving client notes
+  const [referralClickCount, setReferralClickCount] = useState<number>(0); // Referral link click count
   const [copied, setCopied] = useState(false);
   const [editingReferralCode, setEditingReferralCode] = useState(false);
   const [newReferralCode, setNewReferralCode] = useState("");
@@ -480,6 +518,7 @@ const PartnerDashboard = () => {
   const ticketMessagesEndRef = useRef<HTMLDivElement>(null);
   const taskCompletionRef = useRef<Set<string>>(new Set());
   const fetchingProgressionRef = useRef(false);
+  const loginDaysTaskCheckedRef = useRef<Set<string>>(new Set()); // Track which sellers we've already checked login days task for
   const [newTicketMessage, setNewTicketMessage] = useState("");
   const [sendingTicketMessage, setSendingTicketMessage] = useState(false);
   const [showTicketDialog, setShowTicketDialog] = useState(false);
@@ -499,6 +538,7 @@ const PartnerDashboard = () => {
   // Leaderboard state
   const [leaderboard, setLeaderboard] = useState<LeaderboardEntry[]>([]);
   const [loadingLeaderboard, setLoadingLeaderboard] = useState(false);
+  const [userRank, setUserRank] = useState<number | null>(null);
   
   // Progression state
   const [lessons, setLessons] = useState<PartnerLesson[]>([]);
@@ -578,6 +618,11 @@ const PartnerDashboard = () => {
   const [activeChallenges, setActiveChallenges] = useState<PartnerChallenge[]>([]);
   const [earnedBadges, setEarnedBadges] = useState<BadgeEarning[]>([]);
   const [allBadges, setAllBadges] = useState<PartnerBadge[]>([]);
+  
+  // Login streak details
+  const [loginStreakXP, setLoginStreakXP] = useState(0);
+  const [consecutiveLoginDays, setConsecutiveLoginDays] = useState(0);
+  const [timeUntilNextDay, setTimeUntilNextDay] = useState({ hours: 0, minutes: 0, seconds: 0 });
 
   useEffect(() => {
     if (!authLoading && !user) {
@@ -1044,6 +1089,8 @@ const PartnerDashboard = () => {
         setup_status: ca.setup_status || 'pending_setup',
         assigned_at: ca.assigned_at,
         paid_at: ca.paid_at,
+        partner_note: ca.partner_note || null, // Include partner note
+        automation_name: ca.automation?.name || '', // Flatten automation name for easier access
         client: ca.client,
         automation: ca.automation,
       }));
@@ -1188,6 +1235,13 @@ const PartnerDashboard = () => {
         setTimeout(async () => {
           await checkWeeklyChallenges('login');
         }, 1000);
+        
+        // Fetch login streak XP and calculate consecutive days
+        await fetchLoginStreakData(seller.id);
+        
+        // Fetch referral click count (for Verified Plus task)
+        const clickCount = await fetchReferralClickCount(seller.id);
+        setReferralClickCount(clickCount);
       }
       
       // Fetch leaderboard
@@ -1336,6 +1390,70 @@ const PartnerDashboard = () => {
   };
 
   const [loadingLessons, setLoadingLessons] = useState(true);
+
+  // Fetch login streak XP and calculate consecutive days from activity log
+  const fetchLoginStreakData = async (sellerId: string) => {
+    try {
+      // Fetch all login_day events to calculate XP earned
+      const { data: loginDays } = await supabase
+        .from("partner_activity_log")
+        .select("xp_value, metadata")
+        .eq("seller_id", sellerId)
+        .eq("event_type", "login_day")
+        .order("created_at", { ascending: false });
+
+      // Calculate total XP from login days
+      const totalXP = (loginDays || []).reduce((sum, log) => sum + (log.xp_value || 0), 0);
+      setLoginStreakXP(totalXP);
+
+      // Calculate consecutive days from activity log (same logic as task check)
+      let consecutiveStreak = 0;
+      if (loginDays && loginDays.length > 0) {
+        const loginDates = Array.from(
+          new Set(loginDays.map((log: any) => log.metadata?.login_date).filter(Boolean))
+        ).sort().reverse();
+
+        if (loginDates.length > 0) {
+          consecutiveStreak = 1;
+          for (let i = 1; i < loginDates.length; i++) {
+            const currentDate = new Date(loginDates[i - 1] + 'T00:00:00');
+            const previousDate = new Date(loginDates[i] + 'T00:00:00');
+            const daysBetween = Math.floor((currentDate.getTime() - previousDate.getTime()) / (1000 * 60 * 60 * 24));
+            
+            if (daysBetween === 1) {
+              consecutiveStreak++;
+            } else {
+              break;
+            }
+          }
+        }
+      }
+      setConsecutiveLoginDays(consecutiveStreak);
+    } catch (error) {
+      console.error("Error fetching login streak data:", error);
+    }
+  };
+
+  // Update countdown to next day
+  useEffect(() => {
+    const updateCountdown = () => {
+      const now = new Date();
+      const tomorrow = new Date(now);
+      tomorrow.setDate(tomorrow.getDate() + 1);
+      tomorrow.setHours(0, 0, 0, 0);
+      
+      const diff = tomorrow.getTime() - now.getTime();
+      const hours = Math.floor(diff / (1000 * 60 * 60));
+      const minutes = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60));
+      const seconds = Math.floor((diff % (1000 * 60)) / 1000);
+      
+      setTimeUntilNextDay({ hours, minutes, seconds });
+    };
+
+    updateCountdown();
+    const interval = setInterval(updateCountdown, 1000);
+    return () => clearInterval(interval);
+  }, []);
 
   const fetchProgressionData = async (sellerId: string, sellerRank?: PartnerRank) => {
     // Prevent multiple simultaneous calls
@@ -1504,7 +1622,11 @@ const PartnerDashboard = () => {
       // Check and complete "Log In on 2 Different Days" task if needed
       // This runs on dashboard load, so it will catch login days added via admin panel
       const loginDaysLesson = lessonsData.find((l: any) => l.title === 'Log In on 2 Different Days' && l.rank_required === 'Apprentice Plus');
-      if (loginDaysLesson && !fetchedCompleted.has(loginDaysLesson.id)) {
+      // Only check once per seller per session to prevent spam
+      if (loginDaysLesson && !fetchedCompleted.has(loginDaysLesson.id) && !loginDaysTaskCheckedRef.current.has(sellerId)) {
+        // Mark as checked for this seller to prevent duplicate checks
+        loginDaysTaskCheckedRef.current.add(sellerId);
+        
         // Check unique login days count
         const { data: loginDays } = await supabase
           .from("partner_activity_log")
@@ -1529,19 +1651,38 @@ const PartnerDashboard = () => {
               .maybeSingle();
 
             if (!existingCompletion) {
-              // Complete the task
-              try {
-                await addXP(loginDaysLesson.xp_reward, 'task_completed', `Completed: ${loginDaysLesson.title}`, { 
-                  lesson_id: loginDaysLesson.id 
-                }, sellerId);
+              // Complete the task - but check one more time if it was completed in another tab/window
+              const { data: doubleCheckCompletion } = await supabase
+                .from("partner_activity_log")
+                .select("id")
+                .eq("seller_id", sellerId)
+                .eq("event_type", "task_completed")
+                .eq("metadata->>lesson_id", loginDaysLesson.id)
+                .maybeSingle();
+              
+              if (!doubleCheckCompletion) {
+                // Complete the task
+                try {
+                  await addXP(loginDaysLesson.xp_reward, 'task_completed', `Completed: ${loginDaysLesson.title}`, { 
+                    lesson_id: loginDaysLesson.id 
+                  }, sellerId);
+                  setCompletedLessons(prev => new Set([...prev, loginDaysLesson.id]));
+                  toast({
+                    title: "Task Completed! 🎉",
+                    description: `You've logged in on 2 different days and earned ${loginDaysLesson.xp_reward} XP!`,
+                  });
+                } catch (error) {
+                  console.error("Error completing login days task:", error);
+                  // Remove from checked set if there was an error so it can be retried
+                  loginDaysTaskCheckedRef.current.delete(sellerId);
+                }
+              } else {
+                // Already completed, just mark it in state without showing popup
                 setCompletedLessons(prev => new Set([...prev, loginDaysLesson.id]));
-                toast({
-                  title: "Task Completed! 🎉",
-                  description: `You've logged in on 2 different days and earned ${loginDaysLesson.xp_reward} XP!`,
-                });
-              } catch (error) {
-                console.error("Error completing login days task:", error);
               }
+            } else {
+              // Already completed, just mark it in state without showing popup
+              setCompletedLessons(prev => new Set([...prev, loginDaysLesson.id]));
             }
           }
         }
@@ -1947,22 +2088,33 @@ const PartnerDashboard = () => {
   const fetchLeaderboard = async (currentSellerId: string) => {
     setLoadingLeaderboard(true);
     try {
-      // Fetch top sellers by current_xp (excluding "The Vault Network")
-      const { data: sellers, error } = await supabase
+      // Fetch all sellers by current_xp to calculate user's rank (excluding "The Vault Network")
+      const { data: allSellers, error: allError } = await supabase
         .from("sellers")
-        .select("id, business_name, current_xp, current_rank")
+        .select("id, business_name, current_xp, current_rank, login_streak")
         .neq("business_name", "The Vault Network")
-        .order("current_xp", { ascending: false })
-        .limit(10);
+        .order("current_xp", { ascending: false });
 
-      if (error) throw error;
+      if (allError) throw allError;
+
+      // Find user's rank (position in sorted list)
+      const userIndex = allSellers?.findIndex(seller => seller.id === currentSellerId);
+      if (userIndex !== undefined && userIndex !== -1) {
+        setUserRank(userIndex + 1); // Rank is 1-based
+      } else {
+        setUserRank(null);
+      }
+
+      // Get top 10 for display
+      const topSellers = (allSellers || []).slice(0, 10);
 
       // Transform to leaderboard entries with ranks
-      const entries: LeaderboardEntry[] = (sellers || []).map((seller, index) => ({
+      const entries: LeaderboardEntry[] = topSellers.map((seller, index) => ({
         rank: index + 1,
         business_name: seller.business_name,
         current_xp: seller.current_xp || 0,
         current_rank: seller.current_rank || 'Recruit',
+        login_streak: seller.login_streak || 0,
         isCurrentUser: seller.id === currentSellerId,
       }));
 
@@ -2258,13 +2410,63 @@ const PartnerDashboard = () => {
         }
       } else if (data && !data.success) {
         console.error("Rank up failed:", data);
-        // Log missing tasks if available
+        // Log detailed task information for debugging
         if (data.missing_tasks && Array.isArray(data.missing_tasks)) {
-          console.log("Missing tasks:", data.missing_tasks);
+          console.log("❌ Missing tasks:", data.missing_tasks);
+          console.log(`📊 Progress: ${data.completed_tasks || 0} / ${data.total_tasks || 0} countable tasks completed`);
+          
+          // Log completed tasks if available
+          if (data.completed_task_ids && Array.isArray(data.completed_task_ids)) {
+            console.log("✅ Completed tasks:", data.completed_task_ids);
+            console.log(`✅ Total completed: ${data.completed_task_ids.length} tasks`);
+          }
+          
+          // Log which specific task is missing
+          if (data.missing_tasks.length > 0) {
+            console.log(`🔍 Missing task ID: ${data.missing_tasks[0]}`);
+            console.log(`🔍 All missing tasks: ${data.missing_tasks.join(', ')}`);
+            
+            // For each missing task, check if it's actually in the activity log
+            const checkMissingTask = async (taskId: string) => {
+              try {
+                const { data: activityLog } = await supabase
+                  .from("partner_activity_log")
+                  .select("id, event_type, metadata, created_at")
+                  .eq("seller_id", sellerData?.id)
+                  .in("event_type", ["task_completed", "quiz_completed", "lesson_completed"])
+                  .eq("metadata->>lesson_id", taskId)
+                  .order("created_at", { ascending: false })
+                  .limit(5);
+                
+                if (activityLog && activityLog.length > 0) {
+                  console.log(`⚠️ Found activity log entries for missing task ${taskId}:`, activityLog);
+                  console.log(`⚠️ This task SHOULD be marked as completed! Check the is_lesson_completed function.`);
+                } else {
+                  console.log(`❌ No activity log entries found for missing task ${taskId}`);
+                  console.log(`❌ This task has NOT been completed.`);
+                }
+              } catch (error) {
+                console.error(`Error checking task ${taskId}:`, error);
+              }
+            };
+            
+            // Check the first missing task
+            if (data.missing_tasks[0] && sellerData?.id) {
+              checkMissingTask(data.missing_tasks[0]);
+            }
+          }
+        }
+        // Show more detailed error message with task count if available
+        let errorMessage = data.message || "Requirements not met";
+        if (data.completed_tasks !== undefined && data.total_tasks !== undefined) {
+          errorMessage += ` (${data.completed_tasks}/${data.total_tasks} tasks completed)`;
+        }
+        if (data.missing_tasks && data.missing_tasks.length > 0) {
+          errorMessage += `. Missing: ${data.missing_tasks.join(', ')}`;
         }
         toast({
           title: "Cannot advance rank",
-          description: data.message || "Requirements not met",
+          description: errorMessage,
           variant: data.error === 'not_enough_xp' ? 'default' : 'destructive',
         });
       }
@@ -3504,9 +3706,13 @@ const PartnerDashboard = () => {
         automation_id: selectedAutomation,
         seller_id: sellerData?.id,
         status: "active",
+        partner_note: partnerNote.trim() || null, // Add partner note (for Verified Plus task)
       });
 
       if (error) throw error;
+      
+      // Clear partner note after assignment
+      setPartnerNote("");
 
       toast({
         title: "Automation Assigned!",
@@ -3548,6 +3754,17 @@ const PartnerDashboard = () => {
 
       setSelectedClient("");
       setSelectedAutomation("");
+      setPartnerNote(""); // Clear partner note
+      
+      // Refresh clients to show updated data
+      if (sellerData?.id) {
+        await fetchSellerData();
+        
+        // Check "Create Demo Automation Plan" task if this was a demo client assignment with note
+        if (isDemoClient && partnerNote.trim()) {
+          await checkDemoAutomationPlanTask(sellerData.id);
+        }
+      }
     } catch (error: any) {
       toast({
         title: "Assignment failed",
@@ -3556,6 +3773,217 @@ const PartnerDashboard = () => {
       });
     } finally {
       setAssigning(false);
+    }
+  };
+
+  // Fetch referral click count for Verified Plus "Referral Funnel Exercise" task
+  const fetchReferralClickCount = async (sellerId: string) => {
+    try {
+      const { data, error } = await supabase.rpc('get_non_self_referral_clicks', {
+        _seller_id: sellerId
+      });
+      
+      if (error) {
+        console.error("Error fetching referral clicks:", error);
+        return 0;
+      }
+      
+      const clickCount = data || 0;
+      
+      // Check "Referral Funnel Exercise" task completion (5+ clicks)
+      if (clickCount >= 5 && sellerId) {
+        const referralFunnelLesson = lessons.find((l: any) => l.id === 'stage-4-verified-plus-18');
+        if (referralFunnelLesson && !completedLessons.has(referralFunnelLesson.id)) {
+          try {
+            await addXP(referralFunnelLesson.xp_reward, 'task_completed', `Completed: ${referralFunnelLesson.title}`, { 
+              lesson_id: referralFunnelLesson.id 
+            });
+            setCompletedLessons(prev => new Set([...prev, referralFunnelLesson.id]));
+            toast({
+              title: "Task Completed! 🎉",
+              description: `You've reached 5 referral link clicks and earned ${referralFunnelLesson.xp_reward} XP!`,
+            });
+          } catch (error) {
+            console.error("Error completing referral funnel task:", error);
+          }
+        }
+      }
+      
+      return clickCount;
+    } catch (error) {
+      console.error("Error fetching referral clicks:", error);
+      return 0;
+    }
+  };
+
+  // Open client detail page
+  const openClientDetail = async (client: ClientData) => {
+    try {
+      // Fetch full client data including partner notes
+      const { data: clientData, error } = await supabase
+        .from("clients")
+        .select("*")
+        .eq("id", client.id)
+        .maybeSingle();
+
+      if (error) throw error;
+
+      if (clientData) {
+        // Set client detail data
+        setSelectedClientDetail({
+          ...client,
+          ...clientData
+        } as ClientData);
+        
+        // Load partner notes if they exist
+        setClientIndustry(clientData.partner_industry || "");
+        setClientSize(clientData.partner_size || "");
+        setClientNeeds(clientData.partner_needs || "");
+        setClientProblem(clientData.partner_problem || "");
+        
+        setShowClientDetail(true);
+      }
+    } catch (error: any) {
+      toast({
+        title: "Error loading client details",
+        description: error.message,
+        variant: "destructive",
+      });
+    }
+  };
+
+  // Save client notes (for Demo Client Deep Dive task)
+  const handleSaveClientNotes = async () => {
+    if (!selectedClientDetail) return;
+
+    setSavingClientNotes(true);
+    try {
+      const { error } = await supabase
+        .from("clients")
+        .update({
+          partner_industry: clientIndustry.trim() || null,
+          partner_size: clientSize.trim() || null,
+          partner_needs: clientNeeds.trim() || null,
+          partner_problem: clientProblem.trim() || null,
+        })
+        .eq("id", selectedClientDetail.id);
+
+      if (error) throw error;
+
+      toast({
+        title: "Client Notes Saved!",
+        description: "Your client notes have been updated successfully.",
+      });
+
+      // Complete "Demo Client Deep Dive" task if all fields are filled
+      const deepDiveLesson = lessons.find((l: any) => l.id === 'stage-4-verified-plus-16');
+      if (deepDiveLesson && !completedLessons.has(deepDiveLesson.id)) {
+        const allFieldsFilled = clientIndustry.trim() && clientSize.trim() && clientNeeds.trim() && clientProblem.trim();
+        if (allFieldsFilled) {
+          try {
+            await addXP(deepDiveLesson.xp_reward, 'task_completed', `Completed: ${deepDiveLesson.title}`, { 
+              lesson_id: deepDiveLesson.id 
+            });
+            setCompletedLessons(prev => new Set([...prev, deepDiveLesson.id]));
+            toast({
+              title: "Task Completed! 🎉",
+              description: `You've completed the Demo Client Deep Dive and earned ${deepDiveLesson.xp_reward} XP!`,
+            });
+          } catch (error) {
+            console.error("Error completing demo client deep dive task:", error);
+          }
+        }
+      }
+
+      // Update client in the list
+      setClients(prev => prev.map(c => 
+        c.id === selectedClientDetail.id 
+          ? { ...c, partner_industry: clientIndustry.trim(), partner_size: clientSize.trim(), partner_needs: clientNeeds.trim(), partner_problem: clientProblem.trim() }
+          : c
+      ));
+
+      setEditingClientNotes(false);
+    } catch (error: any) {
+      toast({
+        title: "Error saving client notes",
+        description: error.message,
+        variant: "destructive",
+      });
+    } finally {
+      setSavingClientNotes(false);
+    }
+  };
+
+  // Check "Create Demo Automation Plan" task (assign 2 automations with notes to demo client)
+  const checkDemoAutomationPlanTask = async (sellerId: string) => {
+    try {
+      const demoAutomationPlanLesson = lessons.find((l: any) => l.id === 'stage-4-verified-plus-17');
+      if (!demoAutomationPlanLesson || completedLessons.has(demoAutomationPlanLesson.id)) {
+        return;
+      }
+
+      // Check if seller has assigned at least 2 automations to demo clients with partner notes
+      const { data: demoClientAutomations } = await supabase
+        .from("client_automations")
+        .select(`
+          id,
+          partner_note,
+          client:clients!client_automations_client_id_fkey (
+            is_demo
+          )
+        `)
+        .eq("seller_id", sellerId);
+
+      if (demoClientAutomations) {
+        // Filter to demo clients with partner notes
+        const demoWithNotes = demoClientAutomations.filter((ca: any) => 
+          ca.client?.is_demo === true && ca.partner_note && ca.partner_note.trim().length > 0
+        );
+
+        // Get unique automation IDs to ensure at least 2 different automations
+        const uniqueAutomationIds = new Set(
+          demoClientAutomations
+            .filter((ca: any) => ca.client?.is_demo === true && ca.partner_note && ca.partner_note.trim().length > 0)
+            .map((ca: any) => {
+              // We need to get the automation_id, but it's not in the select
+              // Let's fetch it properly
+              return ca.id;
+            })
+        );
+
+        // Re-fetch with automation_id
+        const { data: fullData } = await supabase
+          .from("client_automations")
+          .select("automation_id, partner_note, client:clients!client_automations_client_id_fkey(is_demo)")
+          .eq("seller_id", sellerId)
+          .not("partner_note", "is", null);
+
+        if (fullData) {
+          const demoAutomationsWithNotes = fullData.filter((ca: any) => 
+            ca.client?.is_demo === true && ca.partner_note && ca.partner_note.trim().length > 0
+          );
+          
+          const uniqueAutomations = new Set(demoAutomationsWithNotes.map((ca: any) => ca.automation_id));
+          
+          if (uniqueAutomations.size >= 2) {
+            // Task completed!
+            try {
+              await addXP(demoAutomationPlanLesson.xp_reward, 'task_completed', `Completed: ${demoAutomationPlanLesson.title}`, { 
+                lesson_id: demoAutomationPlanLesson.id 
+              });
+              setCompletedLessons(prev => new Set([...prev, demoAutomationPlanLesson.id]));
+              toast({
+                title: "Task Completed! 🎉",
+                description: `You've created a demo automation plan and earned ${demoAutomationPlanLesson.xp_reward} XP!`,
+              });
+            } catch (error) {
+              console.error("Error completing demo automation plan task:", error);
+            }
+          }
+        }
+      }
+    } catch (error) {
+      console.error("Error checking demo automation plan task:", error);
     }
   };
 
@@ -4000,6 +4428,175 @@ const PartnerDashboard = () => {
     }
   }, [showTicketDialog, ticketChannel]);
 
+  // Memoize rank progression UI calculation to prevent excessive re-renders
+  const rankProgressionUI = useMemo(() => {
+    if (!sellerData?.current_xp && sellerData?.current_xp !== 0) return null;
+    if (!sellerData?.current_rank) return null;
+
+    // If user has Partner Pro subscription, show different UI
+    const hasPartnerPro = sellerData.partner_pro_subscription_status === 'active';
+    const effectiveRank = hasPartnerPro ? 'Partner Pro' : sellerData.current_rank;
+    const nextRank = getNextRank(sellerData.current_rank);
+    const isPartnerPlusRank = sellerData.current_rank === 'Partner Plus';
+    const showPartnerProUpgrade = isPartnerPlusRank && !hasPartnerPro;
+    
+    // For Partner Plus rank, Partner Pro is a paid upgrade, not free
+    if (showPartnerProUpgrade) {
+      return (
+        <div className="mt-3 p-3 bg-primary/10 border border-primary/20 rounded-lg">
+          <div className="flex items-center justify-between gap-3">
+            <div className="flex items-center gap-2">
+              <Zap className="w-4 h-4 text-primary" />
+              <p className="text-sm text-muted-foreground">
+                Ready to unlock <strong className="text-primary">Partner Pro</strong>?
+              </p>
+            </div>
+            <div className="flex gap-2">
+              <Button
+                onClick={() => setShowPartnerProDetails(true)}
+                variant="outline"
+                size="sm"
+                className="border-primary/50 text-primary hover:bg-primary/10"
+              >
+                Find out more
+              </Button>
+              <Button
+                onClick={handlePartnerProCheckout}
+                className="bg-primary/50 hover:bg-primary/50 text-primary-foreground cursor-not-allowed"
+                size="sm"
+                disabled
+              >
+                <Trophy className="w-4 h-4 mr-2" />
+                Coming Soon
+              </Button>
+            </div>
+          </div>
+        </div>
+      );
+    }
+    
+    // If user has Partner Pro, don't show XP progression (they're at max rank)
+    if (hasPartnerPro) {
+      return (
+        <div className="mt-3 p-3 bg-primary/10 border border-primary/20 rounded-lg">
+          <div className="flex items-center gap-2">
+            <Trophy className="w-4 h-4 text-primary" />
+            <p className="text-sm text-muted-foreground">
+              You've reached <strong className="text-primary">Partner Pro</strong> - the highest tier! Continue earning XP and completing tasks to unlock exclusive rewards.
+            </p>
+          </div>
+        </div>
+      );
+    }
+    
+    // For other ranks, show normal progression
+    if (!nextRank) return null;
+    
+    // Safety check: ensure current rank exists in RANK_INFO
+    if (!RANK_INFO[sellerData.current_rank as PartnerRank]) {
+      console.warn(`Invalid rank: ${sellerData.current_rank}`);
+      return null;
+    }
+    
+    const progress = calculateProgressToNextRank(sellerData.current_xp || 0, sellerData.current_rank as PartnerRank);
+    // Get tasks required for the CURRENT rank - only count tasks visible in the UI (rank_required === currentRank)
+    // This matches what's displayed in the Learning Journey section
+    const currentRank = sellerData.current_rank;
+    // Filter lessons to only show current rank (matches UI display)
+    const visibleLessons = lessons.filter(lesson => lesson.rank_required === currentRank);
+    // Filter to count only tasks, quizzes, and courses with quizzes (courses without quizzes don't count)
+    const currentRankTasks = visibleLessons.filter(lesson => isCountableTask(lesson)).map(lesson => lesson.id);
+    const completedTasks = currentRankTasks.filter(taskId => completedLessons.has(taskId));
+    const allTasksCompleted = currentRankTasks.length === 0 || completedTasks.length === currentRankTasks.length;
+    const nextRankThreshold = nextRank ? getRankInfo(nextRank).xpThreshold : 0;
+    const xpThresholdMet = (sellerData.current_xp || 0) >= nextRankThreshold;
+    const canAdvance = allTasksCompleted && xpThresholdMet;
+    
+    return (
+      <>
+        <Progress value={progress.percentage} className="h-2 mb-1" />
+        <div className="flex items-center justify-between mb-2">
+          <p className="text-xs text-muted-foreground">
+            {sellerData?.current_rank === 'Partner Plus' && nextRank === 'Partner Pro' 
+              ? 'Ready to upgrade to Partner Pro' 
+              : `${progress.current} / ${progress.next} XP to ${nextRank}`}
+          </p>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="text-xs text-primary hover:text-primary/80"
+            onClick={() => setShowRanksDialog(true)}
+          >
+            View All Ranks
+          </Button>
+        </div>
+        
+        {/* XP Requirement Check */}
+        {!xpThresholdMet && (
+          <div className="mt-3 p-3 bg-primary/10 border border-primary/20 rounded-lg">
+            <div className="flex items-start gap-2">
+              <AlertCircle className="w-4 h-4 text-primary flex-shrink-0 mt-0.5" />
+              <div className="flex-1">
+                <p className="text-xs font-semibold text-primary mb-1">
+                  Not enough XP
+                </p>
+                <p className="text-xs text-muted-foreground">
+                  You need {nextRankThreshold - (sellerData.current_xp || 0)} more XP to reach {nextRank} rank.
+                </p>
+              </div>
+            </div>
+          </div>
+        )}
+        
+        {/* Tasks Requirement Check (only show if XP is met) */}
+        {xpThresholdMet && !allTasksCompleted && (
+          <div className="mt-3 p-3 bg-accent/10 border border-accent/20 rounded-lg">
+            <div className="flex items-start gap-2">
+              <AlertCircle className="w-4 h-4 text-accent flex-shrink-0 mt-0.5" />
+              <div className="flex-1">
+                <p className="text-xs font-semibold text-accent mb-1">
+                  Complete all tasks to advance
+                </p>
+                <p className="text-xs text-muted-foreground">
+                  You have enough XP, but you need to complete all {currentRankTasks.length} task{currentRankTasks.length !== 1 ? 's' : ''} for {currentRank} rank before advancing to {nextRank}.
+                </p>
+                <p className="text-xs text-muted-foreground mt-1">
+                  Completed: {completedTasks.length} / {currentRankTasks.length} task{currentRankTasks.length !== 1 ? 's' : ''}
+                </p>
+              </div>
+            </div>
+          </div>
+        )}
+        
+        {/* Rank Up Button (only show if both requirements met) */}
+        {canAdvance && (
+          <div className="mt-3 p-3 bg-primary/10 border border-primary/20 rounded-lg">
+            <div className="flex items-start gap-2 mb-3">
+              <CheckCircle className="w-4 h-4 text-primary flex-shrink-0 mt-0.5" />
+              <div className="flex-1">
+                <p className="text-xs font-semibold text-primary mb-1">
+                  Ready to advance!
+                </p>
+                <p className="text-xs text-muted-foreground">
+                  You've completed all tasks and reached the XP threshold for {nextRank}.
+                </p>
+              </div>
+            </div>
+            <Button
+              onClick={sellerData?.current_rank === 'Partner Plus' && nextRank === 'Partner Pro' ? handlePartnerProCheckout : handleManualRankUp}
+              className={`w-full ${sellerData?.current_rank === 'Partner Plus' && nextRank === 'Partner Pro' ? 'bg-primary/50 hover:bg-primary/50 cursor-not-allowed' : 'bg-primary hover:bg-primary/90'} text-primary-foreground`}
+              size="sm"
+              disabled={sellerData?.current_rank === 'Partner Plus' && nextRank === 'Partner Pro'}
+            >
+              <Trophy className="w-4 h-4 mr-2" />
+              {sellerData?.current_rank === 'Partner Plus' && nextRank === 'Partner Pro' ? 'Coming Soon' : `Advance to ${nextRank}`}
+            </Button>
+          </div>
+        )}
+      </>
+    );
+  }, [sellerData?.current_rank, sellerData?.current_xp, sellerData?.partner_pro_subscription_status, completedLessons, lessons]);
+
   if (authLoading || loading) {
     return (
       <div className="min-h-screen bg-background flex items-center justify-center">
@@ -4123,186 +4720,7 @@ const PartnerDashboard = () => {
                         </div>
                       </div>
                     </div>
-                    {(() => {
-                      // If user has Partner Pro subscription, show different UI
-                      const hasPartnerPro = sellerData.partner_pro_subscription_status === 'active';
-                      const effectiveRank = hasPartnerPro ? 'Partner Pro' : sellerData.current_rank;
-                      const nextRank = getNextRank(sellerData.current_rank);
-                      const isPartnerPlusRank = sellerData.current_rank === 'Partner Plus';
-                      const showPartnerProUpgrade = isPartnerPlusRank && !hasPartnerPro;
-                      
-                      // For Partner Plus rank, Partner Pro is a paid upgrade, not free
-                      if (showPartnerProUpgrade) {
-                        return (
-                          <div className="mt-3 p-3 bg-primary/10 border border-primary/20 rounded-lg">
-                            <div className="flex items-center justify-between gap-3">
-                              <div className="flex items-center gap-2">
-                                <Zap className="w-4 h-4 text-primary" />
-                                <p className="text-sm text-muted-foreground">
-                                  Ready to unlock <strong className="text-primary">Partner Pro</strong>?
-                                </p>
-                              </div>
-                              <div className="flex gap-2">
-                                <Button
-                                  onClick={() => setShowPartnerProDetails(true)}
-                                  variant="outline"
-                                  size="sm"
-                                  className="border-primary/50 text-primary hover:bg-primary/10"
-                                >
-                                  Find out more
-                                </Button>
-                                <Button
-                                  onClick={handlePartnerProCheckout}
-                                  className="bg-primary/50 hover:bg-primary/50 text-primary-foreground cursor-not-allowed"
-                                  size="sm"
-                                  disabled
-                                >
-                                  <Trophy className="w-4 h-4 mr-2" />
-                                  Coming Soon
-                                </Button>
-                              </div>
-                            </div>
-                          </div>
-                        );
-                      }
-                      
-                      // If user has Partner Pro, don't show XP progression (they're at max rank)
-                      if (hasPartnerPro) {
-                        return (
-                          <div className="mt-3 p-3 bg-primary/10 border border-primary/20 rounded-lg">
-                            <div className="flex items-center gap-2">
-                              <Trophy className="w-4 h-4 text-primary" />
-                              <p className="text-sm text-muted-foreground">
-                                You've reached <strong className="text-primary">Partner Pro</strong> - the highest tier! Continue earning XP and completing tasks to unlock exclusive rewards.
-                              </p>
-                            </div>
-                          </div>
-                        );
-                      }
-                      
-                      // For other ranks, show normal progression
-                      if (!nextRank) return null;
-                      
-                      // Safety check: ensure current rank exists in RANK_INFO
-                      if (!RANK_INFO[sellerData.current_rank as PartnerRank]) {
-                        console.warn(`Invalid rank: ${sellerData.current_rank}`);
-                        return null;
-                      }
-                      
-                      const progress = calculateProgressToNextRank(sellerData.current_xp || 0, sellerData.current_rank as PartnerRank);
-                      // Get tasks required for the CURRENT rank - only count tasks visible in the UI (rank_required === currentRank)
-                      // This matches what's displayed in the Learning Journey section
-                      const currentRank = sellerData.current_rank;
-                      // Filter lessons to only show current rank (matches UI display)
-                      const visibleLessons = lessons.filter(lesson => lesson.rank_required === currentRank);
-                      // Filter to count only tasks, quizzes, and courses with quizzes (courses without quizzes don't count)
-                      const currentRankTasks = visibleLessons.filter(lesson => isCountableTask(lesson)).map(lesson => lesson.id);
-                      const completedTasks = currentRankTasks.filter(taskId => completedLessons.has(taskId));
-                      const allTasksCompleted = currentRankTasks.length === 0 || completedTasks.length === currentRankTasks.length;
-                      const nextRankThreshold = nextRank ? getRankInfo(nextRank).xpThreshold : 0;
-                      const xpThresholdMet = (sellerData.current_xp || 0) >= nextRankThreshold;
-                      const canAdvance = allTasksCompleted && xpThresholdMet;
-                      
-                      // Debug logging for rank advancement check
-                      console.log("🔍 [RANK-ADVANCE] Checking advancement requirements:", {
-                        currentRank,
-                        nextRank,
-                        currentXP: sellerData.current_xp || 0,
-                        nextRankThreshold,
-                        xpThresholdMet,
-                        totalTasksForCurrentRank: currentRankTasks.length,
-                        completedTasksForCurrentRank: completedTasks.length,
-                        allTasksCompleted,
-                        canAdvance,
-                        taskIds: currentRankTasks,
-                        completedTaskIds: completedTasks,
-                        missingTaskIds: currentRankTasks.filter(id => !completedTasks.includes(id))
-                      });
-                      
-                      return (
-                        <>
-                          <Progress value={progress.percentage} className="h-2 mb-1" />
-                          <div className="flex items-center justify-between mb-2">
-                            <p className="text-xs text-muted-foreground">
-                              {sellerData?.current_rank === 'Partner Plus' && nextRank === 'Partner Pro' 
-                                ? 'Ready to upgrade to Partner Pro' 
-                                : `${progress.current} / ${progress.next} XP to ${nextRank}`}
-                            </p>
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              className="text-xs text-primary hover:text-primary/80"
-                              onClick={() => setShowRanksDialog(true)}
-                            >
-                              View All Ranks
-                            </Button>
-                          </div>
-                          
-                          {/* XP Requirement Check */}
-                          {!xpThresholdMet && (
-                            <div className="mt-3 p-3 bg-primary/10 border border-primary/20 rounded-lg">
-                              <div className="flex items-start gap-2">
-                                <AlertCircle className="w-4 h-4 text-primary flex-shrink-0 mt-0.5" />
-                                <div className="flex-1">
-                                  <p className="text-xs font-semibold text-primary mb-1">
-                                    Not enough XP
-                                  </p>
-                                  <p className="text-xs text-muted-foreground">
-                                    You need {nextRankThreshold - (sellerData.current_xp || 0)} more XP to reach {nextRank} rank.
-                                  </p>
-                                </div>
-                              </div>
-                            </div>
-                          )}
-                          
-                          {/* Tasks Requirement Check (only show if XP is met) */}
-                          {xpThresholdMet && !allTasksCompleted && (
-                            <div className="mt-3 p-3 bg-accent/10 border border-accent/20 rounded-lg">
-                              <div className="flex items-start gap-2">
-                                <AlertCircle className="w-4 h-4 text-accent flex-shrink-0 mt-0.5" />
-                                <div className="flex-1">
-                                  <p className="text-xs font-semibold text-accent mb-1">
-                                    Complete all tasks to advance
-                                  </p>
-                                  <p className="text-xs text-muted-foreground">
-                                    You have enough XP, but you need to complete all {currentRankTasks.length} task{currentRankTasks.length !== 1 ? 's' : ''} for {currentRank} rank before advancing to {nextRank}.
-                                  </p>
-                                  <p className="text-xs text-muted-foreground mt-1">
-                                    Completed: {completedTasks.length} / {currentRankTasks.length} task{currentRankTasks.length !== 1 ? 's' : ''}
-                                  </p>
-                                </div>
-                              </div>
-                            </div>
-                          )}
-                          
-                          {/* Rank Up Button (only show if both requirements met) */}
-                          {canAdvance && (
-                            <div className="mt-3 p-3 bg-primary/10 border border-primary/20 rounded-lg">
-                              <div className="flex items-start gap-2 mb-3">
-                                <CheckCircle className="w-4 h-4 text-primary flex-shrink-0 mt-0.5" />
-                                <div className="flex-1">
-                                  <p className="text-xs font-semibold text-primary mb-1">
-                                    Ready to advance!
-                                  </p>
-                                  <p className="text-xs text-muted-foreground">
-                                    You've completed all tasks and reached the XP threshold for {nextRank}.
-                                  </p>
-                                </div>
-                              </div>
-                              <Button
-                                onClick={sellerData?.current_rank === 'Partner Plus' && nextRank === 'Partner Pro' ? handlePartnerProCheckout : handleManualRankUp}
-                                className={`w-full ${sellerData?.current_rank === 'Partner Plus' && nextRank === 'Partner Pro' ? 'bg-primary/50 hover:bg-primary/50 cursor-not-allowed' : 'bg-primary hover:bg-primary/90'} text-primary-foreground`}
-                                size="sm"
-                                disabled={sellerData?.current_rank === 'Partner Plus' && nextRank === 'Partner Pro'}
-                              >
-                                <Trophy className="w-4 h-4 mr-2" />
-                                {sellerData?.current_rank === 'Partner Plus' && nextRank === 'Partner Pro' ? 'Coming Soon' : `Advance to ${nextRank}`}
-                              </Button>
-                            </div>
-                          )}
-                        </>
-                      );
-                    })()}
+                    {rankProgressionUI}
                     {!getNextRank(sellerData.current_rank) && (
                       <div className="flex justify-end">
                         <Button
@@ -4359,6 +4777,199 @@ const PartnerDashboard = () => {
                   >
                     Continue
                   </Button>
+                </div>
+              </div>
+            </DialogContent>
+          </Dialog>
+
+          {/* Client Detail Modal */}
+          <Dialog open={showClientDetail} onOpenChange={setShowClientDetail}>
+            <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
+              <DialogHeader>
+                <DialogTitle className="text-xl text-primary flex items-center gap-2">
+                  <Users className="w-5 h-5" />
+                  {selectedClientDetail?.business_name}
+                  {selectedClientDetail?.is_demo && (
+                    <Badge variant="outline" className="ml-2">Demo Client</Badge>
+                  )}
+                </DialogTitle>
+                <DialogDescription>
+                  {selectedClientDetail?.contact_name} • {selectedClientDetail?.contact_email || 'No email'}
+                </DialogDescription>
+              </DialogHeader>
+              <div className="space-y-6 py-4">
+                {/* Client Basic Info */}
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <Label className="text-sm font-medium text-muted-foreground">Status</Label>
+                    <div className="mt-1">
+                      <Badge variant={selectedClientDetail?.status === "active" ? "default" : "secondary"}>
+                        {selectedClientDetail?.status}
+                      </Badge>
+                    </div>
+                  </div>
+                  <div>
+                    <Label className="text-sm font-medium text-muted-foreground">Total Spent</Label>
+                    <div className="mt-1 text-lg font-semibold">
+                      ${selectedClientDetail?.total_spent.toFixed(2) || "0.00"}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Partner Notes Section (for Verified Plus "Demo Client Deep Dive" task) */}
+                {sellerData?.current_rank && ['Verified Plus', 'Partner', 'Partner Plus', 'Partner Pro'].includes(sellerData.current_rank) && (
+                  <div className="space-y-4 border-t border-border pt-4">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <h3 className="text-lg font-semibold text-primary">Client Details</h3>
+                        <p className="text-sm text-muted-foreground">Add detailed information about this client</p>
+                      </div>
+                      {!editingClientNotes && (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => setEditingClientNotes(true)}
+                        >
+                          {clientIndustry || clientSize || clientNeeds || clientProblem ? "Edit Notes" : "Add Notes"}
+                        </Button>
+                      )}
+                    </div>
+
+                    {editingClientNotes ? (
+                      <div className="space-y-4">
+                        <div className="space-y-2">
+                          <Label htmlFor="client-industry">Industry</Label>
+                          <Input
+                            id="client-industry"
+                            value={clientIndustry}
+                            onChange={(e) => setClientIndustry(e.target.value)}
+                            placeholder="e.g., E-commerce, SaaS, Healthcare"
+                            className="bg-input border-border text-foreground"
+                          />
+                        </div>
+                        <div className="space-y-2">
+                          <Label htmlFor="client-size">Size</Label>
+                          <Input
+                            id="client-size"
+                            value={clientSize}
+                            onChange={(e) => setClientSize(e.target.value)}
+                            placeholder="e.g., Small (1-10), Medium (11-50), Large (50+)"
+                            className="bg-input border-border text-foreground"
+                          />
+                        </div>
+                        <div className="space-y-2">
+                          <Label htmlFor="client-needs">Needs</Label>
+                          <Textarea
+                            id="client-needs"
+                            value={clientNeeds}
+                            onChange={(e) => setClientNeeds(e.target.value)}
+                            placeholder="Describe the client's needs and requirements..."
+                            className="min-h-[80px] bg-input border-border text-foreground"
+                            rows={3}
+                          />
+                        </div>
+                        <div className="space-y-2">
+                          <Label htmlFor="client-problem">Problem</Label>
+                          <Textarea
+                            id="client-problem"
+                            value={clientProblem}
+                            onChange={(e) => setClientProblem(e.target.value)}
+                            placeholder="Describe the problem or challenge this client is facing..."
+                            className="min-h-[80px] bg-input border-border text-foreground"
+                            rows={3}
+                          />
+                        </div>
+                        <div className="flex gap-2">
+                          <Button
+                            onClick={handleSaveClientNotes}
+                            disabled={savingClientNotes}
+                            className="flex-1"
+                          >
+                            {savingClientNotes ? "Saving..." : "Save Notes"}
+                          </Button>
+                          <Button
+                            variant="outline"
+                            onClick={() => {
+                              setEditingClientNotes(false);
+                              // Reset to saved values if canceling
+                              if (selectedClientDetail) {
+                                setClientIndustry((selectedClientDetail as any).partner_industry || "");
+                                setClientSize((selectedClientDetail as any).partner_size || "");
+                                setClientNeeds((selectedClientDetail as any).partner_needs || "");
+                                setClientProblem((selectedClientDetail as any).partner_problem || "");
+                              }
+                            }}
+                          >
+                            Cancel
+                          </Button>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="space-y-3">
+                        {clientIndustry && (
+                          <div>
+                            <Label className="text-sm font-medium text-muted-foreground">Industry</Label>
+                            <p className="mt-1 text-sm">{clientIndustry}</p>
+                          </div>
+                        )}
+                        {clientSize && (
+                          <div>
+                            <Label className="text-sm font-medium text-muted-foreground">Size</Label>
+                            <p className="mt-1 text-sm">{clientSize}</p>
+                          </div>
+                        )}
+                        {clientNeeds && (
+                          <div>
+                            <Label className="text-sm font-medium text-muted-foreground">Needs</Label>
+                            <p className="mt-1 text-sm whitespace-pre-wrap">{clientNeeds}</p>
+                          </div>
+                        )}
+                        {clientProblem && (
+                          <div>
+                            <Label className="text-sm font-medium text-muted-foreground">Problem</Label>
+                            <p className="mt-1 text-sm whitespace-pre-wrap">{clientProblem}</p>
+                          </div>
+                        )}
+                        {!clientIndustry && !clientSize && !clientNeeds && !clientProblem && (
+                          <p className="text-sm text-muted-foreground italic">
+                            No client details added yet. Click "Add Notes" to get started.
+                          </p>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* Assigned Automations */}
+                <div className="border-t border-border pt-4">
+                  <h3 className="text-lg font-semibold text-primary mb-4">Assigned Automations</h3>
+                  {clientAutomations.filter(ca => ca.client_id === selectedClientDetail?.id).length === 0 ? (
+                    <p className="text-sm text-muted-foreground">No automations assigned yet.</p>
+                  ) : (
+                    <div className="space-y-2">
+                      {clientAutomations
+                        .filter(ca => ca.client_id === selectedClientDetail?.id)
+                        .map((ca) => (
+                          <Card key={ca.id} className="bg-muted/20 border-border p-3">
+                            <div className="flex items-start justify-between">
+                              <div className="flex-1">
+                                <div className="font-medium text-sm">{ca.automation_name}</div>
+                                <div className="text-xs text-muted-foreground mt-1">
+                                  Status: <Badge variant="outline" className="text-xs">{ca.setup_status}</Badge>
+                                </div>
+                                {/* Show partner note if exists */}
+                                {ca.partner_note && (
+                                  <div className="mt-2 p-2 bg-primary/10 border border-primary/20 rounded text-xs">
+                                    <p className="font-medium text-primary mb-1">Your Note:</p>
+                                    <p className="text-muted-foreground whitespace-pre-wrap">{ca.partner_note}</p>
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+                          </Card>
+                        ))}
+                    </div>
+                  )}
                 </div>
               </div>
             </DialogContent>
@@ -4853,14 +5464,22 @@ const PartnerDashboard = () => {
                           <div className="flex items-center justify-between mb-2">
                             <span className="font-semibold text-sm">Login Streak</span>
                             <Badge variant="outline" className="text-primary border-primary">
-                              {sellerData?.login_streak || 0} {sellerData?.login_streak === 1 ? 'day' : 'days'}
+                              {consecutiveLoginDays} {consecutiveLoginDays === 1 ? 'day' : 'days'}
                             </Badge>
                           </div>
-                          <p className="text-xs text-muted-foreground">
-                            {sellerData?.login_streak && sellerData.login_streak >= 3 
-                              ? `Keep it up! ${sellerData.login_streak >= 7 ? '7+ day streak bonus active!' : '3+ day streak bonus active!'}`
-                              : 'Log in daily to build your streak and earn bonuses'}
-                          </p>
+                          <div className="flex items-center justify-between mb-1">
+                            <p className="text-xs text-muted-foreground">
+                              {loginStreakXP > 0 ? `${loginStreakXP} XP earned` : 'Log in daily to earn 200 XP'}
+                            </p>
+                            <p className="text-xs text-muted-foreground">
+                              Next: {String(timeUntilNextDay.hours).padStart(2, '0')}:{String(timeUntilNextDay.minutes).padStart(2, '0')}:{String(timeUntilNextDay.seconds).padStart(2, '0')}
+                            </p>
+                          </div>
+                          {consecutiveLoginDays >= 3 && (
+                            <p className="text-xs text-primary font-medium">
+                              {consecutiveLoginDays >= 7 ? '7+ day streak bonus active!' : '3+ day streak bonus active!'}
+                            </p>
+                          )}
                         </div>
                         <div className="p-4 bg-background rounded-lg border border-border">
                           <div className="flex items-center justify-between mb-2">
@@ -5116,7 +5735,7 @@ const PartnerDashboard = () => {
                                             {lesson.content && 
                                              lesson.lesson_type !== 'quiz' &&
                                              lesson.lesson_type !== 'task' &&
-                                             !(lesson.title === 'Understanding Automations' || lesson.title === 'The 6 Default Automations' || lesson.title === 'Sales Basics for Automation Partners' || lesson.title === 'How to Manage Clients' || lesson.title === 'Sales Foundations' || lesson.title === 'The Outreach Process') && (
+                                             !(lesson.title === 'Understanding Automations' || lesson.title === 'The 6 Default Automations' || lesson.title === 'Sales Basics for Automation Partners' || lesson.title === 'How to Manage Clients' || lesson.title === 'Sales Foundations' || lesson.title === 'The Outreach Process' || lesson.title === 'Handling Objections 101' || lesson.title === 'How to Close Deals') && (
                                               <div 
                                                 className="prose prose-sm dark:prose-invert max-w-none text-foreground"
                                                 style={{ 
@@ -5127,6 +5746,15 @@ const PartnerDashboard = () => {
                                                   __html: markdownToHtml(typeof lesson.content === 'string' ? lesson.content : String(lesson.content || ''))
                                                 }}
                                               />
+                                            )}
+                                            
+                                            {/* Show preview text for Handling Objections 101 course */}
+                                            {lesson.content && lesson.title === 'Handling Objections 101' && (
+                                              <div className="p-4 bg-muted/50 rounded-lg">
+                                                <p className="text-sm text-muted-foreground mb-2">
+                                                  Master the art of turning objections into opportunities! Learn how to handle common client concerns effectively and build confidence in your sales approach. Click "View Course" to start the interactive course.
+                                                </p>
+                                              </div>
                                             )}
                                             
                                             {/* Show preview text for Sales Basics course */}
@@ -5165,6 +5793,15 @@ const PartnerDashboard = () => {
                                               </div>
                                             )}
                                             
+                                            {/* Show preview text for How to Close Deals course */}
+                                            {lesson.content && lesson.title === 'How to Close Deals' && (
+                                              <div className="p-4 bg-muted/50 rounded-lg">
+                                                <p className="text-sm text-muted-foreground mb-2">
+                                                  Master the art of closing deals! This comprehensive course covers understanding the offer, presenting pricing confidently, handling objections, managing expectations, and closing smoothly. Complete all 15 slides and pass the quiz to earn your XP. Click "View Course" to start the interactive course.
+                                                </p>
+                                              </div>
+                                            )}
+                                            
                                             {/* Show preview text for popup courses */}
                                             {lesson.content && (lesson.title === 'Understanding Automations' || lesson.title === 'The 6 Default Automations') && (
                                               <div className="p-4 bg-muted/50 rounded-lg">
@@ -5176,7 +5813,7 @@ const PartnerDashboard = () => {
                                             
                                             {lesson.lesson_type === 'course' && (
                                               <div className="space-y-2">
-                                                {lesson.title === 'Understanding Automations' || lesson.title === 'The 6 Default Automations' || lesson.title === 'Sales Basics for Automation Partners' || lesson.title === 'How to Manage Clients' || lesson.title === 'Sales Foundations' || lesson.title === 'The Outreach Process' ? (
+                                                {lesson.title === 'Understanding Automations' || lesson.title === 'The 6 Default Automations' || lesson.title === 'Sales Basics for Automation Partners' || lesson.title === 'How to Manage Clients' || lesson.title === 'Sales Foundations' || lesson.title === 'The Outreach Process' || lesson.title === 'Handling Objections 101' || lesson.title === 'How to Close Deals' ? (
                                                   <>
                                                     <Button
                                                       onClick={async () => {
@@ -5827,6 +6464,136 @@ const PartnerDashboard = () => {
                                           </div>
                                         )}
                                         
+                                                {lesson.title === 'Demo Client Deep Dive' && (
+                                          <div className="space-y-3">
+                                            <div className="p-4 bg-muted/50 rounded-lg">
+                                              <p className="text-sm text-muted-foreground mb-3">
+                                                Open your demo client and update all fields (industry, size, needs, problem) to complete this task.
+                                              </p>
+                                              <ol className="text-sm text-muted-foreground space-y-2 list-decimal list-inside mb-3">
+                                                <li>Go to the Clients tab</li>
+                                                <li>Click on your demo client to open the client detail page</li>
+                                                <li>Click "Add Notes" or "Edit Notes"</li>
+                                                <li>Fill in all fields: Industry, Size, Needs, and Problem</li>
+                                                <li>Click "Save Notes"</li>
+                                              </ol>
+                                            </div>
+                                            <Button
+                                              onClick={() => {
+                                                if (isTabUnlocked('clients_demo', sellerData?.current_rank || 'Recruit')) {
+                                                  setActiveTab('clients');
+                                                  // Try to open demo client if available
+                                                  setTimeout(() => {
+                                                    const demoClient = clients.find(c => c.is_demo === true);
+                                                    if (demoClient) {
+                                                      openClientDetail(demoClient);
+                                                    }
+                                                  }, 500);
+                                                } else {
+                                                  toast({
+                                                    title: "Locked",
+                                                    description: "Complete previous lessons to unlock clients",
+                                                    variant: "destructive",
+                                                  });
+                                                }
+                                              }}
+                                              variant="outline"
+                                              size="sm"
+                                              disabled={!isTabUnlocked('clients_demo', sellerData?.current_rank || 'Recruit')}
+                                              className="w-full"
+                                            >
+                                              Go to Clients & Open Demo Client
+                                            </Button>
+                                          </div>
+                                        )}
+                                        
+                                                {lesson.title === 'Create a Demo Automation Plan' && (
+                                          <div className="space-y-3">
+                                            <div className="p-4 bg-muted/50 rounded-lg">
+                                              <p className="text-sm text-muted-foreground mb-3">
+                                                Assign two different automations to your demo client and write a note explaining why each fits. Complete this task to earn {lesson.xp_reward} XP.
+                                              </p>
+                                              <ol className="text-sm text-muted-foreground space-y-2 list-decimal list-inside mb-3">
+                                                <li>Go to the Clients tab</li>
+                                                <li>Select your demo client</li>
+                                                <li>Assign two different automations</li>
+                                                <li>For each automation, write a note explaining why it fits this client's needs</li>
+                                                <li>The task will complete automatically when you assign 2+ automations with notes</li>
+                                              </ol>
+                                            </div>
+                                            <Button
+                                              onClick={() => {
+                                                if (isTabUnlocked('clients_demo', sellerData?.current_rank || 'Recruit')) {
+                                                  setActiveTab('clients');
+                                                } else {
+                                                  toast({
+                                                    title: "Locked",
+                                                    description: "Complete previous lessons to unlock clients",
+                                                    variant: "destructive",
+                                                  });
+                                                }
+                                              }}
+                                              variant="outline"
+                                              size="sm"
+                                              disabled={!isTabUnlocked('clients_demo', sellerData?.current_rank || 'Recruit')}
+                                              className="w-full"
+                                            >
+                                              Go to Clients Tab
+                                            </Button>
+                                          </div>
+                                        )}
+                                        
+                                                {lesson.title === 'Referral Funnel Exercise' && (
+                                          <div className="space-y-3">
+                                            <div className="p-4 bg-muted/50 rounded-lg">
+                                              <p className="text-sm text-muted-foreground mb-3">
+                                                Edit your referral code and get at least 5 people to click your link. Self-clicks don't count toward the goal.
+                                              </p>
+                                              <div className="space-y-2 mb-3">
+                                                <div className="flex items-center justify-between p-2 bg-primary/10 border border-primary/20 rounded">
+                                                  <span className="text-sm font-medium text-primary">Referral Link Clicks</span>
+                                                  <span className="text-sm font-bold text-primary">
+                                                    {referralClickCount} / 5 clicks
+                                                  </span>
+                                                </div>
+                                                {referralClickCount >= 5 && (
+                                                  <div className="p-2 bg-green-500/10 border border-green-500/20 rounded">
+                                                    <p className="text-sm text-green-600 dark:text-green-400 font-medium">
+                                                      ✓ Goal reached! Task will complete automatically.
+                                                    </p>
+                                                  </div>
+                                                )}
+                                              </div>
+                                              <ol className="text-sm text-muted-foreground space-y-2 list-decimal list-inside mb-3">
+                                                <li>Edit your referral code in the Overview tab (if you haven't already)</li>
+                                                <li>Share your referral link with at least 5 people</li>
+                                                <li>Track your progress above (self-clicks don't count)</li>
+                                                <li>The task completes automatically when you reach 5 clicks</li>
+                                              </ol>
+                                            </div>
+                                            <div className="flex gap-2">
+                                              <Button
+                                                onClick={() => {
+                                                  setActiveTab('overview');
+                                                }}
+                                                variant="outline"
+                                                size="sm"
+                                                className="flex-1"
+                                              >
+                                                Go to Overview
+                                              </Button>
+                                              <Button
+                                                onClick={() => copyReferralLink('client')}
+                                                variant="outline"
+                                                size="sm"
+                                                className="flex-1"
+                                              >
+                                                Copy Referral Link
+                                              </Button>
+                                            </div>
+                                          </div>
+                                        )}
+                                        
                                                 {lesson.title === 'Check the Partner Leaderboard' && (
                                           <div className="p-4 bg-muted/50 rounded-lg">
                                             <p className="text-sm text-muted-foreground mb-2">
@@ -5836,12 +6603,15 @@ const PartnerDashboard = () => {
                                               onClick={() => {
                                                 setActiveTab('overview');
                                                 // Auto-complete task when overview tab is opened
-                                                if (!completedLessons.has(lesson.id)) {
+                                                if (!completedLessons.has(lesson.id) && !taskCompletionRef.current.has(lesson.id)) {
+                                                  taskCompletionRef.current.add(lesson.id);
                                                   setTimeout(() => {
                                                     addXP(lesson.xp_reward, 'task_completed', `Completed: ${lesson.title}`, { lesson_id: lesson.id }).then(() => {
+                                                      setCompletedLessons(prev => new Set([...prev, lesson.id]));
                                                       fetchProgressionData(sellerData?.id || '');
                                                     }).catch((error: any) => {
                                                       console.error("Error completing leaderboard task:", error);
+                                                      taskCompletionRef.current.delete(lesson.id);
                                                     });
                                                   }, 1000);
                                                 }
@@ -6252,20 +7022,7 @@ const PartnerDashboard = () => {
                                   const canAdvance = allTasksCompleted && xpThresholdMet;
                                   
                                   // Debug logging for rank advancement check (in progress section)
-                                  console.log("🔍 [RANK-ADVANCE] Progress section check:", {
-                                    currentRank,
-                                    nextRank,
-                                    currentXP: sellerData?.current_xp || 0,
-                                    nextRankThreshold,
-                                    xpThresholdMet,
-                                    totalTasksForCurrentRank: currentRankTasks.length,
-                                    completedTasksForCurrentRank: completedCurrentRankTasks.length,
-                                    allTasksCompleted,
-                                    canAdvance,
-                                    taskIds: currentRankTasks,
-                                    completedTaskIds: completedCurrentRankTasks,
-                                    missingTaskIds: currentRankTasks.filter(id => !completedCurrentRankTasks.includes(id))
-                                  });
+                                  // Removed excessive logging - only log when values actually change
                                   
                                   return (
                                     <div className="mt-6 pt-6 border-t border-border">
@@ -6357,6 +7114,24 @@ const PartnerDashboard = () => {
                               {copied ? <Check className="h-4 w-4 sm:h-5 sm:w-5" /> : <Copy className="h-4 w-4 sm:h-5 sm:w-5" />}
                             </Button>
                           </div>
+                          {/* Referral Click Count (for Verified Plus "Referral Funnel Exercise" task) */}
+                          {sellerData?.current_rank && ['Verified Plus', 'Partner', 'Partner Plus', 'Partner Pro'].includes(sellerData.current_rank) && (
+                            <div className="mt-3 p-3 bg-primary/10 border border-primary/20 rounded-lg">
+                              <div className="flex items-center justify-between">
+                                <div>
+                                  <p className="text-xs font-medium text-primary">Referral Link Clicks</p>
+                                  <p className="text-sm text-muted-foreground mt-1">
+                                    {referralClickCount} / 5 clicks (self-clicks don't count)
+                                  </p>
+                                </div>
+                                {referralClickCount >= 5 && (
+                                  <Badge variant="default" className="bg-green-500/20 text-green-600 dark:text-green-400 border-green-500/30">
+                                    Goal Reached! 🎉
+                                  </Badge>
+                                )}
+                              </div>
+                            </div>
+                          )}
                         </CardContent>
                       </Card>
 
@@ -6647,8 +7422,13 @@ const PartnerDashboard = () => {
                                       </Badge>
                                     )}
                                   </div>
-                                  <div className="text-xs text-muted-foreground mt-0.5">
-                                    {entry.current_rank}
+                                  <div className="flex items-center gap-2 text-xs text-muted-foreground mt-0.5">
+                                    <span>{entry.current_rank}</span>
+                                    {entry.login_streak > 0 && (
+                                      <Badge variant="outline" className="text-xs py-0 px-1.5 h-4">
+                                        🔥 {entry.login_streak} {entry.login_streak === 1 ? 'day' : 'days'}
+                                      </Badge>
+                                    )}
                                   </div>
                                 </div>
                               </div>
@@ -6662,6 +7442,13 @@ const PartnerDashboard = () => {
                               </div>
                             </div>
                           ))}
+                        </div>
+                      )}
+                      {userRank !== null && (
+                        <div className="mt-4 pt-4 border-t border-border text-center">
+                          <p className="text-sm text-muted-foreground">
+                            You are currently rank <span className="font-bold text-primary">{userRank}</span>
+                          </p>
                         </div>
                       )}
                     </CardContent>
@@ -6707,6 +7494,25 @@ const PartnerDashboard = () => {
                       ))}
                     </select>
                   </div>
+                  {/* Partner Note Field (for Verified Plus "Create Demo Automation Plan" task) */}
+                  {sellerData?.current_rank && ['Verified Plus', 'Partner', 'Partner Plus', 'Partner Pro'].includes(sellerData.current_rank) && (
+                    <div className="space-y-2">
+                      <Label htmlFor="partner-note" className="text-sm font-medium text-foreground">
+                        Partner Note (Optional)
+                      </Label>
+                      <Textarea
+                        id="partner-note"
+                        value={partnerNote}
+                        onChange={(e) => setPartnerNote(e.target.value)}
+                        placeholder="Explain why this automation fits this client's needs..."
+                        className="min-h-[80px] bg-input border-border text-foreground"
+                        rows={3}
+                      />
+                      <p className="text-xs text-muted-foreground">
+                        Add a note explaining why you're assigning this automation (for your reference only)
+                      </p>
+                    </div>
+                  )}
                 </div>
                 <Button
                   onClick={handleAssignAutomation}
@@ -6737,9 +7543,16 @@ const PartnerDashboard = () => {
                           {/* Mobile Card Layout */}
                           <div className="md:hidden space-y-3">
                             {clients.map((client) => (
-                              <Card key={client.id} className="bg-muted/20 border-border p-3">
+                              <Card 
+                                key={client.id} 
+                                className="bg-muted/20 border-border p-3 cursor-pointer hover:bg-muted/30 transition-colors"
+                                onClick={() => openClientDetail(client)}
+                              >
                                 <div className="space-y-2">
-                                  <div className="font-medium text-sm">{client.business_name}</div>
+                                  <div className="font-medium text-sm flex items-center justify-between">
+                                    {client.business_name}
+                                    {client.is_demo && <Badge variant="outline" className="text-xs">Demo</Badge>}
+                                  </div>
                                   <div className="text-xs text-muted-foreground">{client.contact_name}</div>
                                   <div className="flex items-center justify-between pt-2 border-t border-border">
                                     <Badge variant={client.status === "active" ? "default" : "secondary"} className="text-xs">
@@ -6768,8 +7581,17 @@ const PartnerDashboard = () => {
                             </TableHeader>
                             <TableBody>
                               {clients.map((client) => (
-                                <TableRow key={client.id}>
-                                  <TableCell className="font-medium">{client.business_name}</TableCell>
+                                <TableRow 
+                                  key={client.id}
+                                  className="cursor-pointer hover:bg-muted/30 transition-colors"
+                                  onClick={() => openClientDetail(client)}
+                                >
+                                  <TableCell className="font-medium">
+                                    <div className="flex items-center gap-2">
+                                      {client.business_name}
+                                      {client.is_demo && <Badge variant="outline" className="text-xs">Demo</Badge>}
+                                    </div>
+                                  </TableCell>
                                   <TableCell>{client.contact_name}</TableCell>
                                   <TableCell>
                                     <Badge variant={client.status === "active" ? "default" : "secondary"}>
@@ -8041,104 +8863,307 @@ const PartnerDashboard = () => {
 
           {/* Course Dialog for Popup-Style Courses (Slide-Based) */}
           {showCourseDialog && selectedCourse && (() => {
-            // Special handling for Sales Foundations and The Outreach Process - module-based courses
-            if (selectedCourse.title === 'Sales Foundations' || selectedCourse.title === 'The Outreach Process') {
-              // Module-based structure
-              let modules: Array<{ number: number; title: string; slides: number; startSlide: number }>;
-              let totalSlides: number;
-              
-              if (selectedCourse.title === 'Sales Foundations') {
-                modules = [
-                  { number: 1, title: 'Understanding Your Buyer', slides: 10, startSlide: 0 },
-                  { number: 2, title: 'Framing the Offer', slides: 10, startSlide: 10 },
-                  { number: 3, title: 'Avoiding Tech Talk', slides: 10, startSlide: 20 },
-                  { number: 4, title: 'Building Trust and Momentum', slides: 10, startSlide: 30 }
-                ];
-                totalSlides = 40;
-              } else {
-                // The Outreach Process
-                modules = [
-                  { number: 1, title: 'Preparing for Outreach', slides: 10, startSlide: 0 },
-                  { number: 2, title: 'Crafting Effective Messages', slides: 10, startSlide: 10 },
-                  { number: 3, title: 'Managing Conversations and Follow-Ups', slides: 10, startSlide: 20 },
-                  { number: 4, title: 'Closing and Maintaining Relationships', slides: 10, startSlide: 30 }
-                ];
-                totalSlides = 40;
-              }
-              
-              const currentModule = modules.find(m => currentCourseSlide >= m.startSlide && currentCourseSlide < m.startSlide + m.slides) || modules[0];
-              const slideInModule = currentCourseSlide - currentModule.startSlide + 1;
-              
-              // Parse slides
+            // Special handling for Handling Objections 101 - custom modern course view
+            if (selectedCourse.title === 'Handling Objections 101') {
+              // Parse slides from content
               const content = typeof selectedCourse.content === 'string' ? selectedCourse.content : String(selectedCourse.content || '');
               const slides: string[] = [];
               
+              // Split by ## headings to create slides, and further split if content is too long
               if (content.includes('##')) {
                 const sections = content.split(/(?=##)/);
                 sections.forEach(section => {
                   if (section.trim()) {
-                    slides.push(section.trim());
+                    const slideContent = section.trim();
+                    const slideTitleMatch = slideContent.match(/##\s*Slide\s*\d+:\s*(.+)/);
+                    const slideBody = slideContent.replace(/##\s*Slide\s*\d+:\s*.+/, '').trim();
+                    
+                    // Estimate if content is too long (rough heuristic: count lines and characters)
+                    const lines = slideBody.split('\n').filter(l => l.trim());
+                    const charCount = slideBody.length;
+                    
+                    // If slide has more than 15 lines or 1000 characters, try to split it
+                    if (lines.length > 15 || charCount > 1000) {
+                      // Try to split by ** headings (like **Best Response:**, **Key Points:**)
+                      const subSections = slideBody.split(/(?=\*\*[^*]+\*\*:)/);
+                      
+                      if (subSections.length > 1) {
+                        // Create multiple slides from this one
+                        subSections.forEach((subSection, idx) => {
+                          if (subSection.trim()) {
+                            const subTitleMatch = subSection.match(/^\*\*([^*]+)\*\*:/);
+                            const sectionTitle = subTitleMatch ? subTitleMatch[1].trim() : '';
+                            
+                            // Create slide with main title and section title
+                            const baseTitle = slideTitleMatch ? slideTitleMatch[1].trim() : 'Slide';
+                            const newSlideTitle = idx === 0 
+                              ? baseTitle
+                              : `${baseTitle} - ${sectionTitle}`;
+                            
+                            // Find the original slide number
+                            const slideNumMatch = slideContent.match(/##\s*Slide\s*(\d+):/);
+                            const baseSlideNum = slideNumMatch ? parseInt(slideNumMatch[1]) : slides.length + 1;
+                            
+                            slides.push(`## Slide ${baseSlideNum}${idx > 0 ? `.${idx}` : ''}: ${newSlideTitle}\n\n${subSection.trim()}`);
+                          }
+                        });
+                      } else {
+                        // Can't split further, just add as is
+                        slides.push(slideContent);
+                      }
+                    } else {
+                      slides.push(slideContent);
+                    }
                   }
                 });
-              }
-              
-              if (slides.length === 0) {
+              } else {
                 slides.push(content);
               }
               
+              const totalSlides = slides.length;
               const currentSlideContent = slides[currentCourseSlide] || slides[0];
+              
+              // Parse current slide
+              const slideTitleMatch = currentSlideContent.match(/##\s*Slide\s*\d+:\s*(.+)/);
+              const slideTitle = slideTitleMatch ? slideTitleMatch[1].trim() : '';
+              const slideBody = currentSlideContent.replace(/##\s*Slide\s*\d+:\s*.+/, '').trim();
+              
+              // Extract sections from slide body - improved parsing for Handling Objections 101
+              const sections: Array<{ type: 'heading' | 'text' | 'list' | 'example' | 'keypoints'; content: string; title?: string }> = [];
+              const lines = slideBody.split('\n');
+              
+              let currentSection: { type: 'heading' | 'text' | 'list' | 'example' | 'keypoints'; content: string; title?: string } | null = null;
+              let inExample = false;
+              
+              for (let i = 0; i < lines.length; i++) {
+                const line = lines[i];
+                const trimmed = line.trim();
+                if (!trimmed) continue;
+                
+                // Check for bold headings (like **Best Response:** or **The Strategy:**)
+                if (trimmed.match(/^\*\*[^*]+\*\*:/)) {
+                  if (currentSection) sections.push(currentSection);
+                  const title = trimmed.replace(/\*\*/g, '').replace(':', '').trim();
+                  currentSection = { type: 'heading', content: '', title };
+                  inExample = false;
+                }
+                // Check for "Example:" or "Example Response:" after a heading (with or without **)
+                else if (trimmed.match(/^\*\*Example:/i) || trimmed.match(/^\*\*Example Response:/i) || trimmed.match(/^Example:/i)) {
+                  if (currentSection && currentSection.type === 'heading') {
+                    sections.push(currentSection);
+                  }
+                  inExample = true;
+                  currentSection = { type: 'example', content: '', title: 'Example' };
+                }
+                // Check for "Key Points:" section (with or without **)
+                else if (trimmed.match(/^\*\*Key Points:/i) || trimmed.match(/^Key Points:/i)) {
+                  if (currentSection) sections.push(currentSection);
+                  currentSection = { type: 'keypoints', content: '', title: 'Key Points' };
+                  inExample = false;
+                }
+                // Check for quoted example text (starts with ")
+                else if (trimmed.startsWith('"')) {
+                  if (inExample || (currentSection && currentSection.type === 'example')) {
+                    // Extract text between quotes
+                    const quotedText = trimmed.match(/"([^"]+)"/)?.[1] || trimmed.replace(/^["']|["']$/g, '');
+                    if (currentSection && currentSection.type === 'example') {
+                      currentSection.content = quotedText;
+                    } else {
+                      if (currentSection) sections.push(currentSection);
+                      currentSection = { type: 'example', content: quotedText, title: 'Example' };
+                    }
+                    inExample = false;
+                  } else {
+                    // Regular quoted text
+                    if (!currentSection || currentSection.type !== 'text') {
+                      if (currentSection) sections.push(currentSection);
+                      currentSection = { type: 'text', content: '' };
+                    }
+                    currentSection.content += trimmed.replace(/^["']|["']$/g, '') + '\n';
+                  }
+                }
+                // Check for list items (starts with - or *)
+                else if (trimmed.startsWith('- ') || trimmed.startsWith('* ')) {
+                  if (!currentSection || currentSection.type !== 'list') {
+                    if (currentSection) sections.push(currentSection);
+                    currentSection = { type: 'list', content: '' };
+                  }
+                  currentSection.content += trimmed.replace(/^[-*]\s*/, '') + '\n';
+                  inExample = false;
+                }
+                // Regular text (preserve bold formatting)
+                else {
+                  if (inExample) {
+                    // Continue building example
+                    if (!currentSection || currentSection.type !== 'example') {
+                      if (currentSection) sections.push(currentSection);
+                      currentSection = { type: 'example', content: '', title: 'Example' };
+                    }
+                    currentSection.content += (currentSection.content ? ' ' : '') + trimmed;
+                  } else {
+                    if (!currentSection || (currentSection.type !== 'text' && currentSection.type !== 'heading')) {
+                      if (currentSection) sections.push(currentSection);
+                      currentSection = { type: 'text', content: '' };
+                    }
+                    currentSection.content += trimmed + '\n';
+                  }
+                }
+              }
+              
+              if (currentSection) sections.push(currentSection);
               
               return (
                 <Dialog open={showCourseDialog} onOpenChange={(open) => {
                   setShowCourseDialog(open);
                   if (!open) {
-                    // Don't reset slide - keep progress saved
+                    setCurrentCourseSlide(0);
                   }
                 }}>
-                  <DialogContent className="max-w-5xl h-[90vh] flex flex-col overflow-hidden p-0">
-                    <div className="flex-shrink-0 px-6 pt-6 pb-4">
-                      <DialogHeader>
-                        <DialogTitle className="text-3xl font-bold text-primary">{selectedCourse.title}</DialogTitle>
-                        <DialogDescription className="text-base">
-                          Stage {selectedCourse.stage} • {selectedCourse.rank_required} • {selectedCourse.xp_reward} XP Reward
-                        </DialogDescription>
-                        <div className="flex items-center gap-4 mt-3">
-                          <Badge variant="outline" className="text-sm px-3 py-1">
-                            Module {currentModule.number}: {currentModule.title}
-                          </Badge>
-                          <div className="flex-1">
-                            <div className="flex items-center gap-2 mb-1">
-                              <span className="text-xs text-muted-foreground">Slide {currentCourseSlide + 1} of {totalSlides}</span>
-                              <span className="text-xs text-muted-foreground">•</span>
-                              <span className="text-xs text-muted-foreground">Module {currentModule.number}, Slide {slideInModule} of {currentModule.slides}</span>
+                  <DialogContent className="max-w-5xl h-[90vh] flex flex-col overflow-hidden p-0 bg-gradient-to-br from-background via-background to-muted/20 [&>button]:hidden">
+                    {/* Header */}
+                    <div className="flex-shrink-0 px-6 pt-5 pb-4 border-b border-primary/20 bg-gradient-to-r from-primary/10 via-primary/5 to-transparent">
+                      <div className="flex items-start justify-between mb-3">
+                        <div className="flex-1">
+                          <DialogTitle className="text-2xl font-bold text-primary mb-1.5 flex items-center gap-2">
+                            <div className="p-1.5 bg-primary/20 rounded-lg">
+                              <MessageCircle className="w-5 h-5 text-primary" />
                             </div>
-                            <Progress 
-                              value={((currentCourseSlide + 1) / totalSlides) * 100} 
-                              className="h-2"
-                            />
+                            {selectedCourse.title}
+                          </DialogTitle>
+                          <div className="text-sm flex items-center gap-2 mt-1.5 text-muted-foreground">
+                            <Badge variant="outline" className="border-primary/30 text-primary bg-primary/10 text-xs px-2 py-0.5">
+                              Stage {selectedCourse.stage} • {selectedCourse.rank_required}
+                            </Badge>
+                            <Badge className="bg-primary text-primary-foreground text-xs px-2 py-0.5">
+                              {selectedCourse.xp_reward} XP Reward
+                            </Badge>
                           </div>
                         </div>
-                      </DialogHeader>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          onClick={() => {
+                            setShowCourseDialog(false);
+                            setCurrentCourseSlide(0);
+                          }}
+                          className="text-muted-foreground hover:text-foreground h-8 w-8"
+                        >
+                          <XCircle className="w-4 h-4" />
+                        </Button>
+                      </div>
+                      
+                      {/* Progress Bar */}
+                      <div className="space-y-1.5">
+                        <div className="flex items-center justify-between text-xs">
+                          <span className="text-muted-foreground font-medium">Progress</span>
+                          <span className="text-primary font-bold">
+                            Slide {currentCourseSlide + 1} of {totalSlides}
+                          </span>
+                        </div>
+                        <Progress 
+                          value={((currentCourseSlide + 1) / totalSlides) * 100} 
+                          className="h-2 bg-primary/10"
+                        />
+                      </div>
                     </div>
-                    <ScrollArea 
-                      className="flex-1 min-h-0 px-6" 
-                      style={{ height: 'calc(90vh - 200px)' }}
-                    >
-                      <div className="pr-4">
-                        {/* Custom renderer for course slides */}
-                        {(() => {
-                          const slideIndex = currentCourseSlide + 1;
-                          return renderCourseSlide(slideIndex, currentSlideContent, selectedCourse.title, currentModule);
-                        })()}
+                    
+                    {/* Content Area */}
+                    <ScrollArea className="flex-1 min-h-0 px-6 py-4">
+                      <div className="max-w-4xl mx-auto">
+                        {/* Slide Title */}
+                        <div className="mb-4">
+                          <h2 className="text-xl font-bold text-primary mb-1.5 border-b border-primary/30 pb-1.5">
+                            {slideTitle}
+                          </h2>
+                        </div>
+                        
+                        {/* Slide Content Sections */}
+                        <div className="space-y-4">
+                          {sections.map((section, idx) => (
+                            <div key={idx}>
+                              {section.type === 'heading' && section.title && (
+                                <div className="mb-3">
+                                  <h3 className="text-lg font-semibold text-primary mb-2 flex items-center gap-2">
+                                    <div className="w-1 h-5 bg-primary rounded-full" />
+                                    {section.title}
+                                  </h3>
+                                  {section.content && (
+                                    <p className="text-sm text-foreground leading-relaxed whitespace-pre-wrap" dangerouslySetInnerHTML={{
+                                      __html: section.content.trim().replace(/\*\*(.+?)\*\*/g, '<strong class="text-primary font-semibold">$1</strong>')
+                                    }} />
+                                  )}
+                                </div>
+                              )}
+                              
+                              {section.type === 'text' && (
+                                <div className="p-3 bg-muted/30 rounded-lg border border-border/50">
+                                  <p className="text-sm text-foreground leading-relaxed whitespace-pre-wrap" dangerouslySetInnerHTML={{
+                                    __html: section.content.trim().replace(/\*\*(.+?)\*\*/g, '<strong class="text-primary font-semibold">$1</strong>')
+                                  }} />
+                                </div>
+                              )}
+                              
+                              {section.type === 'list' && (
+                                <div className="space-y-1.5">
+                                  {section.content.split('\n').filter(item => item.trim()).map((item, itemIdx) => (
+                                    <div key={itemIdx} className="flex items-start gap-2 p-2 bg-primary/5 rounded-lg border border-primary/10">
+                                      <div className="mt-1 w-1.5 h-1.5 bg-primary rounded-full flex-shrink-0" />
+                                      <p className="text-sm text-foreground flex-1" dangerouslySetInnerHTML={{
+                                        __html: item.trim().replace(/\*\*(.+?)\*\*/g, '<strong class="text-primary font-semibold">$1</strong>')
+                                      }} />
+                                    </div>
+                                  ))}
+                                </div>
+                              )}
+                              
+                              {section.type === 'example' && (
+                                <div className="p-3 bg-gradient-to-r from-primary/20 to-primary/10 rounded-lg border-2 border-primary/30 relative overflow-hidden">
+                                  <div className="absolute top-0 left-0 w-full h-0.5 bg-primary/50" />
+                                  <div className="flex items-start gap-2">
+                                    <div className="p-1.5 bg-primary/20 rounded-lg flex-shrink-0">
+                                      <Zap className="w-4 h-4 text-primary" />
+                                    </div>
+                                    <div className="flex-1">
+                                      <p className="text-xs font-semibold text-primary mb-1.5">Example Response:</p>
+                                      <p className="text-sm text-foreground leading-relaxed italic whitespace-pre-wrap">
+                                        "{section.content.trim()}"
+                                      </p>
+                                    </div>
+                                  </div>
+                                </div>
+                              )}
+                              
+                              {section.type === 'keypoints' && (
+                                <div className="space-y-1.5">
+                                  <h4 className="text-base font-semibold text-primary mb-2 flex items-center gap-2">
+                                    <Target className="w-4 h-4" />
+                                    Key Points
+                                  </h4>
+                                  {section.content.split('\n').filter(item => item.trim()).map((item, itemIdx) => (
+                                    <div key={itemIdx} className="flex items-start gap-2 p-2 bg-primary/5 rounded-lg border border-primary/10">
+                                      <div className="mt-1 w-1.5 h-1.5 bg-primary rounded-full flex-shrink-0" />
+                                      <p className="text-sm text-foreground flex-1" dangerouslySetInnerHTML={{
+                                        __html: item.trim().replace(/\*\*(.+?)\*\*/g, '<strong class="text-primary font-semibold">$1</strong>')
+                                      }} />
+                                    </div>
+                                  ))}
+                                </div>
+                              )}
+                            </div>
+                          ))}
+                        </div>
                       </div>
                     </ScrollArea>
-                    <div className="flex-shrink-0 flex gap-2 pt-4 pb-6 px-6 border-t">
+                    
+                    {/* Navigation Footer */}
+                    <div className="flex-shrink-0 flex gap-2 pt-3 pb-4 px-6 border-t border-primary/20 bg-background/50 backdrop-blur-sm">
                       <Button
                         variant="outline"
                         onClick={() => {
                           setShowCourseDialog(false);
-                          // Don't reset slide - progress is saved
+                          setCurrentCourseSlide(0);
                         }}
+                        className="border-border hover:bg-muted text-sm h-9"
                       >
                         Close
                       </Button>
@@ -8151,7 +9176,9 @@ const PartnerDashboard = () => {
                             }
                           }}
                           disabled={currentCourseSlide === 0}
+                          className="flex-1 text-sm h-9"
                         >
+                          <ArrowRight className="w-3.5 h-3.5 mr-1.5 rotate-180" />
                           Back
                         </Button>
                         {currentCourseSlide < totalSlides - 1 ? (
@@ -8178,9 +9205,10 @@ const PartnerDashboard = () => {
                                 setCurrentCourseSlide(currentCourseSlide + 1);
                               }
                             }}
-                            className="flex-1"
+                            className="flex-1 bg-primary hover:bg-primary/90 text-primary-foreground text-sm h-9"
                           >
                             Next
+                            <ArrowRight className="w-3.5 h-3.5 ml-1.5" />
                           </Button>
                         ) : (
                           selectedCourse.quiz_questions && (
@@ -8190,18 +9218,16 @@ const PartnerDashboard = () => {
                                   try {
                                     await supabase.from("partner_activity_log").insert({
                                       seller_id: sellerData.id,
-                                      event_type: "course_slide_viewed",
+                                      event_type: "course_completed",
                                       xp_value: 0,
-                                      description: `Viewed all ${totalSlides} slides in ${selectedCourse.title}`,
+                                      description: `Completed all ${totalSlides} slides in ${selectedCourse.title}`,
                                       metadata: { 
                                         lesson_id: selectedCourse.id,
-                                        slide_number: currentCourseSlide,
-                                        total_slides: totalSlides,
-                                        all_slides_viewed: true
+                                        total_slides: totalSlides
                                       }
                                     });
                                   } catch (error) {
-                                    console.error("Error tracking final slide view:", error);
+                                    console.error("Error tracking course completion:", error);
                                   }
                                 }
                                 setShowCourseDialog(false);
@@ -8209,9 +9235,10 @@ const PartnerDashboard = () => {
                                 handleCompleteLesson(selectedCourse);
                               }}
                               disabled={completedLessons.has(selectedCourse.id)}
-                              className="flex-1"
+                              className="flex-1 bg-primary hover:bg-primary/90 text-primary-foreground text-sm h-9"
                             >
                               {completedLessons.has(selectedCourse.id) ? 'Quiz Completed' : 'Take Quiz'}
+                              <ArrowRight className="w-3.5 h-3.5 ml-1.5" />
                             </Button>
                           )
                         )}
@@ -8222,12 +9249,30 @@ const PartnerDashboard = () => {
               );
             }
             
-            // Standard course parsing for other courses
-            // Parse course content into slides
+            // Module-based courses (Sales Foundations, The Outreach Process, etc.)
+            let modules: Array<{ number: number; title: string; slides: number; startSlide: number }> | null = null;
+            
+            if (selectedCourse.title === 'Sales Foundations') {
+              modules = [
+                { number: 1, title: 'Understanding Your Buyer', slides: 10, startSlide: 0 },
+                { number: 2, title: 'Framing the Offer', slides: 10, startSlide: 10 },
+                { number: 3, title: 'Avoiding Tech Talk', slides: 10, startSlide: 20 },
+                { number: 4, title: 'Building Trust and Momentum', slides: 10, startSlide: 30 }
+              ];
+            } else if (selectedCourse.title === 'The Outreach Process') {
+              modules = [
+                { number: 1, title: 'Preparing for Outreach', slides: 10, startSlide: 0 },
+                { number: 2, title: 'Crafting Effective Messages', slides: 10, startSlide: 10 },
+                { number: 3, title: 'Managing Conversations and Follow-Ups', slides: 10, startSlide: 20 },
+                { number: 4, title: 'Closing and Maintaining Relationships', slides: 10, startSlide: 30 }
+              ];
+            }
+            
+            // Parse slides from content
             const content = typeof selectedCourse.content === 'string' ? selectedCourse.content : String(selectedCourse.content || '');
             const slides: string[] = [];
             
-            // Split by major headings (##) to create slides
+            // Split by ## headings to create slides
             if (content.includes('##')) {
               const sections = content.split(/(?=##)/);
               sections.forEach(section => {
@@ -8235,7 +9280,7 @@ const PartnerDashboard = () => {
                   slides.push(section.trim());
                 }
               });
-            } else {
+            } else if (content.includes('# ')) {
               // If no ## headings, split by # headings
               const sections = content.split(/(?=# )/);
               sections.forEach(section => {
@@ -8243,15 +9288,494 @@ const PartnerDashboard = () => {
                   slides.push(section.trim());
                 }
               });
-            }
-            
-            // If still no slides, use the whole content as one slide
-            if (slides.length === 0) {
+            } else {
               slides.push(content);
             }
             
-            const totalSlides = slides.length;
-            const currentSlideContent = slides[currentCourseSlide] || slides[0];
+            const totalSlides = modules ? (modules[modules.length - 1].startSlide + modules[modules.length - 1].slides) : slides.length;
+            const currentSlideContent = slides[currentCourseSlide] || slides[0] || content;
+            
+            // Get current module info if applicable
+            const currentModule = modules ? modules.find(m => currentCourseSlide >= m.startSlide && currentCourseSlide < m.startSlide + m.slides) || modules[0] : null;
+            const slideInModule = currentModule ? currentCourseSlide - currentModule.startSlide + 1 : null;
+            
+            // Parse slide content for modern layout
+            const slideTitleMatch = currentSlideContent.match(/##\s*Slide\s*\d+:\s*(.+)/) || currentSlideContent.match(/#\s*(.+)/);
+            const slideTitle = slideTitleMatch ? slideTitleMatch[1].trim() : '';
+            const slideBody = currentSlideContent.replace(/##\s*Slide\s*\d+:\s*.+/, '').replace(/^#\s*.+/, '').trim();
+            
+            // For module-based courses, use renderCourseSlide; for others, parse like Handling Objections
+            const isModuleBased = modules !== null;
+            const useModernLayout = !isModuleBased || selectedCourse.title === 'Handling Objections 101';
+            
+            // If it's a module-based course but not Handling Objections, use the modern layout with module info
+            if (isModuleBased && selectedCourse.title !== 'Handling Objections 101') {
+              // Use modern layout but with module support
+              return (
+                <Dialog open={showCourseDialog} onOpenChange={(open) => {
+                  setShowCourseDialog(open);
+                  if (!open) {
+                    setCurrentCourseSlide(0);
+                  }
+                }}>
+                  <DialogContent className="max-w-5xl h-[90vh] flex flex-col overflow-hidden p-0 bg-gradient-to-br from-background via-background to-muted/20 [&>button]:hidden">
+                    {/* Header */}
+                    <div className="flex-shrink-0 px-6 pt-5 pb-4 border-b border-primary/20 bg-gradient-to-r from-primary/10 via-primary/5 to-transparent">
+                      <div className="flex items-start justify-between mb-3">
+                        <div className="flex-1">
+                          <DialogTitle className="text-2xl font-bold text-primary mb-1.5 flex items-center gap-2">
+                            <div className="p-1.5 bg-primary/20 rounded-lg">
+                              <BookOpen className="w-5 h-5 text-primary" />
+                            </div>
+                            {selectedCourse.title}
+                          </DialogTitle>
+                          <div className="text-sm flex items-center gap-2 mt-1.5 text-muted-foreground">
+                            <Badge variant="outline" className="border-primary/30 text-primary bg-primary/10 text-xs px-2 py-0.5">
+                              Stage {selectedCourse.stage} • {selectedCourse.rank_required}
+                            </Badge>
+                            <Badge className="bg-primary text-primary-foreground text-xs px-2 py-0.5">
+                              {selectedCourse.xp_reward} XP Reward
+                            </Badge>
+                            {currentModule && (
+                              <Badge variant="outline" className="border-primary/30 text-primary bg-primary/10 text-xs px-2 py-0.5">
+                                Module {currentModule.number}: {currentModule.title}
+                              </Badge>
+                            )}
+                          </div>
+                        </div>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          onClick={() => {
+                            setShowCourseDialog(false);
+                            setCurrentCourseSlide(0);
+                          }}
+                          className="text-muted-foreground hover:text-foreground h-8 w-8"
+                        >
+                          <XCircle className="w-4 h-4" />
+                        </Button>
+                      </div>
+                      
+                      {/* Progress Bar */}
+                      <div className="space-y-1.5">
+                        <div className="flex items-center justify-between text-xs">
+                          <span className="text-muted-foreground font-medium">Progress</span>
+                          <span className="text-primary font-bold">
+                            {currentModule && slideInModule ? (
+                              <>Module {currentModule.number}, Slide {slideInModule} of {currentModule.slides} • Slide {currentCourseSlide + 1} of {totalSlides}</>
+                            ) : (
+                              <>Slide {currentCourseSlide + 1} of {totalSlides}</>
+                            )}
+                          </span>
+                        </div>
+                        <Progress 
+                          value={((currentCourseSlide + 1) / totalSlides) * 100} 
+                          className="h-2 bg-primary/10"
+                        />
+                      </div>
+                    </div>
+                    
+                    {/* Content Area */}
+                    <ScrollArea className="flex-1 min-h-0 px-6 py-4">
+                      <div className="max-w-4xl mx-auto">
+                        {/* Slide Title */}
+                        {slideTitle && (
+                          <div className="mb-6">
+                            <h2 className="text-2xl font-bold text-primary mb-2 border-b-2 border-primary/40 pb-2.5">
+                              {slideTitle}
+                            </h2>
+                          </div>
+                        )}
+                        
+                        {/* Slide Content - Enhanced styling for better visual hierarchy */}
+                        <div className="space-y-6">
+                          <div 
+                            className="text-base text-foreground leading-relaxed space-y-4" 
+                            style={{ 
+                              '--tw-prose-headings': 'rgb(var(--primary))',
+                              '--tw-prose-bold': 'rgb(var(--primary))',
+                            } as React.CSSProperties} 
+                            dangerouslySetInnerHTML={{
+                              __html: markdownToHtml(slideBody).replace(/\*\*(.+?)\*\*/g, '<strong class="text-primary font-semibold">$1</strong>')
+                            }} 
+                          />
+                        </div>
+                      </div>
+                    </ScrollArea>
+                    
+                    {/* Navigation Footer */}
+                    <div className="flex-shrink-0 flex gap-2 pt-3 pb-4 px-6 border-t border-primary/20 bg-background/50 backdrop-blur-sm">
+                      <Button
+                        variant="outline"
+                        onClick={() => {
+                          setShowCourseDialog(false);
+                          setCurrentCourseSlide(0);
+                        }}
+                        className="border-border hover:bg-muted text-sm h-9"
+                      >
+                        Close
+                      </Button>
+                      <div className="flex gap-2 flex-1">
+                        <Button
+                          variant="outline"
+                          onClick={() => {
+                            if (currentCourseSlide > 0) {
+                              setCurrentCourseSlide(currentCourseSlide - 1);
+                            }
+                          }}
+                          disabled={currentCourseSlide === 0}
+                          className="flex-1 text-sm h-9"
+                        >
+                          <ArrowRight className="w-3.5 h-3.5 mr-1.5 rotate-180" />
+                          Back
+                        </Button>
+                        {currentCourseSlide < totalSlides - 1 ? (
+                          <Button
+                            onClick={async () => {
+                              if (currentCourseSlide < totalSlides - 1) {
+                                if (sellerData?.id && selectedCourse?.id) {
+                                  try {
+                                    await supabase.from("partner_activity_log").insert({
+                                      seller_id: sellerData.id,
+                                      event_type: "course_slide_viewed",
+                                      xp_value: 0,
+                                      description: `Viewed slide ${currentCourseSlide + 1} of ${totalSlides} in ${selectedCourse.title}`,
+                                      metadata: { 
+                                        lesson_id: selectedCourse.id,
+                                        slide_number: currentCourseSlide,
+                                        total_slides: totalSlides
+                                      }
+                                    });
+                                  } catch (error) {
+                                    console.error("Error tracking slide view:", error);
+                                  }
+                                }
+                                setCurrentCourseSlide(currentCourseSlide + 1);
+                              }
+                            }}
+                            className="flex-1 bg-primary hover:bg-primary/90 text-primary-foreground text-sm h-9"
+                          >
+                            Next
+                            <ArrowRight className="w-3.5 h-3.5 ml-1.5" />
+                          </Button>
+                        ) : (
+                          selectedCourse.quiz_questions && (
+                            <Button
+                              onClick={async () => {
+                                if (sellerData?.id && selectedCourse?.id) {
+                                  try {
+                                    await supabase.from("partner_activity_log").insert({
+                                      seller_id: sellerData.id,
+                                      event_type: "course_completed",
+                                      xp_value: 0,
+                                      description: `Completed all ${totalSlides} slides in ${selectedCourse.title}`,
+                                      metadata: { 
+                                        lesson_id: selectedCourse.id,
+                                        total_slides: totalSlides
+                                      }
+                                    });
+                                  } catch (error) {
+                                    console.error("Error tracking course completion:", error);
+                                  }
+                                }
+                                setShowCourseDialog(false);
+                                setCurrentCourseSlide(0);
+                                handleCompleteLesson(selectedCourse);
+                              }}
+                              disabled={completedLessons.has(selectedCourse.id)}
+                              className="flex-1 bg-primary hover:bg-primary/90 text-primary-foreground text-sm h-9"
+                            >
+                              {completedLessons.has(selectedCourse.id) ? 'Quiz Completed' : 'Take Quiz'}
+                              <ArrowRight className="w-3.5 h-3.5 ml-1.5" />
+                            </Button>
+                          )
+                        )}
+                      </div>
+                    </div>
+                  </DialogContent>
+                </Dialog>
+              );
+            }
+            
+            // Special handling for How to Close Deals - custom modern course view
+            if (selectedCourse.title === 'How to Close Deals') {
+              // Parse slides from content
+              const content = typeof selectedCourse.content === 'string' ? selectedCourse.content : String(selectedCourse.content || '');
+              const slides: string[] = [];
+              
+              // Split by # headings to create slides
+              if (content.includes('# ')) {
+                const sections = content.split(/(?=# )/);
+                sections.forEach(section => {
+                  if (section.trim()) {
+                    slides.push(section.trim());
+                  }
+                });
+              } else {
+                slides.push(content);
+              }
+              
+              const totalSlides = slides.length;
+              const currentSlideContent = slides[currentCourseSlide] || slides[0];
+              
+              // Parse current slide
+              const slideTitleMatch = currentSlideContent.match(/#\s*Slide\s*\d+\s*—\s*(.+)/) || currentSlideContent.match(/#\s*(.+)/);
+              const slideTitle = slideTitleMatch ? slideTitleMatch[1].trim() : '';
+              const slideBody = currentSlideContent.replace(/#\s*Slide\s*\d+\s*—\s*.+/, '').replace(/#\s*.+/, '').trim();
+              
+              // Extract sections from slide body - parse bullet points and text
+              const sections: Array<{ type: 'text' | 'list'; content: string }> = [];
+              const lines = slideBody.split('\n');
+              
+              let currentSection: { type: 'text' | 'list'; content: string } | null = null;
+              
+              for (let i = 0; i < lines.length; i++) {
+                const line = lines[i];
+                const trimmed = line.trim();
+                if (!trimmed) continue;
+                
+                // Check for bullet points (•, -, or *)
+                if (trimmed.match(/^[•\-*]\s+/)) {
+                  if (!currentSection || currentSection.type !== 'list') {
+                    if (currentSection) sections.push(currentSection);
+                    currentSection = { type: 'list', content: '' };
+                  }
+                  currentSection.content += trimmed.replace(/^[•\-*]\s+/, '') + '\n';
+                }
+                // Regular text
+                else {
+                  if (!currentSection || currentSection.type !== 'text') {
+                    if (currentSection) sections.push(currentSection);
+                    currentSection = { type: 'text', content: '' };
+                  }
+                  currentSection.content += trimmed + '\n';
+                }
+              }
+              
+              if (currentSection) sections.push(currentSection);
+              
+              return (
+                <Dialog open={showCourseDialog} onOpenChange={(open) => {
+                  setShowCourseDialog(open);
+                  if (!open) {
+                    setCurrentCourseSlide(0);
+                  }
+                }}>
+                  <DialogContent className="max-w-5xl h-[90vh] flex flex-col overflow-hidden p-0 bg-gradient-to-br from-background via-background to-muted/20 [&>button]:hidden">
+                    {/* Header */}
+                    <div className="flex-shrink-0 px-6 pt-5 pb-4 border-b border-primary/20 bg-gradient-to-r from-primary/10 via-primary/5 to-transparent">
+                      <div className="flex items-start justify-between mb-3">
+                        <div className="flex-1">
+                          <DialogTitle className="text-2xl font-bold text-primary mb-1.5 flex items-center gap-2">
+                            <div className="p-1.5 bg-primary/20 rounded-lg">
+                              <BookOpen className="w-5 h-5 text-primary" />
+                            </div>
+                            {selectedCourse.title}
+                          </DialogTitle>
+                          <div className="text-sm flex items-center gap-2 mt-1.5 text-muted-foreground">
+                            <Badge variant="outline" className="border-primary/30 text-primary bg-primary/10 text-xs px-2 py-0.5">
+                              Stage {selectedCourse.stage} • {selectedCourse.rank_required}
+                            </Badge>
+                            <Badge className="bg-primary text-primary-foreground text-xs px-2 py-0.5">
+                              {selectedCourse.xp_reward} XP Reward
+                            </Badge>
+                          </div>
+                        </div>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          onClick={() => {
+                            setShowCourseDialog(false);
+                            setCurrentCourseSlide(0);
+                          }}
+                          className="text-muted-foreground hover:text-foreground h-8 w-8"
+                        >
+                          <XCircle className="w-4 h-4" />
+                        </Button>
+                      </div>
+                      
+                      {/* Progress Bar */}
+                      <div className="space-y-1.5">
+                        <div className="flex items-center justify-between text-xs">
+                          <span className="text-muted-foreground font-medium">Progress</span>
+                          <span className="text-primary font-bold">
+                            Slide {currentCourseSlide + 1} of {totalSlides}
+                          </span>
+                        </div>
+                        <Progress 
+                          value={((currentCourseSlide + 1) / totalSlides) * 100} 
+                          className="h-2 bg-primary/10"
+                        />
+                      </div>
+                    </div>
+                    
+                    {/* Content Area */}
+                    <ScrollArea className="flex-1 min-h-0 px-6 py-4">
+                      <div className="max-w-4xl mx-auto">
+                        {/* Slide Title */}
+                        <div className="mb-6">
+                          <h2 className="text-2xl font-bold text-primary mb-2 border-b-2 border-primary/40 pb-2.5">
+                            {slideTitle}
+                          </h2>
+                        </div>
+                        
+                        {/* Slide Content Sections */}
+                        <div className="space-y-6">
+                          {sections.map((section, idx) => (
+                            <div key={idx}>
+                              {section.type === 'text' && (
+                                <div className="p-4 bg-muted/30 rounded-lg border border-border/50">
+                                  <p className="text-base text-foreground leading-relaxed whitespace-pre-wrap" dangerouslySetInnerHTML={{
+                                    __html: section.content.trim().replace(/\*\*(.+?)\*\*/g, '<strong class="text-primary font-semibold">$1</strong>')
+                                  }} />
+                                </div>
+                              )}
+                              
+                              {section.type === 'list' && (
+                                <div className="space-y-2">
+                                  {section.content.split('\n').filter(item => item.trim()).map((item, itemIdx) => (
+                                    <div key={itemIdx} className="flex items-start gap-3 p-3 bg-primary/5 rounded-lg border border-primary/10">
+                                      <div className="mt-1.5 w-2 h-2 bg-primary rounded-full flex-shrink-0" />
+                                      <p className="text-base text-foreground flex-1 leading-relaxed" dangerouslySetInnerHTML={{
+                                        __html: item.trim().replace(/\*\*(.+?)\*\*/g, '<strong class="text-primary font-semibold">$1</strong>')
+                                      }} />
+                                    </div>
+                                  ))}
+                                </div>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    </ScrollArea>
+                    
+                    {/* Navigation Footer */}
+                    <div className="flex-shrink-0 flex gap-2 pt-3 pb-4 px-6 border-t border-primary/20 bg-background/50 backdrop-blur-sm">
+                      <Button
+                        variant="outline"
+                        onClick={() => {
+                          setShowCourseDialog(false);
+                          setCurrentCourseSlide(0);
+                        }}
+                        className="border-border hover:bg-muted text-sm h-9"
+                      >
+                        Close
+                      </Button>
+                      <div className="flex gap-2 flex-1">
+                        <Button
+                          variant="outline"
+                          onClick={() => {
+                            if (currentCourseSlide > 0) {
+                              setCurrentCourseSlide(currentCourseSlide - 1);
+                            }
+                          }}
+                          disabled={currentCourseSlide === 0}
+                          className="flex-1 text-sm h-9"
+                        >
+                          <ArrowRight className="w-3.5 h-3.5 mr-1.5 rotate-180" />
+                          Back
+                        </Button>
+                        {currentCourseSlide < totalSlides - 1 ? (
+                          <Button
+                            onClick={async () => {
+                              if (currentCourseSlide < totalSlides - 1) {
+                                if (sellerData?.id && selectedCourse?.id) {
+                                  try {
+                                    await supabase.from("partner_activity_log").insert({
+                                      seller_id: sellerData.id,
+                                      event_type: "course_slide_viewed",
+                                      xp_value: 0,
+                                      description: `Viewed slide ${currentCourseSlide + 1} of ${totalSlides} in ${selectedCourse.title}`,
+                                      metadata: { 
+                                        lesson_id: selectedCourse.id,
+                                        slide_number: currentCourseSlide,
+                                        total_slides: totalSlides
+                                      }
+                                    });
+                                  } catch (error) {
+                                    console.error("Error tracking slide view:", error);
+                                  }
+                                }
+                                setCurrentCourseSlide(currentCourseSlide + 1);
+                              }
+                            }}
+                            className="flex-1 bg-primary hover:bg-primary/90 text-primary-foreground text-sm h-9"
+                          >
+                            Next
+                            <ArrowRight className="w-3.5 h-3.5 ml-1.5" />
+                          </Button>
+                        ) : (
+                          selectedCourse.quiz_questions && (
+                            <Button
+                              onClick={async () => {
+                                if (sellerData?.id && selectedCourse?.id) {
+                                  try {
+                                    await supabase.from("partner_activity_log").insert({
+                                      seller_id: sellerData.id,
+                                      event_type: "course_completed",
+                                      xp_value: 0,
+                                      description: `Completed all ${totalSlides} slides in ${selectedCourse.title}`,
+                                      metadata: { 
+                                        lesson_id: selectedCourse.id,
+                                        total_slides: totalSlides
+                                      }
+                                    });
+                                  } catch (error) {
+                                    console.error("Error tracking course completion:", error);
+                                  }
+                                }
+                                setShowCourseDialog(false);
+                                setCurrentCourseSlide(0);
+                                handleCompleteLesson(selectedCourse);
+                              }}
+                              disabled={completedLessons.has(selectedCourse.id)}
+                              className="flex-1 bg-primary hover:bg-primary/90 text-primary-foreground text-sm h-9"
+                            >
+                              {completedLessons.has(selectedCourse.id) ? 'Quiz Completed' : 'Take Quiz'}
+                              <ArrowRight className="w-3.5 h-3.5 ml-1.5" />
+                            </Button>
+                          )
+                        )}
+                      </div>
+                    </div>
+                  </DialogContent>
+                </Dialog>
+              );
+            }
+            
+            // Standard course parsing for other courses (non-module, non-Handling Objections, non-How to Close Deals)
+            // Use the modern layout for all remaining courses
+            // Parse slides from content
+            const contentFinal = typeof selectedCourse.content === 'string' ? selectedCourse.content : String(selectedCourse.content || '');
+            const slidesFinal: string[] = [];
+            
+            // Split by ## headings to create slides
+            if (contentFinal.includes('##')) {
+              const sections = contentFinal.split(/(?=##)/);
+              sections.forEach(section => {
+                if (section.trim()) {
+                  slidesFinal.push(section.trim());
+                }
+              });
+            } else if (contentFinal.includes('# ')) {
+              // If no ## headings, split by # headings
+              const sections = contentFinal.split(/(?=# )/);
+              sections.forEach(section => {
+                if (section.trim()) {
+                  slidesFinal.push(section.trim());
+                }
+              });
+            } else {
+              slidesFinal.push(contentFinal);
+            }
+            
+            const totalSlidesFinal = slidesFinal.length;
+            const currentSlideContentFinal = slidesFinal[currentCourseSlide] || slidesFinal[0] || contentFinal;
+            
+            // Parse slide content
+            const slideTitleMatchFinal = currentSlideContentFinal.match(/##\s*Slide\s*\d+:\s*(.+)/) || currentSlideContentFinal.match(/#\s*(.+)/);
+            const slideTitleFinal = slideTitleMatchFinal ? slideTitleMatchFinal[1].trim() : '';
+            const slideBodyFinal = currentSlideContentFinal.replace(/##\s*Slide\s*\d+:\s*.+/, '').replace(/^#\s*.+/, '').trim();
             
             return (
               <Dialog open={showCourseDialog} onOpenChange={(open) => {
@@ -8260,840 +9784,170 @@ const PartnerDashboard = () => {
                   setCurrentCourseSlide(0);
                 }
               }}>
-                <DialogContent className={`${selectedCourse.title === 'How to Manage Clients' ? 'max-w-5xl' : 'max-w-4xl'} max-h-[90vh] overflow-hidden flex flex-col`}>
-                  <DialogHeader>
-                    <DialogTitle className="text-2xl text-primary">{selectedCourse.title}</DialogTitle>
-                    <DialogDescription>
-                      Stage {selectedCourse.stage} • {selectedCourse.rank_required} • {selectedCourse.xp_reward} XP Reward
-                    </DialogDescription>
-                    {totalSlides > 1 && (
-                      <div className="flex items-center gap-2 mt-2">
-                        <Progress 
-                          value={((currentCourseSlide + 1) / totalSlides) * 100} 
-                          className="h-2 flex-1"
-                        />
-                        <span className="text-xs font-semibold text-primary whitespace-nowrap">
-                          Slide {currentCourseSlide + 1} of {totalSlides}
-                        </span>
+                <DialogContent className="max-w-5xl h-[90vh] flex flex-col overflow-hidden p-0 bg-gradient-to-br from-background via-background to-muted/20 [&>button]:hidden">
+                  {/* Header */}
+                  <div className="flex-shrink-0 px-6 pt-5 pb-4 border-b border-primary/20 bg-gradient-to-r from-primary/10 via-primary/5 to-transparent">
+                    <div className="flex items-start justify-between mb-3">
+                      <div className="flex-1">
+                        <DialogTitle className="text-2xl font-bold text-primary mb-1.5 flex items-center gap-2">
+                          <div className="p-1.5 bg-primary/20 rounded-lg">
+                            <BookOpen className="w-5 h-5 text-primary" />
+                          </div>
+                          {selectedCourse.title}
+                        </DialogTitle>
+                        <div className="text-sm flex items-center gap-2 mt-1.5 text-muted-foreground">
+                          <Badge variant="outline" className="border-primary/30 text-primary bg-primary/10 text-xs px-2 py-0.5">
+                            Stage {selectedCourse.stage} • {selectedCourse.rank_required}
+                          </Badge>
+                          <Badge className="bg-primary text-primary-foreground text-xs px-2 py-0.5">
+                            {selectedCourse.xp_reward} XP Reward
+                          </Badge>
+                        </div>
                       </div>
-                    )}
-                  </DialogHeader>
-                  <ScrollArea className="flex-1 pr-4">
-                    {selectedCourse.title === 'How to Manage Clients' ? (
-                      <div className="py-4 space-y-4">
-                        {/* Slide 1: Welcome */}
-                        {currentCourseSlide === 0 && (
-                          <Card className="bg-gradient-to-r from-primary/20 to-primary/10 border-primary/30">
-                            <CardContent className="pt-6">
-                              <div className="flex items-start gap-4">
-                                <div className="p-3 bg-primary/20 rounded-lg">
-                                  <Users className="w-8 h-8 text-primary" />
-                                </div>
-                                <div>
-                                  <h3 className="text-2xl font-semibold mb-2">Welcome to Client Management</h3>
-                                  <p className="text-base text-muted-foreground mb-4">
-                                    Master the client management system and learn how to assign automations effectively.
-                                  </p>
-                                  <p className="text-lg font-medium text-primary">
-                                    Practice makes perfect! 🎯
-                                  </p>
-                                </div>
-                              </div>
-                            </CardContent>
-                          </Card>
-                        )}
-
-                        {/* Slide 2: Demo vs Real Clients */}
-                        {currentCourseSlide === 1 && (
-                          <Card>
-                            <CardHeader>
-                              <CardTitle className="flex items-center gap-2">
-                                <Building2 className="w-5 h-5 text-primary" />
-                                Demo vs Real Clients
-                              </CardTitle>
-                            </CardHeader>
-                            <CardContent className="space-y-4">
-                              <div className="grid md:grid-cols-2 gap-4">
-                                <div className="p-4 bg-blue-500/10 border border-blue-500/20 rounded-lg">
-                                  <h4 className="font-semibold mb-3 flex items-center gap-2">
-                                    <CheckCircle className="w-4 h-4 text-blue-500" />
-                                    Demo Clients
-                                  </h4>
-                                  <ul className="space-y-2 text-sm">
-                                    <li className="flex items-start gap-2">
-                                      <CheckCircle className="w-4 h-4 text-primary flex-shrink-0 mt-0.5" />
-                                      <span>Practice with fake data</span>
-                                    </li>
-                                    <li className="flex items-start gap-2">
-                                      <CheckCircle className="w-4 h-4 text-primary flex-shrink-0 mt-0.5" />
-                                      <span>Learn the system safely</span>
-                                    </li>
-                                    <li className="flex items-start gap-2">
-                                      <CheckCircle className="w-4 h-4 text-primary flex-shrink-0 mt-0.5" />
-                                      <span>No real consequences</span>
-                                    </li>
-                                    <li className="flex items-start gap-2">
-                                      <CheckCircle className="w-4 h-4 text-primary flex-shrink-0 mt-0.5" />
-                                      <span>Marked with demo flag</span>
-                                    </li>
-                                  </ul>
-                                </div>
-                                <div className="p-4 bg-green-500/10 border border-green-500/20 rounded-lg">
-                                  <h4 className="font-semibold mb-3 flex items-center gap-2">
-                                    <CheckCircle className="w-4 h-4 text-green-500" />
-                                    Real Clients
-                                  </h4>
-                                  <ul className="space-y-2 text-sm">
-                                    <li className="flex items-start gap-2">
-                                      <CheckCircle className="w-4 h-4 text-primary flex-shrink-0 mt-0.5" />
-                                      <span>Actual businesses</span>
-                                    </li>
-                                    <li className="flex items-start gap-2">
-                                      <CheckCircle className="w-4 h-4 text-primary flex-shrink-0 mt-0.5" />
-                                      <span>Real transactions</span>
-                                    </li>
-                                    <li className="flex items-start gap-2">
-                                      <CheckCircle className="w-4 h-4 text-primary flex-shrink-0 mt-0.5" />
-                                      <span>Earn real commissions</span>
-                                    </li>
-                                    <li className="flex items-start gap-2">
-                                      <CheckCircle className="w-4 h-4 text-primary flex-shrink-0 mt-0.5" />
-                                      <span>Start here after practice</span>
-                                    </li>
-                                  </ul>
-                                </div>
-                              </div>
-                              <div className="p-4 bg-primary/10 border border-primary/20 rounded-lg">
-                                <p className="text-sm font-semibold text-primary">
-                                  Always start with demo clients to learn the system!
-                                </p>
-                              </div>
-                            </CardContent>
-                          </Card>
-                        )}
-
-                        {/* Slide 3: Adding a Client */}
-                        {currentCourseSlide === 2 && (
-                          <Card>
-                            <CardHeader>
-                              <CardTitle className="flex items-center gap-2">
-                                <Users className="w-5 h-5 text-primary" />
-                                Adding a Client
-                              </CardTitle>
-                            </CardHeader>
-                            <CardContent className="space-y-4">
-                              <div className="p-4 bg-muted/50 rounded-lg border">
-                                <p className="font-semibold mb-3">Steps to Add a Client:</p>
-                                <div className="space-y-3">
-                                  <div className="flex items-start gap-3">
-                                    <div className="text-lg font-bold text-primary">1</div>
-                                    <p className="text-sm">Go to <strong>Clients</strong> tab</p>
-                                  </div>
-                                  <div className="flex items-start gap-3">
-                                    <div className="text-lg font-bold text-primary">2</div>
-                                    <p className="text-sm">Click <strong>"Add Demo Client"</strong> (for practice)</p>
-                                  </div>
-                                  <div className="flex items-start gap-3">
-                                    <div className="text-lg font-bold text-primary">3</div>
-                                    <p className="text-sm">Fill in: Business Name, Contact Name, Contact Email, Industry (optional)</p>
-                                  </div>
-                                  <div className="flex items-start gap-3">
-                                    <div className="text-lg font-bold text-primary">4</div>
-                                    <p className="text-sm">Click <strong>"Add Client"</strong></p>
-                                  </div>
-                                </div>
-                              </div>
-                              <div className="p-4 bg-yellow-500/10 border border-yellow-500/20 rounded-lg">
-                                <p className="text-sm font-semibold text-yellow-500">
-                                  Use fake information for demo clients - this is practice!
-                                </p>
-                              </div>
-                            </CardContent>
-                          </Card>
-                        )}
-
-                        {/* Slide 4: Assigning Automations */}
-                        {currentCourseSlide === 3 && (
-                          <Card>
-                            <CardHeader>
-                              <CardTitle className="flex items-center gap-2">
-                                <Boxes className="w-5 h-5 text-primary" />
-                                Assigning Automations
-                              </CardTitle>
-                            </CardHeader>
-                            <CardContent className="space-y-4">
-                              <div className="p-4 bg-muted/50 rounded-lg border">
-                                <p className="font-semibold mb-3">How to Assign:</p>
-                                <div className="space-y-3">
-                                  <div className="flex items-start gap-3">
-                                    <div className="text-lg font-bold text-primary">1</div>
-                                    <p className="text-sm">Select a client from your client list</p>
-                                  </div>
-                                  <div className="flex items-start gap-3">
-                                    <div className="text-lg font-bold text-primary">2</div>
-                                    <p className="text-sm">Choose an automation from available automations</p>
-                                  </div>
-                                  <div className="flex items-start gap-3">
-                                    <div className="text-lg font-bold text-primary">3</div>
-                                    <p className="text-sm">Click <strong>"Assign Automation"</strong></p>
-                                  </div>
-                                  <div className="flex items-start gap-3">
-                                    <div className="text-lg font-bold text-primary">4</div>
-                                    <p className="text-sm">Track the setup process</p>
-                                  </div>
-                                </div>
-                              </div>
-                              <div className="p-4 bg-primary/10 border border-primary/20 rounded-lg">
-                                <p className="text-sm">
-                                  The automation will appear in the client's dashboard once assigned.
-                                </p>
-                              </div>
-                            </CardContent>
-                          </Card>
-                        )}
-
-                        {/* Slide 5: Setup Stages */}
-                        {currentCourseSlide === 4 && (
-                          <Card>
-                            <CardHeader>
-                              <CardTitle className="flex items-center gap-2">
-                                <RefreshCw className="w-5 h-5 text-primary" />
-                                Understanding Setup Stages
-                              </CardTitle>
-                            </CardHeader>
-                            <CardContent className="space-y-3">
-                              <div className="p-4 bg-yellow-500/10 border border-yellow-500/20 rounded-lg">
-                                <div className="flex items-start gap-3">
-                                  <Badge className="bg-yellow-500 text-yellow-950">pending_setup</Badge>
-                                  <div className="flex-1">
-                                    <p className="text-sm font-semibold mb-1">Automation assigned, awaiting setup by Vault Network</p>
-                                  </div>
-                                </div>
-                              </div>
-                              <div className="p-4 bg-blue-500/10 border border-blue-500/20 rounded-lg">
-                                <div className="flex items-start gap-3">
-                                  <Badge className="bg-blue-500 text-blue-950">setup_in_progress</Badge>
-                                  <div className="flex-1">
-                                    <p className="text-sm font-semibold mb-1">Vault Network is configuring the automation</p>
-                                  </div>
-                                </div>
-                              </div>
-                              <div className="p-4 bg-green-500/10 border border-green-500/20 rounded-lg">
-                                <div className="flex items-start gap-3">
-                                  <Badge className="bg-green-500 text-green-950">setup_complete</Badge>
-                                  <div className="flex-1">
-                                    <p className="text-sm font-semibold mb-1">Setup finished, finalizing activation</p>
-                                  </div>
-                                </div>
-                              </div>
-                              <div className="p-4 bg-primary/10 border border-primary/20 rounded-lg">
-                                <div className="flex items-start gap-3">
-                                  <Badge className="bg-primary text-primary-foreground">active</Badge>
-                                  <div className="flex-1">
-                                    <p className="text-sm font-semibold mb-1">Automation is live and working</p>
-                                  </div>
-                                </div>
-                              </div>
-                            </CardContent>
-                          </Card>
-                        )}
-
-                        {/* Slide 6: Vault Handles Delivery */}
-                        {currentCourseSlide === 5 && (
-                          <Card>
-                            <CardHeader>
-                              <CardTitle className="flex items-center gap-2">
-                                <Package className="w-5 h-5 text-primary" />
-                                How Vault Handles Delivery
-                              </CardTitle>
-                            </CardHeader>
-                            <CardContent className="space-y-4">
-                              <p className="text-sm text-muted-foreground mb-4">
-                                Once you assign an automation:
-                              </p>
-                              <div className="space-y-3">
-                                <div className="flex items-start gap-3 p-3 bg-muted/50 rounded-lg">
-                                  <div className="text-lg font-bold text-primary">1</div>
-                                  <p className="text-sm">Vault Network receives the assignment</p>
-                                </div>
-                                <div className="flex items-start gap-3 p-3 bg-muted/50 rounded-lg">
-                                  <div className="text-lg font-bold text-primary">2</div>
-                                  <p className="text-sm">Our team contacts the client for setup details</p>
-                                </div>
-                                <div className="flex items-start gap-3 p-3 bg-muted/50 rounded-lg">
-                                  <div className="text-lg font-bold text-primary">3</div>
-                                  <p className="text-sm">We configure and deploy the automation</p>
-                                </div>
-                                <div className="flex items-start gap-3 p-3 bg-muted/50 rounded-lg">
-                                  <div className="text-lg font-bold text-primary">4</div>
-                                  <p className="text-sm">Client receives access and training</p>
-                                </div>
-                                <div className="flex items-start gap-3 p-3 bg-muted/50 rounded-lg">
-                                  <div className="text-lg font-bold text-primary">5</div>
-                                  <p className="text-sm">You earn commission when payment processes</p>
-                                </div>
-                              </div>
-                              <div className="p-4 bg-primary/10 border border-primary/20 rounded-lg">
-                                <p className="text-sm font-semibold text-primary">
-                                  You don't need to do any technical work - we handle everything!
-                                </p>
-                              </div>
-                            </CardContent>
-                          </Card>
-                        )}
-
-                        {/* Slide 7: Key Takeaways */}
-                        {currentCourseSlide === 6 && (
-                          <Card className="bg-gradient-to-r from-primary/10 to-primary/5 border-primary/20">
-                            <CardHeader>
-                              <CardTitle className="flex items-center gap-2">
-                                <Trophy className="w-5 h-5 text-primary" />
-                                Key Takeaways
-                              </CardTitle>
-                            </CardHeader>
-                            <CardContent>
-                              <div className="grid md:grid-cols-2 gap-3">
-                                <div className="flex items-start gap-2">
-                                  <CheckCircle className="w-5 h-5 text-primary flex-shrink-0 mt-0.5" />
-                                  <p className="text-sm"><strong>Start with demo clients</strong> to practice</p>
-                                </div>
-                                <div className="flex items-start gap-2">
-                                  <CheckCircle className="w-5 h-5 text-primary flex-shrink-0 mt-0.5" />
-                                  <p className="text-sm"><strong>Assign automations</strong> through the Clients tab</p>
-                                </div>
-                                <div className="flex items-start gap-2">
-                                  <CheckCircle className="w-5 h-5 text-primary flex-shrink-0 mt-0.5" />
-                                  <p className="text-sm"><strong>Track status</strong> to see progress</p>
-                                </div>
-                                <div className="flex items-start gap-2">
-                                  <CheckCircle className="w-5 h-5 text-primary flex-shrink-0 mt-0.5" />
-                                  <p className="text-sm"><strong>Vault handles</strong> all technical setup</p>
-                                </div>
-                                <div className="flex items-start gap-2 md:col-span-2">
-                                  <CheckCircle className="w-5 h-5 text-primary flex-shrink-0 mt-0.5" />
-                                  <p className="text-sm"><strong>You earn</strong> commission automatically</p>
-                                </div>
-                              </div>
-                              <div className="mt-6 p-4 bg-primary/10 border border-primary/20 rounded-lg">
-                                <p className="text-center text-base font-semibold text-primary">
-                                  Ready to practice? Complete the quiz to test your knowledge! 🎯
-                                </p>
-                              </div>
-                            </CardContent>
-                          </Card>
-                        )}
-                      </div>
-                    ) : selectedCourse.title === 'Sales Basics for Automation Partners' ? (
-                      <div className="py-4 space-y-4">
-                        {/* Slide 1: Welcome */}
-                        {currentCourseSlide === 0 && (
-                          <Card className="bg-gradient-to-r from-primary/20 to-primary/10 border-primary/30">
-                            <CardContent className="pt-6">
-                              <div className="flex items-start gap-4">
-                                <div className="p-3 bg-primary/20 rounded-lg">
-                                  <Target className="w-8 h-8 text-primary" />
-                                </div>
-                                <div>
-                                  <h3 className="text-2xl font-semibold mb-2">Welcome to Sales Mastery</h3>
-                                  <p className="text-base text-muted-foreground mb-4">
-                                    This course will teach you how to effectively communicate the value of automations and handle common client concerns.
-                                  </p>
-                                  <p className="text-lg font-medium text-primary">
-                                    Master these skills and you'll be closing deals like a pro! 🎯
-                                  </p>
-                                </div>
-                              </div>
-                            </CardContent>
-                          </Card>
-                        )}
-
-                        {/* Slide 2: "It's too expensive" */}
-                        {currentCourseSlide === 1 && (
-                          <Card>
-                            <CardHeader>
-                              <CardTitle className="flex items-center gap-2">
-                                <XCircle className="w-5 h-5 text-destructive" />
-                                Understanding Client Objections - "It's too expensive"
-                              </CardTitle>
-                            </CardHeader>
-                            <CardContent className="space-y-4">
-                              <div className="p-4 bg-destructive/10 border border-destructive/20 rounded-lg">
-                                <p className="font-semibold mb-3">The Strategy:</p>
-                                <ul className="space-y-2 text-sm">
-                                  <li className="flex items-start gap-2">
-                                    <CheckCircle className="w-4 h-4 text-primary flex-shrink-0 mt-0.5" />
-                                    <span><strong>Focus on ROI:</strong> Show how automation saves time and money long-term</span>
-                                  </li>
-                                  <li className="flex items-start gap-2">
-                                    <CheckCircle className="w-4 h-4 text-primary flex-shrink-0 mt-0.5" />
-                                    <span><strong>Break down costs:</strong> Compare automation cost vs. manual labor costs</span>
-                                  </li>
-                                  <li className="flex items-start gap-2">
-                                    <CheckCircle className="w-4 h-4 text-primary flex-shrink-0 mt-0.5" />
-                                    <span><strong>Emphasize recurring value:</strong> Monthly automation fee vs. full-time employee salary</span>
-                                  </li>
-                                </ul>
-                              </div>
-                              <div className="p-4 bg-muted/50 border border-border rounded-lg">
-                                <p className="text-xs font-medium text-muted-foreground mb-2">Example Response:</p>
-                                <p className="text-sm italic">
-                                  "I understand cost is a concern. Let's break this down: This automation saves your team 10 hours per week. At $25/hour, that's $1,000/month in saved labor costs. The automation costs $300/month - you're saving $700/month while scaling your operations."
-                                </p>
-                              </div>
-                            </CardContent>
-                          </Card>
-                        )}
-
-                        {/* Slide 3: "We don't need automation" */}
-                        {currentCourseSlide === 2 && (
-                          <Card>
-                            <CardHeader>
-                              <CardTitle className="flex items-center gap-2">
-                                <HelpCircle className="w-5 h-5 text-yellow-500" />
-                                Understanding Client Objections - "We don't need automation"
-                              </CardTitle>
-                            </CardHeader>
-                            <CardContent className="space-y-4">
-                              <div className="p-4 bg-yellow-500/10 border border-yellow-500/20 rounded-lg">
-                                <p className="font-semibold mb-3">The Strategy:</p>
-                                <ul className="space-y-2 text-sm">
-                                  <li className="flex items-start gap-2">
-                                    <CheckCircle className="w-4 h-4 text-primary flex-shrink-0 mt-0.5" />
-                                    <span><strong>Identify pain points:</strong> Ask about their current challenges</span>
-                                  </li>
-                                  <li className="flex items-start gap-2">
-                                    <CheckCircle className="w-4 h-4 text-primary flex-shrink-0 mt-0.5" />
-                                    <span><strong>Show specific solutions:</strong> Connect automation features to their problems</span>
-                                  </li>
-                                  <li className="flex items-start gap-2">
-                                    <CheckCircle className="w-4 h-4 text-primary flex-shrink-0 mt-0.5" />
-                                    <span><strong>Share success stories:</strong> Use real examples from similar businesses</span>
-                                  </li>
-                                </ul>
-                              </div>
-                              <div className="p-4 bg-muted/50 border border-border rounded-lg">
-                                <p className="text-xs font-medium text-muted-foreground mb-2">Example Response:</p>
-                                <p className="text-sm italic">
-                                  "I hear you. Many businesses think they're fine until they see what they're missing. Can I ask - how many hours does your team spend on [specific task]? I worked with a similar business that saved 15 hours/week with this automation."
-                                </p>
-                              </div>
-                            </CardContent>
-                          </Card>
-                        )}
-
-                        {/* Slide 4: "We'll do it ourselves" */}
-                        {currentCourseSlide === 3 && (
-                          <Card>
-                            <CardHeader>
-                              <CardTitle className="flex items-center gap-2">
-                                <Package className="w-5 h-5 text-blue-500" />
-                                Understanding Client Objections - "We'll do it ourselves"
-                              </CardTitle>
-                            </CardHeader>
-                            <CardContent className="space-y-4">
-                              <div className="p-4 bg-blue-500/10 border border-blue-500/20 rounded-lg">
-                                <p className="font-semibold mb-3">The Strategy:</p>
-                                <ul className="space-y-2 text-sm">
-                                  <li className="flex items-start gap-2">
-                                    <CheckCircle className="w-4 h-4 text-primary flex-shrink-0 mt-0.5" />
-                                    <span><strong>Explain technical complexity:</strong> Show what's involved behind the scenes</span>
-                                  </li>
-                                  <li className="flex items-start gap-2">
-                                    <CheckCircle className="w-4 h-4 text-primary flex-shrink-0 mt-0.5" />
-                                    <span><strong>Highlight time investment:</strong> Development, maintenance, updates</span>
-                                  </li>
-                                  <li className="flex items-start gap-2">
-                                    <CheckCircle className="w-4 h-4 text-primary flex-shrink-0 mt-0.5" />
-                                    <span><strong>Emphasize expertise:</strong> Vault Network handles everything</span>
-                                  </li>
-                                </ul>
-                              </div>
-                              <div className="p-4 bg-muted/50 border border-border rounded-lg">
-                                <p className="text-xs font-medium text-muted-foreground mb-2">Example Response:</p>
-                                <p className="text-sm italic">
-                                  "That's totally understandable! Building this internally typically takes 3-6 months of development time, plus ongoing maintenance. Vault Network has already built and tested this - you get a proven solution immediately, and we handle all updates and support."
-                                </p>
-                              </div>
-                            </CardContent>
-                          </Card>
-                        )}
-
-                        {/* Slide 5: ROI Tools */}
-                        {currentCourseSlide === 4 && (
-                          <Card>
-                            <CardHeader>
-                              <CardTitle className="flex items-center gap-2">
-                                <TrendingUp className="w-5 h-5 text-primary" />
-                                Positioning Automations as ROI Tools
-                              </CardTitle>
-                              <CardDescription>
-                                Always frame automations as investments, not costs.
-                              </CardDescription>
-                            </CardHeader>
-                            <CardContent className="space-y-4">
-                              <div className="grid md:grid-cols-3 gap-4">
-                                <div className="p-4 bg-muted/50 rounded-lg border">
-                                  <div className="text-2xl font-bold text-primary mb-2">1</div>
-                                  <h4 className="font-semibold mb-2">Calculate Time Saved</h4>
-                                  <ul className="text-sm space-y-1 text-muted-foreground">
-                                    <li>• Hours per week/month</li>
-                                    <li>• Multiply by hourly rate</li>
-                                    <li>• Show monthly savings</li>
-                                  </ul>
-                                </div>
-                                <div className="p-4 bg-muted/50 rounded-lg border">
-                                  <div className="text-2xl font-bold text-primary mb-2">2</div>
-                                  <h4 className="font-semibold mb-2">Compare to Hiring</h4>
-                                  <ul className="text-sm space-y-1 text-muted-foreground">
-                                    <li>• Employee: $3-5K/month</li>
-                                    <li>• Automation: $200-500/month</li>
-                                    <li>• Show 10x savings</li>
-                                  </ul>
-                                </div>
-                                <div className="p-4 bg-muted/50 rounded-lg border">
-                                  <div className="text-2xl font-bold text-primary mb-2">3</div>
-                                  <h4 className="font-semibold mb-2">Demonstrate Scalability</h4>
-                                  <ul className="text-sm space-y-1 text-muted-foreground">
-                                    <li>• Manual: Limited by team</li>
-                                    <li>• Automation: Scales infinitely</li>
-                                    <li>• Show growth potential</li>
-                                  </ul>
-                                </div>
-                              </div>
-                              <div className="p-4 bg-primary/10 border border-primary/20 rounded-lg">
-                                <p className="text-xs font-medium text-primary mb-2">Example ROI Calculation:</p>
-                                <p className="text-sm">
-                                  "Your team spends 20 hours/week on invoice follow-ups. At $30/hour, that's $2,400/month. The Invoice Reminder System costs $250/month. You're saving $2,150/month while ensuring nothing falls through the cracks."
-                                </p>
-                              </div>
-                            </CardContent>
-                          </Card>
-                        )}
-
-                        {/* Slide 6: Tone & Style */}
-                        {currentCourseSlide === 5 && (
-                          <Card>
-                            <CardHeader>
-                              <CardTitle className="flex items-center gap-2">
-                                <Users className="w-5 h-5 text-primary" />
-                                Tone & Style of Outreach - Be Consultative
-                              </CardTitle>
-                            </CardHeader>
-                            <CardContent className="space-y-4">
-                              <div className="grid md:grid-cols-2 gap-4">
-                                <div className="p-4 bg-green-500/10 border border-green-500/20 rounded-lg">
-                                  <h4 className="font-semibold mb-3 flex items-center gap-2">
-                                    <CheckCircle className="w-4 h-4 text-green-500" />
-                                    Be Consultative, Not Salesy
-                                  </h4>
-                                  <div className="space-y-2 text-sm">
-                                    <p className="font-medium">Do:</p>
-                                    <ul className="list-disc list-inside space-y-1 ml-2">
-                                      <li>Ask questions about their business</li>
-                                      <li>Listen to their pain points first</li>
-                                      <li>Offer solutions based on their needs</li>
-                                      <li>Position yourself as a consultant</li>
-                                    </ul>
-                                  </div>
-                                </div>
-                                <div className="p-4 bg-red-500/10 border border-red-500/20 rounded-lg">
-                                  <h4 className="font-semibold mb-3 flex items-center gap-2">
-                                    <XCircle className="w-4 h-4 text-red-500" />
-                                    Don't:
-                                  </h4>
-                                  <ul className="list-disc list-inside space-y-1 ml-2 text-sm">
-                                    <li>Push products immediately</li>
-                                    <li>Use aggressive sales language</li>
-                                    <li>Ignore their concerns</li>
-                                    <li>Make it all about commission</li>
-                                  </ul>
-                                </div>
-                              </div>
-                              <div className="p-4 bg-muted/50 rounded-lg">
-                                <p className="text-sm font-medium mb-2">Be Professional but Friendly:</p>
-                                <ul className="text-sm space-y-1">
-                                  <li>• Use their name: Personalization matters</li>
-                                  <li>• Reference specifics: Mention their business details</li>
-                                  <li>• Keep it concise: Respect their time</li>
-                                  <li>• Add value: Every message should help them</li>
-                                </ul>
-                              </div>
-                            </CardContent>
-                          </Card>
-                        )}
-
-                        {/* Slide 7: Example Outreach */}
-                        {currentCourseSlide === 6 && (
-                          <Card>
-                            <CardHeader>
-                              <CardTitle className="flex items-center gap-2">
-                                <MessageSquare className="w-5 h-5 text-primary" />
-                                Example Outreach Templates
-                              </CardTitle>
-                            </CardHeader>
-                            <CardContent className="space-y-4">
-                              <div className="p-4 bg-muted/50 rounded-lg border">
-                                <p className="text-xs font-medium mb-2">Example Outreach:</p>
-                                <p className="text-sm italic mb-4">
-                                  "Hi [Name], I noticed [specific detail about their business]. Many [industry] businesses struggle with [pain point]. I have a solution that's helped similar companies save [X hours/$X] per month. Worth a quick chat?"
-                                </p>
-                              </div>
-                              <div className="p-4 bg-primary/10 border border-primary/20 rounded-lg">
-                                <p className="text-sm font-semibold mb-3">Key Elements:</p>
-                                <div className="grid md:grid-cols-2 gap-2">
-                                  <div className="flex items-center gap-2">
-                                    <CheckCircle className="w-4 h-4 text-primary" />
-                                    <span className="text-sm">Personalization</span>
-                                  </div>
-                                  <div className="flex items-center gap-2">
-                                    <CheckCircle className="w-4 h-4 text-primary" />
-                                    <span className="text-sm">Specific pain point</span>
-                                  </div>
-                                  <div className="flex items-center gap-2">
-                                    <CheckCircle className="w-4 h-4 text-primary" />
-                                    <span className="text-sm">Social proof</span>
-                                  </div>
-                                  <div className="flex items-center gap-2">
-                                    <CheckCircle className="w-4 h-4 text-primary" />
-                                    <span className="text-sm">Clear value proposition</span>
-                                  </div>
-                                  <div className="flex items-center gap-2 md:col-span-2">
-                                    <CheckCircle className="w-4 h-4 text-primary" />
-                                    <span className="text-sm">Low-pressure ask</span>
-                                  </div>
-                                </div>
-                              </div>
-                            </CardContent>
-                          </Card>
-                        )}
-
-                        {/* Slide 8: Follow-Up Reminders */}
-                        {currentCourseSlide === 7 && (
-                          <Card>
-                            <CardHeader>
-                              <CardTitle className="flex items-center gap-2">
-                                <MessageCircle className="w-5 h-5 text-primary" />
-                                Setting Follow-Up Reminders
-                              </CardTitle>
-                            </CardHeader>
-                            <CardContent className="space-y-4">
-                              <p className="text-sm text-muted-foreground mb-4">
-                                Use the Deal Tracking system effectively:
-                              </p>
-                              <div className="space-y-3">
-                                <div className="p-4 bg-muted/50 rounded-lg border">
-                                  <div className="flex items-start gap-3">
-                                    <div className="text-lg font-bold text-primary">1</div>
-                                    <div>
-                                      <h4 className="font-semibold mb-2">Log all outreach attempts</h4>
-                                      <ul className="text-sm space-y-1 text-muted-foreground">
-                                        <li>• Track every touchpoint</li>
-                                        <li>• Note their responses</li>
-                                        <li>• Record next steps</li>
-                                      </ul>
-                                    </div>
-                                  </div>
-                                </div>
-                                <div className="p-4 bg-muted/50 rounded-lg border">
-                                  <div className="flex items-start gap-3">
-                                    <div className="text-lg font-bold text-primary">2</div>
-                                    <div>
-                                      <h4 className="font-semibold mb-2">Set strategic reminders</h4>
-                                      <ul className="text-sm space-y-1 text-muted-foreground">
-                                        <li>• Follow up within 48 hours</li>
-                                        <li>• Re-engage after 1 week if no response</li>
-                                        <li>• Check in quarterly for future needs</li>
-                                      </ul>
-                                    </div>
-                                  </div>
-                                </div>
-                                <div className="p-4 bg-muted/50 rounded-lg border">
-                                  <div className="flex items-start gap-3">
-                                    <div className="text-lg font-bold text-primary">3</div>
-                                    <div>
-                                      <h4 className="font-semibold mb-2">Track conversation status</h4>
-                                      <ul className="text-sm space-y-1 text-muted-foreground">
-                                        <li>• Interested → Schedule demo</li>
-                                        <li>• Not now → Follow up in 3 months</li>
-                                        <li>• Not interested → Respect their decision</li>
-                                      </ul>
-                                    </div>
-                                  </div>
-                                </div>
-                                <div className="p-4 bg-muted/50 rounded-lg border">
-                                  <div className="flex items-start gap-3">
-                                    <div className="text-lg font-bold text-primary">4</div>
-                                    <div>
-                                      <h4 className="font-semibold mb-2">Learn from what works</h4>
-                                      <ul className="text-sm space-y-1 text-muted-foreground">
-                                        <li>• Review successful conversations</li>
-                                        <li>• Identify patterns</li>
-                                        <li>• Refine your approach</li>
-                                      </ul>
-                                    </div>
-                                  </div>
-                                </div>
-                              </div>
-                            </CardContent>
-                          </Card>
-                        )}
-
-                        {/* Slide 9: Key Takeaways */}
-                        {currentCourseSlide === 8 && (
-                          <Card className="bg-gradient-to-r from-primary/10 to-primary/5 border-primary/20">
-                            <CardHeader>
-                              <CardTitle className="flex items-center gap-2">
-                                <Trophy className="w-5 h-5 text-primary" />
-                                Key Takeaways
-                              </CardTitle>
-                            </CardHeader>
-                            <CardContent>
-                              <div className="grid md:grid-cols-2 gap-3">
-                                <div className="flex items-start gap-2">
-                                  <CheckCircle className="w-5 h-5 text-primary flex-shrink-0 mt-0.5" />
-                                  <p className="text-sm"><strong>Objections are opportunities</strong> to show value</p>
-                                </div>
-                                <div className="flex items-start gap-2">
-                                  <CheckCircle className="w-5 h-5 text-primary flex-shrink-0 mt-0.5" />
-                                  <p className="text-sm"><strong>ROI is your best friend</strong> - always calculate it</p>
-                                </div>
-                                <div className="flex items-start gap-2">
-                                  <CheckCircle className="w-5 h-5 text-primary flex-shrink-0 mt-0.5" />
-                                  <p className="text-sm"><strong>Be consultative</strong> - help, don't sell</p>
-                                </div>
-                                <div className="flex items-start gap-2">
-                                  <CheckCircle className="w-5 h-5 text-primary flex-shrink-0 mt-0.5" />
-                                  <p className="text-sm"><strong>Follow up strategically</strong> - persistence pays off</p>
-                                </div>
-                                <div className="flex items-start gap-2 md:col-span-2">
-                                  <CheckCircle className="w-5 h-5 text-primary flex-shrink-0 mt-0.5" />
-                                  <p className="text-sm"><strong>Track everything</strong> - data drives improvement</p>
-                                </div>
-                              </div>
-                              <div className="mt-6 p-4 bg-primary/10 border border-primary/20 rounded-lg">
-                                <p className="text-center text-base font-semibold text-primary">
-                                  Ready to put this into practice? Complete the quiz to test your knowledge! 🎯
-                                </p>
-                              </div>
-                            </CardContent>
-                          </Card>
-                        )}
-                      </div>
-                    ) : (
-                      <div 
-                        className="prose prose-lg dark:prose-invert max-w-none text-foreground py-4"
-                        style={{ 
-                          '--tw-prose-headings': 'rgb(var(--primary))',
-                          '--tw-prose-bold': 'rgb(var(--primary))',
-                        } as React.CSSProperties}
-                        dangerouslySetInnerHTML={{
-                          __html: markdownToHtml(currentSlideContent)
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => {
+                          setShowCourseDialog(false);
+                          setCurrentCourseSlide(0);
                         }}
-                      />
+                        className="text-muted-foreground hover:text-foreground h-8 w-8"
+                      >
+                        <XCircle className="w-4 h-4" />
+                      </Button>
+                    </div>
+                    
+                    {/* Progress Bar */}
+                    {totalSlidesFinal > 1 && (
+                      <div className="space-y-1.5">
+                        <div className="flex items-center justify-between text-xs">
+                          <span className="text-muted-foreground font-medium">Progress</span>
+                          <span className="text-primary font-bold">
+                            Slide {currentCourseSlide + 1} of {totalSlidesFinal}
+                          </span>
+                        </div>
+                        <Progress 
+                          value={((currentCourseSlide + 1) / totalSlidesFinal) * 100} 
+                          className="h-2 bg-primary/10"
+                        />
+                      </div>
                     )}
+                  </div>
+                  
+                  {/* Content Area */}
+                  <ScrollArea className="flex-1 min-h-0 px-6 py-4">
+                    <div className="max-w-4xl mx-auto">
+                      {/* Slide Title */}
+                      {slideTitleFinal && (
+                        <div className="mb-6">
+                          <h2 className="text-2xl font-bold text-primary mb-2 border-b-2 border-primary/40 pb-2.5">
+                            {slideTitleFinal}
+                          </h2>
+                        </div>
+                      )}
+                      
+                      {/* Slide Content - Enhanced styling for better visual hierarchy */}
+                      <div className="space-y-6">
+                        <div 
+                          className="text-base text-foreground leading-relaxed space-y-4" 
+                          style={{ 
+                            '--tw-prose-headings': 'rgb(var(--primary))',
+                            '--tw-prose-bold': 'rgb(var(--primary))',
+                          } as React.CSSProperties} 
+                          dangerouslySetInnerHTML={{
+                            __html: markdownToHtml(slideBodyFinal).replace(/\*\*(.+?)\*\*/g, '<strong class="text-primary font-semibold">$1</strong>')
+                          }} 
+                        />
+                      </div>
+                    </div>
                   </ScrollArea>
-                  <div className="flex gap-2 pt-4 border-t">
+                  
+                  {/* Navigation Footer */}
+                  <div className="flex-shrink-0 flex gap-2 pt-3 pb-4 px-6 border-t border-primary/20 bg-background/50 backdrop-blur-sm">
                     <Button
                       variant="outline"
                       onClick={() => {
                         setShowCourseDialog(false);
                         setCurrentCourseSlide(0);
                       }}
+                      className="border-border hover:bg-muted text-sm h-9"
                     >
                       Close
                     </Button>
                     <div className="flex gap-2 flex-1">
-                      {totalSlides > 1 && (
-                        <>
-                          <Button
-                            variant="outline"
-                            onClick={() => {
-                              if (currentCourseSlide > 0) {
-                                setCurrentCourseSlide(currentCourseSlide - 1);
-                              }
-                            }}
-                            disabled={currentCourseSlide === 0}
-                          >
-                            Back
-                          </Button>
-                          {currentCourseSlide < totalSlides - 1 ? (
-                            <Button
-                              onClick={async () => {
-                                if (currentCourseSlide < totalSlides - 1) {
-                                  // Track slide view when advancing
-                                  if (sellerData?.id && selectedCourse?.id) {
-                                    try {
-                                      await supabase.from("partner_activity_log").insert({
-                                        seller_id: sellerData.id,
-                                        event_type: "course_slide_viewed",
-                                        xp_value: 0,
-                                        description: `Viewed slide ${currentCourseSlide + 1} of ${totalSlides} in ${selectedCourse.title}`,
-                                        metadata: { 
-                                          lesson_id: selectedCourse.id,
-                                          slide_number: currentCourseSlide,
-                                          total_slides: totalSlides
-                                        }
-                                      });
-                                    } catch (error) {
-                                      // Don't block slide navigation if tracking fails
-                                      console.error("Error tracking slide view:", error);
-                                    }
-                                  }
-                                  setCurrentCourseSlide(currentCourseSlide + 1);
-                                }
-                              }}
-                              className="flex-1"
-                            >
-                              Next
-                            </Button>
-                          ) : (
-                            selectedCourse.quiz_questions && (
-                              <Button
-                                onClick={async () => {
-                                  // Track final slide view before quiz
-                                  if (sellerData?.id && selectedCourse?.id) {
-                                    try {
-                                      await supabase.from("partner_activity_log").insert({
-                                        seller_id: sellerData.id,
-                                        event_type: "course_slide_viewed",
-                                        xp_value: 0,
-                                        description: `Viewed all ${totalSlides} slides in ${selectedCourse.title}`,
-                                        metadata: { 
-                                          lesson_id: selectedCourse.id,
-                                          slide_number: currentCourseSlide,
-                                          total_slides: totalSlides,
-                                          all_slides_viewed: true
-                                        }
-                                      });
-                                    } catch (error) {
-                                      console.error("Error tracking final slide view:", error);
-                                    }
-                                  }
-                                  setShowCourseDialog(false);
-                                  setCurrentCourseSlide(0);
-                                  handleCompleteLesson(selectedCourse);
-                                }}
-                                disabled={completedLessons.has(selectedCourse.id)}
-                                className="flex-1"
-                              >
-                                {completedLessons.has(selectedCourse.id) ? 'Quiz Completed' : 'Take Quiz'}
-                              </Button>
-                            )
-                          )}
-                        </>
-                      )}
-                      {totalSlides === 1 && selectedCourse.quiz_questions && (
+                      <Button
+                        variant="outline"
+                        onClick={() => {
+                          if (currentCourseSlide > 0) {
+                            setCurrentCourseSlide(currentCourseSlide - 1);
+                          }
+                        }}
+                        disabled={currentCourseSlide === 0}
+                        className="flex-1 text-sm h-9"
+                      >
+                        <ArrowRight className="w-3.5 h-3.5 mr-1.5 rotate-180" />
+                        Back
+                      </Button>
+                      {currentCourseSlide < totalSlidesFinal - 1 ? (
                         <Button
-                          onClick={() => {
-                            setShowCourseDialog(false);
-                            setCurrentCourseSlide(0);
-                            handleCompleteLesson(selectedCourse);
+                          onClick={async () => {
+                            if (currentCourseSlide < totalSlidesFinal - 1) {
+                              if (sellerData?.id && selectedCourse?.id) {
+                                try {
+                                  await supabase.from("partner_activity_log").insert({
+                                    seller_id: sellerData.id,
+                                    event_type: "course_slide_viewed",
+                                    xp_value: 0,
+                                    description: `Viewed slide ${currentCourseSlide + 1} of ${totalSlidesFinal} in ${selectedCourse.title}`,
+                                    metadata: { 
+                                      lesson_id: selectedCourse.id,
+                                      slide_number: currentCourseSlide,
+                                      total_slides: totalSlidesFinal
+                                    }
+                                  });
+                                } catch (error) {
+                                  console.error("Error tracking slide view:", error);
+                                }
+                              }
+                              setCurrentCourseSlide(currentCourseSlide + 1);
+                            }
                           }}
-                          disabled={completedLessons.has(selectedCourse.id)}
-                          className="flex-1"
+                          className="flex-1 bg-primary hover:bg-primary/90 text-primary-foreground text-sm h-9"
                         >
-                          {completedLessons.has(selectedCourse.id) ? 'Quiz Completed' : 'Take Quiz'}
+                          Next
+                          <ArrowRight className="w-3.5 h-3.5 ml-1.5" />
                         </Button>
+                      ) : (
+                        selectedCourse.quiz_questions && (
+                          <Button
+                            onClick={async () => {
+                              if (sellerData?.id && selectedCourse?.id) {
+                                try {
+                                  await supabase.from("partner_activity_log").insert({
+                                    seller_id: sellerData.id,
+                                    event_type: "course_completed",
+                                    xp_value: 0,
+                                    description: `Completed all ${totalSlidesFinal} slides in ${selectedCourse.title}`,
+                                    metadata: { 
+                                      lesson_id: selectedCourse.id,
+                                      total_slides: totalSlidesFinal
+                                    }
+                                  });
+                                } catch (error) {
+                                  console.error("Error tracking course completion:", error);
+                                }
+                              }
+                              setShowCourseDialog(false);
+                              setCurrentCourseSlide(0);
+                              handleCompleteLesson(selectedCourse);
+                            }}
+                            disabled={completedLessons.has(selectedCourse.id)}
+                            className="flex-1 bg-primary hover:bg-primary/90 text-primary-foreground text-sm h-9"
+                          >
+                            {completedLessons.has(selectedCourse.id) ? 'Quiz Completed' : 'Take Quiz'}
+                            <ArrowRight className="w-3.5 h-3.5 ml-1.5" />
+                          </Button>
+                        )
                       )}
                     </div>
                   </div>
@@ -9101,6 +9955,77 @@ const PartnerDashboard = () => {
               </Dialog>
             );
           })()}
+
+          {/* Automation Brief Dialog */}
+          <Dialog open={showAutomationBrief} onOpenChange={handleBriefDialogClose}>
+            <DialogContent className="max-w-4xl max-h-[90vh] flex flex-col">
+              <DialogHeader>
+                <DialogTitle>{selectedAutomationBrief?.name || "Automation Brief"}</DialogTitle>
+                <DialogDescription>
+                  Detailed information about this automation
+                </DialogDescription>
+              </DialogHeader>
+              <ScrollArea className="flex-1 pr-4">
+                <div className="space-y-6">
+                  {selectedAutomationBrief && (
+                    <>
+                      {selectedAutomationBrief.image_url && (
+                        <div className="w-full h-64 overflow-hidden rounded-lg">
+                          <img
+                            src={selectedAutomationBrief.image_url}
+                            alt={selectedAutomationBrief.name}
+                            className="w-full h-full object-cover"
+                          />
+                        </div>
+                      )}
+                      <div>
+                        <h3 className="text-lg font-semibold mb-2">Description</h3>
+                        <p className="text-sm text-muted-foreground">{selectedAutomationBrief.description}</p>
+                      </div>
+                      {selectedAutomationBrief.features && selectedAutomationBrief.features.length > 0 && (
+                        <div>
+                          <h3 className="text-lg font-semibold mb-2">Key Features</h3>
+                          <ul className="list-disc list-inside space-y-1 text-sm text-muted-foreground">
+                            {selectedAutomationBrief.features.map((feature: string, idx: number) => (
+                              <li key={idx}>{feature}</li>
+                            ))}
+                          </ul>
+                        </div>
+                      )}
+                      {selectedAutomationBrief.use_cases && selectedAutomationBrief.use_cases.length > 0 && (
+                        <div>
+                          <h3 className="text-lg font-semibold mb-2">Use Cases</h3>
+                          <ul className="list-disc list-inside space-y-1 text-sm text-muted-foreground">
+                            {selectedAutomationBrief.use_cases.map((useCase: string, idx: number) => (
+                              <li key={idx}>{useCase}</li>
+                            ))}
+                          </ul>
+                        </div>
+                      )}
+
+                      <div className="border-t border-border pt-4">
+                        <div className="grid grid-cols-2 gap-4 text-sm">
+                          <div>
+                            <span className="text-muted-foreground">Setup Price:</span>
+                            <span className="font-bold ml-2">${selectedAutomationBrief.setup_price}</span>
+                          </div>
+                          <div>
+                            <span className="text-muted-foreground">Monthly Price:</span>
+                            <span className="font-bold text-primary ml-2">${selectedAutomationBrief.monthly_price}/mo</span>
+                          </div>
+                        </div>
+                      </div>
+                    </>
+                  )}
+                </div>
+              </ScrollArea>
+              <div className="flex justify-end gap-2 pt-4 border-t">
+                <Button variant="outline" onClick={() => handleBriefDialogClose(false)}>
+                  Close
+                </Button>
+              </div>
+            </DialogContent>
+          </Dialog>
 
           {/* Automation Brief Dialog */}
           <Dialog open={showAutomationBrief} onOpenChange={handleBriefDialogClose}>
