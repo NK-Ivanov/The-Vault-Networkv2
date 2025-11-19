@@ -20,6 +20,8 @@ import LearnerDashboard from "./pages/LearnerDashboard";
 import LearnerModule from "./pages/LearnerModule";
 import LearnerProgression from "./pages/LearnerProgression";
 import Quiz from "./pages/Quiz";
+import OutreachPlanner from "./pages/OutreachPlanner";
+import VaultLibrary from "./pages/VaultLibrary";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -48,6 +50,8 @@ const App = () => (
             <Route path="/learner-module/:moduleId" element={<LearnerModule />} />
             <Route path="/learner-progression" element={<LearnerProgression />} />
             <Route path="/quiz" element={<Quiz />} />
+            <Route path="/outreach-planner" element={<OutreachPlanner />} />
+            <Route path="/vault-library" element={<VaultLibrary />} />
             {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
             <Route path="*" element={<NotFound />} />
           </Routes>

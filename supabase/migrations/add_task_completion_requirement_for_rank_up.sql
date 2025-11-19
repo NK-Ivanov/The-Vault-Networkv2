@@ -32,7 +32,7 @@ BEGIN
     WHEN 'Partner' THEN
       _tasks := ARRAY['stage-1-recruit-1', 'stage-1-recruit-2', 'stage-1-recruit-3', 'stage-1-recruit-plus-4', 'stage-1-recruit-plus-5', 'stage-1-recruit-plus-6', 'stage-1-recruit-plus-7', 'stage-2-apprentice-6', 'stage-2-apprentice-7', 'stage-2-apprentice-8', 'stage-2-apprentice-9', 'stage-2-apprentice-10', 'stage-2-apprentice-11', 'stage-2-apprentice-12', 'stage-2-apprentice-13', 'stage-3-agent-9', 'stage-3-agent-10', 'stage-3-agent-plus-11', 'stage-3-agent-plus-12', 'stage-3-agent-plus-13', 'stage-4-partner-12', 'stage-4-verified-14b', 'stage-4-partner-13', 'stage-4-partner-14', 'stage-4-partner-15', 'stage-4-verified-plus-16', 'stage-4-verified-plus-17', 'stage-4-verified-plus-18', 'stage-4-verified-plus-19', 'stage-4-verified-plus-20', 'stage-5-partner-12', 'stage-5-partner-13', 'stage-5-partner-14', 'stage-5-partner-15', 'stage-5-partner-16', 'stage-5-partner-17', 'stage-5-partner-18', 'stage-5-partner-19']; -- All Verified Plus tasks + Partner rank tasks (Review Setup vs Monthly Pricing, Create Sales Script, Record Value Explanation, Earnings Projection, Map Client Journey, Review Bookmarked Automations, Write Setup Process Explanation, Log In on 7 Consecutive Days)
     WHEN 'Partner Plus' THEN
-      _tasks := ARRAY['stage-1-recruit-1', 'stage-1-recruit-2', 'stage-1-recruit-3', 'stage-1-recruit-plus-4', 'stage-1-recruit-plus-5', 'stage-1-recruit-plus-6', 'stage-1-recruit-plus-7', 'stage-2-apprentice-6', 'stage-2-apprentice-7', 'stage-2-apprentice-8', 'stage-2-apprentice-9', 'stage-2-apprentice-10', 'stage-2-apprentice-11', 'stage-2-apprentice-12', 'stage-2-apprentice-13', 'stage-3-agent-9', 'stage-3-agent-10', 'stage-3-agent-plus-11', 'stage-3-agent-plus-12', 'stage-3-agent-plus-13', 'stage-4-partner-12', 'stage-4-verified-14b', 'stage-4-partner-13', 'stage-4-partner-14', 'stage-4-partner-15', 'stage-4-verified-plus-16', 'stage-4-verified-plus-17', 'stage-4-verified-plus-18', 'stage-4-verified-plus-19', 'stage-4-verified-plus-20', 'stage-5-partner-12', 'stage-5-partner-13', 'stage-5-partner-14', 'stage-5-partner-15', 'stage-5-partner-16', 'stage-5-partner-17', 'stage-5-partner-18', 'stage-5-partner-19', 'stage-5-verified-17', 'stage-5-verified-18', 'stage-5-verified-19', 'stage-5-verified-20']; -- All Partner tasks + Partner Plus Stage 5 tasks (Invite First Real Client, Assign First Automation, Mark First Sale, Submit Case Summary)
+      _tasks := ARRAY['stage-1-recruit-1', 'stage-1-recruit-2', 'stage-1-recruit-3', 'stage-1-recruit-plus-4', 'stage-1-recruit-plus-5', 'stage-1-recruit-plus-6', 'stage-1-recruit-plus-7', 'stage-2-apprentice-6', 'stage-2-apprentice-7', 'stage-2-apprentice-8', 'stage-2-apprentice-9', 'stage-2-apprentice-10', 'stage-2-apprentice-11', 'stage-2-apprentice-12', 'stage-2-apprentice-13', 'stage-3-agent-9', 'stage-3-agent-10', 'stage-3-agent-plus-11', 'stage-3-agent-plus-12', 'stage-3-agent-plus-13', 'stage-4-partner-12', 'stage-4-verified-14b', 'stage-4-partner-13', 'stage-4-partner-14', 'stage-4-partner-15', 'stage-4-verified-plus-16', 'stage-4-verified-plus-17', 'stage-4-verified-plus-18', 'stage-4-verified-plus-19', 'stage-4-verified-plus-20', 'stage-5-verified-16', 'stage-5-partner-12', 'stage-5-partner-13', 'stage-5-partner-14', 'stage-5-partner-15', 'stage-5-partner-16', 'stage-5-partner-17', 'stage-5-partner-18', 'stage-5-partner-19', 'stage-5-partner-plus-19', 'stage-5-partner-plus-20', 'stage-5-verified-21', 'stage-5-verified-22']; -- All Partner tasks + Partner Plus tasks (Invite First Real Client, Assign First Automation, Mark First Sale, Submit Case Summary)
     WHEN 'Seller Pro' THEN
       _tasks := ARRAY['stage-1-recruit-1', 'stage-1-recruit-2', 'stage-1-recruit-3', 'stage-1-recruit-plus-4', 'stage-1-recruit-plus-5', 'stage-1-recruit-plus-6', 'stage-1-recruit-plus-7', 'stage-2-apprentice-6', 'stage-2-apprentice-7', 'stage-2-apprentice-8', 'stage-2-apprentice-9', 'stage-2-apprentice-10', 'stage-2-apprentice-11', 'stage-2-apprentice-12', 'stage-2-apprentice-13', 'stage-3-agent-9', 'stage-3-agent-10', 'stage-3-agent-plus-11', 'stage-3-agent-plus-12', 'stage-3-agent-plus-13', 'stage-4-partner-12', 'stage-4-verified-14b', 'stage-4-partner-13', 'stage-4-partner-14', 'stage-4-partner-15', 'stage-5-verified-17', 'stage-5-verified-18', 'stage-5-verified-19', 'stage-5-verified-20']; -- All tasks including Edit Referral Code
     WHEN 'Partner Pro' THEN
@@ -204,16 +204,16 @@ BEGIN
     -- Get XP threshold for next rank (from RANK_INFO equivalent logic)
     CASE new_rank_val
       WHEN 'Recruit' THEN next_rank_xp_threshold := 0;
-      WHEN 'Recruit Plus' THEN next_rank_xp_threshold := 0;
-      WHEN 'Apprentice' THEN next_rank_xp_threshold := 1000;
-      WHEN 'Apprentice Plus' THEN next_rank_xp_threshold := 1000;
-      WHEN 'Agent' THEN next_rank_xp_threshold := 2500;
-      WHEN 'Agent Plus' THEN next_rank_xp_threshold := 2500;
-      WHEN 'Verified' THEN next_rank_xp_threshold := 4500;
-      WHEN 'Verified Plus' THEN next_rank_xp_threshold := 4500;
-      WHEN 'Partner' THEN next_rank_xp_threshold := 7000;
-      WHEN 'Partner Plus' THEN next_rank_xp_threshold := 7000;
-      WHEN 'Partner Pro' THEN next_rank_xp_threshold := 10000;
+        WHEN 'Recruit Plus' THEN next_rank_xp_threshold := 200;
+        WHEN 'Apprentice' THEN next_rank_xp_threshold := 1000;
+        WHEN 'Apprentice Plus' THEN next_rank_xp_threshold := 1500;
+        WHEN 'Agent' THEN next_rank_xp_threshold := 3000;
+        WHEN 'Agent Plus' THEN next_rank_xp_threshold := 4000;
+        WHEN 'Verified' THEN next_rank_xp_threshold := 6000;
+        WHEN 'Verified Plus' THEN next_rank_xp_threshold := 8000;
+        WHEN 'Partner' THEN next_rank_xp_threshold := 10000;
+        WHEN 'Partner Plus' THEN next_rank_xp_threshold := 13000;
+        WHEN 'Partner Pro' THEN next_rank_xp_threshold := 999999; -- Paid only
       ELSE next_rank_xp_threshold := 999999; -- Never advance if rank is unknown
     END CASE;
     

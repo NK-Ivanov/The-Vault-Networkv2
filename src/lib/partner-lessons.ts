@@ -40,7 +40,7 @@ const stage1Lessons: PartnerLesson[] = [
 **Task:** Simply open the Overview tab in your Partner Dashboard. This is your home base where you'll see your key metrics, referral link, and quick stats.
 
 **Why:** Understanding your dashboard layout helps you navigate efficiently as you progress through your partner journey.`,
-    xp_reward: 100,
+    xp_reward: 25,
     order_index: 1
   },
   {
@@ -57,7 +57,7 @@ const stage1Lessons: PartnerLesson[] = [
 3. Click the copy button to copy it to your clipboard
 
 **Why:** Your referral link is how you'll invite clients and earn commissions. Get familiar with it early!`,
-    xp_reward: 100,
+    xp_reward: 25,
     order_index: 2
   },
   {
@@ -71,7 +71,7 @@ const stage1Lessons: PartnerLesson[] = [
 Navigate to the Automations tab and click on at least 3 different automation cards to view their details. Clicking on automation cards will track your progress and help you understand what solutions you'll be selling to clients.
 
 **Note:** You'll only see the "Available Automations" section at this level. Client Automations tracking unlocks at a higher rank.`,
-    xp_reward: 200,
+    xp_reward: 50,
     unlock_action: 'recruit_plus',
     order_index: 3
   },
@@ -89,7 +89,7 @@ Navigate to the Automations tab and click on at least 3 different automation car
 3. Click the bookmark icon to save it
 
 **Why:** Bookmarking helps you quickly access automations you're interested in selling to clients.`,
-    xp_reward: 150,
+    xp_reward: 40,
     order_index: 4
   },
   {
@@ -107,7 +107,7 @@ Navigate to the Automations tab and click on at least 3 different automation car
 4. Send your message
 
 **Why:** This helps you get familiar with the support system and opens a communication channel with The Vault Network team.`,
-    xp_reward: 150,
+    xp_reward: 40,
     order_index: 5
   },
   {
@@ -131,7 +131,7 @@ Navigate to the Automations tab and click on at least 3 different automation car
    - FAQ
 
 **Why:** Understanding automation details helps you sell them effectively to clients.`,
-    xp_reward: 150,
+    xp_reward: 40,
     order_index: 6
   },
   {
@@ -258,7 +258,7 @@ Navigate to the Automations tab and click on at least 3 different automation car
       }
     ],
     quiz_answers: [1, 1, 1, 1, 2, 1, 0, 1, 1, 1],
-    xp_reward: 200,
+    xp_reward: 75,
     order_index: 7
   }
 ];
@@ -353,7 +353,7 @@ Vault Network handles all technical setup and delivery. Your role is to:
       }
     ],
     quiz_answers: [1, 1, 0],
-    xp_reward: 400,
+    xp_reward: 100,
     order_index: 5
   },
   {
@@ -410,7 +410,7 @@ Vault Network handles all technical setup and delivery. Your role is to:
       }
     ],
     quiz_answers: [0, 1, 2, 3],
-    xp_reward: 400,
+    xp_reward: 100,
     order_index: 6
   },
   {
@@ -427,7 +427,7 @@ Vault Network handles all technical setup and delivery. Your role is to:
 - **Estimated Client Type**: Who would benefit from this?
 
 **Why:** Your suggestions help shape the future of Vault Network!`,
-    xp_reward: 700,
+    xp_reward: 150,
     unlock_action: 'stage_3',
     order_index: 7
   },
@@ -442,7 +442,7 @@ Vault Network handles all technical setup and delivery. Your role is to:
 **Task:** Open five different automation cards in the Automations tab and scroll to their pricing sections.
 
 **Why:** Familiarizing yourself with the full automation library helps you recommend the right solutions to clients.`,
-    xp_reward: 300,
+    xp_reward: 75,
     order_index: 8
   },
   {
@@ -459,7 +459,7 @@ Vault Network handles all technical setup and delivery. Your role is to:
 3. Click the bookmark/favourite icon to save them
 
 **Why:** Bookmarking helps you quickly access automations you're interested in selling to clients.`,
-    xp_reward: 250,
+    xp_reward: 75,
     order_index: 9
   },
   {
@@ -482,7 +482,7 @@ Vault Network handles all technical setup and delivery. Your role is to:
    - FAQ
 
 **Why:** Understanding automation details helps you sell them effectively to clients.`,
-    xp_reward: 200,
+    xp_reward: 50,
     order_index: 10
   },
   {
@@ -496,7 +496,7 @@ Vault Network handles all technical setup and delivery. Your role is to:
 **Task:** Describe in one sentence how one chosen automation helps a business. Use the text box below to write your pitch.
 
 **Why:** Crafting clear, concise pitches helps you communicate value quickly to potential clients.`,
-    xp_reward: 400,
+    xp_reward: 100,
     order_index: 11
   },
   {
@@ -513,7 +513,7 @@ Vault Network handles all technical setup and delivery. Your role is to:
 3. View the rankings and see where you stand
 
 **Why:** The leaderboard helps you see your progress and motivates you to keep growing!`,
-    xp_reward: 150,
+    xp_reward: 50,
     order_index: 12
   },
   {
@@ -527,7 +527,7 @@ Vault Network handles all technical setup and delivery. Your role is to:
 **Task:** Simply log in to your Partner Dashboard on 2 different days. Your login will be tracked automatically.
 
 **Why:** Consistent engagement helps you stay on top of opportunities and build productive habits.`,
-    xp_reward: 300,
+    xp_reward: 75,
     order_index: 13
   }
 ];
@@ -709,7 +709,7 @@ Ready to put this into practice? Complete the quiz to test your knowledge!`,
       }
     ],
     quiz_answers: [1, 1, 1, null],
-    xp_reward: 600,
+    xp_reward: 150,
     order_index: 8
   },
   {
@@ -725,7 +725,7 @@ Ready to put this into practice? Complete the quiz to test your knowledge!`,
 3. **Consultative Pitch Outline**: For calls and meetings
 
 Edit and save your custom script. You can update it anytime as you learn what works best!`,
-    xp_reward: 600,
+    xp_reward: 150,
     order_index: 9
   },
   {
@@ -743,7 +743,7 @@ Edit and save your custom script. You can update it anytime as you learn what wo
 - **Reflection**: What did you learn? What worked?
 
 Tracking your outreach helps you improve over time!`,
-    xp_reward: 500,
+    xp_reward: 150,
     unlock_action: 'stage_4',
     order_index: 10
   },
@@ -1286,7 +1286,7 @@ Ready to test your knowledge? Complete the quiz to earn your XP!`,
       }
     ],
     quiz_answers: [1, 0, 1, 0, 1, 1, 1, 1, 1, 1],
-    xp_reward: 600,
+    xp_reward: 150,
     order_index: 11
   },
   {
@@ -1659,7 +1659,7 @@ Ready to test your knowledge? Complete the quiz to earn your XP!`,
       }
     ],
     quiz_answers: [1, 1, 0, 1, 0, 0, 0, 0, 0, 0],
-    xp_reward: 500,
+    xp_reward: 150,
     order_index: 12
   },
   {
@@ -1901,7 +1901,7 @@ When they sign up using your referral link, you'll earn XP and help grow the Vau
    - Problem
 
 **Why:** Helps you simulate real client prep and prepare for working with actual businesses.`,
-    xp_reward: 600,
+    xp_reward: 200,
     order_index: 16
   },
   {
@@ -1919,7 +1919,7 @@ When they sign up using your referral link, you'll earn XP and help grow the Vau
 4. For each automation, write a note explaining why it fits this client's needs
 
 **Why:** Builds pre-sales consulting skills and helps you think strategically about automation recommendations.`,
-    xp_reward: 700,
+    xp_reward: 250,
     order_index: 17
   },
   {
@@ -1936,7 +1936,7 @@ When they sign up using your referral link, you'll earn XP and help grow the Vau
 3. The system will track clicks (self-clicks don't count)
 
 **Why:** Teaches you how viral loops work and helps you understand the power of referral marketing.`,
-    xp_reward: 400,
+    xp_reward: 150,
     order_index: 18
   },
   {
@@ -2163,7 +2163,7 @@ Ready to test your knowledge? Complete the quiz to earn your XP!`,
       }
     ],
     quiz_answers: [0, 1, 0, 3, 0, 0, 3, 3],
-    xp_reward: 600,
+    xp_reward: 200,
     order_index: 19
   },
   {
@@ -2183,7 +2183,7 @@ Ready to test your knowledge? Complete the quiz to earn your XP!`,
 - The streak continues from your current consecutive days count
 
 **Why:** Consistent daily engagement shows commitment and helps you stay on top of opportunities, build productive habits, and demonstrate reliability to clients.`,
-    xp_reward: 500,
+    xp_reward: 200,
     order_index: 20
   }
 ];
@@ -2718,7 +2718,7 @@ This helps you prepare for answering real client questions about the setup proce
     order_index: 19
   },
   {
-    id: generateId(5, 'Verified', 20),
+    id: generateId(5, 'Partner Plus', 19),
     stage: 5,
     rank_required: 'Partner Plus',
     lesson_type: 'task',
@@ -2726,11 +2726,11 @@ This helps you prepare for answering real client questions about the setup proce
     content: `Share your referral link with a real business that needs automation.
 
 When they sign up and create a business account, they'll be assigned to you and you'll earn 1,500 XP!`,
-    xp_reward: 1500,
+    xp_reward: 600,
     order_index: 19
   },
   {
-    id: generateId(5, 'Verified', 20),
+    id: generateId(5, 'Partner Plus', 20),
     stage: 5,
     rank_required: 'Partner Plus',
     lesson_type: 'task',
@@ -2742,8 +2742,8 @@ When they sign up and create a business account, they'll be assigned to you and 
 3. Assign it through the dashboard
 4. Track the setup process
 
-You'll earn 1,000 XP when you complete this!`,
-    xp_reward: 1000,
+You'll earn 400 XP when you complete this!`,
+    xp_reward: 400,
     order_index: 20
   },
   {
@@ -2752,10 +2752,10 @@ You'll earn 1,000 XP when you complete this!`,
     rank_required: 'Partner Plus',
     lesson_type: 'task',
     title: 'Mark First Sale',
-    content: `Complete your first automation sale! When a client pays the setup fee, you'll automatically earn 2,000 XP.
+    content: `Complete your first automation sale! When a client pays the setup fee, you'll automatically earn 800 XP.
 
 This is a major milestone - celebrate your success!`,
-    xp_reward: 2000,
+    xp_reward: 800,
     order_index: 21
   },
   {
@@ -2772,7 +2772,7 @@ This is a major milestone - celebrate your success!`,
 - **Lessons Learned**: What did you learn from this sale?
 
 Your case study helps other partners learn and may be featured!`,
-    xp_reward: 500,
+    xp_reward: 250,
     unlock_action: 'stage_6',
     order_index: 22
   }

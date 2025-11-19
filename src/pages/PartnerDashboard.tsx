@@ -11,7 +11,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { DollarSign, Users, TrendingUp, Package, Copy, Check, CheckCircle, XCircle, MessageSquare, AlertCircle, HelpCircle, Send, RefreshCw, LayoutDashboard, Building2, Boxes, CreditCard, Ticket, Mail, Trophy, MessageCircle, Phone, Zap, Bookmark, BookmarkCheck, FileText, ArrowRight, Calculator, Trash2, StickyNote, MapPin } from "lucide-react";
+import { DollarSign, Users, TrendingUp, Package, Copy, Check, CheckCircle, XCircle, MessageSquare, AlertCircle, HelpCircle, Send, RefreshCw, LayoutDashboard, Building2, Boxes, CreditCard, Ticket, Mail, Trophy, MessageCircle, Phone, Zap, Bookmark, BookmarkCheck, FileText, ArrowRight, Calculator, Trash2, StickyNote, MapPin, Pencil, X } from "lucide-react";
 import EarningsCalculator from "@/components/EarningsCalculator";
 import ClientJourneyMapper from "@/components/ClientJourneyMapper";
 import SetupProcessExplanation from "@/components/SetupProcessExplanation";
@@ -22,8 +22,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { formatDistanceToNow } from "date-fns";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
-import { isTabUnlocked, getTabUnlockRequirement, calculateProgressToNextRank, getNextRank, getRankInfo, RANK_INFO, getTasksForRank, type PartnerRank } from "@/lib/partner-progression";
-import { getWeeklyChallenges, getCurrentWeek, type WeeklyChallenge } from "@/lib/weekly-challenges";
+import { isTabUnlocked, getTabUnlockRequirement, calculateProgressToNextRank, getNextRank, getRankInfo, RANK_INFO, getTasksForRank, type PartnerRank, getDailyXpCapForRank, getTierForRank, TIER_DAILY_XP_CAP } from "@/lib/partner-progression";
 import { getLessonsForRank, type PartnerLesson as HardcodedLesson, isCountableTask, getLessonById } from "@/lib/partner-lessons";
 import { getTodaysDailyTasks } from "@/lib/daily-tasks";
 import { BookOpen, Target, Lock } from "lucide-react";
@@ -144,6 +143,10 @@ interface SellerData {
   last_login_date?: string;
   highest_rank?: string;
   theme_preference?: string;
+  tier?: number;
+  overflow_xp?: number;
+  daily_xp_applied?: number;
+  last_xp_date?: string;
 }
 
 interface TransactionData {
@@ -296,17 +299,6 @@ interface DealTrackingEntry {
   created_at: string;
 }
 
-interface PartnerChallenge {
-  id: string;
-  challenge_type: string;
-  title: string;
-  description: string;
-  xp_reward: number;
-  active_start_date?: string;
-  active_end_date?: string;
-  is_active?: boolean;
-  requirements: any;
-}
 
 interface PartnerBadge {
   id: string;
@@ -516,6 +508,7 @@ const PartnerDashboard = () => {
   const [newReferralCode, setNewReferralCode] = useState("");
   const [updatingReferralCode, setUpdatingReferralCode] = useState(false);
   const [activeTab, setActiveTab] = useState<string>("getting-started");
+  const [xpTrendData, setXpTrendData] = useState<Array<{ date: string; xp: number; label: string }>>([]);
   
   // Ticket chat state
   const [selectedTicket, setSelectedTicket] = useState<TicketData | null>(null);
@@ -707,6 +700,15 @@ If you are curious, I can show you exactly how it works. It only takes a minute 
   const [newDealReflection, setNewDealReflection] = useState<string>("");
   const [submittingDeal, setSubmittingDeal] = useState(false);
   
+  // Edit Deal state
+  const [editingDeal, setEditingDeal] = useState<DealTrackingEntry | null>(null);
+  const [editDealDate, setEditDealDate] = useState<string>("");
+  const [editDealChannel, setEditDealChannel] = useState<string>("");
+  const [editDealClientName, setEditDealClientName] = useState<string>("");
+  const [editDealStatus, setEditDealStatus] = useState<string>("no_response");
+  const [editDealReflection, setEditDealReflection] = useState<string>("");
+  const [updatingDeal, setUpdatingDeal] = useState(false);
+  
   // Automation suggestion state
   const [suggestionTitle, setSuggestionTitle] = useState<string>("");
   const [suggestionProblem, setSuggestionProblem] = useState<string>("");
@@ -736,8 +738,7 @@ If you are curious, I can show you exactly how it works. It only takes a minute 
   const [oneSentencePitch, setOneSentencePitch] = useState<string>("");
   const [submittingPitch, setSubmittingPitch] = useState(false);
   
-  // Challenges and badges state
-  const [activeChallenges, setActiveChallenges] = useState<PartnerChallenge[]>([]);
+  // Badges state
   const [earnedBadges, setEarnedBadges] = useState<BadgeEarning[]>([]);
   const [allBadges, setAllBadges] = useState<PartnerBadge[]>([]);
   
@@ -952,7 +953,6 @@ If you are curious, I can show you exactly how it works. It only takes a minute 
       case 'open_referral_code':
       case 'preview_referral_options':
       case 'check_xp':
-      case 'check_weekly_xp':
       case 'check_weekly_trend':
       case 'check_weekly_goals':
       case 'review_yesterday_xp':
@@ -1111,6 +1111,11 @@ If you are curious, I can show you exactly how it works. It only takes a minute 
       }
 
       setSellerData(seller);
+      
+      // Fetch XP trend data for the last 7 days
+      if (seller.id) {
+        await fetchXpTrendData(seller.id);
+      }
 
       // Update login streak and track unique login days
       if (seller.id) {
@@ -1498,10 +1503,6 @@ If you are curious, I can show you exactly how it works. It only takes a minute 
           _seller_id: seller.id
         });
         if (streakError) console.error("Error updating login streak:", streakError);
-        // Check weekly challenges for login (after sellerData is set)
-        setTimeout(async () => {
-          await checkWeeklyChallenges('login');
-        }, 1000);
         
         // Fetch login streak XP and calculate consecutive days
         await fetchLoginStreakData(seller.id);
@@ -2226,34 +2227,6 @@ If you are curious, I can show you exactly how it works. It only takes a minute 
       if (dealEntriesError) throw dealEntriesError;
       setDealEntries(dealEntriesData || []);
 
-      // Calculate current week (1-4) based on date
-      const currentWeekNumber = getCurrentWeek();
-      setCurrentWeek(currentWeekNumber);
-
-      // Get weekly challenges from hardcoded configuration, filtered by rank
-      const weeklyChallenges = getWeeklyChallenges(currentWeekNumber, rank);
-      setActiveChallenges(weeklyChallenges);
-
-      // Fetch challenge progress for this seller from activity_log
-      if (weeklyChallenges.length > 0) {
-        const challengeIds = weeklyChallenges.map(c => c.id);
-        const { data: progressData, error: progressError } = await supabase
-          .from("partner_activity_log")
-          .select("metadata")
-          .eq("seller_id", sellerId)
-          .eq("event_type", "challenge_completed");
-
-        if (!progressError && progressData) {
-          const progressMap = new Map<string, boolean>();
-          progressData.forEach((p: any) => {
-            const challengeId = p.metadata?.challenge_id;
-            if (challengeId && challengeIds.includes(challengeId)) {
-              progressMap.set(challengeId, true);
-            }
-          });
-          setChallengeProgress(progressMap);
-        }
-      }
 
       // Fetch all badges
       const { data: badgesData, error: badgesError } = await supabase
@@ -2400,182 +2373,6 @@ If you are curious, I can show you exactly how it works. It only takes a minute 
     setTimeout(() => setXpNotification(null), 5000);
   };
 
-  // Helper function to check and complete weekly challenges
-  const checkWeeklyChallenges = async (actionType: string, count: number = 1) => {
-    if (!sellerData?.id || activeChallenges.length === 0) return;
-
-    const currentWeekNumber = getCurrentWeek();
-    const weeklyChallenges = getWeeklyChallenges(currentWeekNumber);
-
-    for (const challenge of weeklyChallenges) {
-      // Skip if already completed
-      if (challengeProgress.get(challenge.id)) continue;
-
-      const req = challenge.requirements;
-      let shouldComplete = false;
-      let currentCount = 0;
-
-      // Check challenge requirements based on type
-      switch (req.type) {
-        case 'login_days':
-          if (actionType === 'login' && sellerData.login_streak) {
-            currentCount = sellerData.login_streak;
-            shouldComplete = currentCount >= req.target;
-          }
-          break;
-        case 'new_clients':
-          if (actionType === 'client_added') {
-            // Count clients added this week
-            const weekStart = new Date();
-            weekStart.setDate(weekStart.getDate() - weekStart.getDay());
-            const { data: weekClients } = await supabase
-              .from('clients')
-              .select('id')
-              .eq('seller_id', sellerData.id)
-              .gte('created_at', weekStart.toISOString());
-            currentCount = weekClients?.length || 0;
-            shouldComplete = currentCount >= req.target;
-          }
-          break;
-        case 'automation_assignments':
-          if (actionType === 'automation_assigned') {
-            // Count assignments this week
-            const weekStart = new Date();
-            weekStart.setDate(weekStart.getDate() - weekStart.getDay());
-            const { data: weekAssignments } = await supabase
-              .from('client_automations')
-              .select('id')
-              .eq('seller_id', sellerData.id)
-              .gte('created_at', weekStart.toISOString());
-            currentCount = weekAssignments?.length || 0;
-            shouldComplete = currentCount >= req.target;
-          }
-          break;
-        case 'quiz_completion':
-          if (actionType === 'quiz_completed') {
-            // Count quizzes completed this week
-            const weekStart = new Date();
-            weekStart.setDate(weekStart.getDate() - weekStart.getDay());
-            const { data: weekQuizzes } = await supabase
-              .from('partner_quiz_results')
-              .select('id')
-              .eq('seller_id', sellerData.id)
-              .gte('completed_at', weekStart.toISOString());
-            currentCount = weekQuizzes?.length || 0;
-            shouldComplete = currentCount >= req.target;
-          }
-          break;
-        case 'course_completion':
-          if (actionType === 'course_completed') {
-            // Count courses completed this week
-            const weekStart = new Date();
-            weekStart.setDate(weekStart.getDate() - weekStart.getDay());
-            const { data: weekCourses } = await supabase
-              .from('partner_activity_log')
-              .select('id')
-              .eq('seller_id', sellerData.id)
-              .eq('event_type', 'course_completed')
-              .gte('created_at', weekStart.toISOString());
-            currentCount = weekCourses?.length || 0;
-            shouldComplete = currentCount >= req.target;
-          }
-          break;
-        case 'course_or_quiz':
-          if (actionType === 'quiz_completed' || actionType === 'course_completed') {
-            const weekStart = new Date();
-            weekStart.setDate(weekStart.getDate() - weekStart.getDay());
-            const { data: weekActivities } = await supabase
-              .from('partner_activity_log')
-              .select('id')
-              .eq('seller_id', sellerData.id)
-              .in('event_type', ['quiz_completed', 'course_completed'])
-              .gte('created_at', weekStart.toISOString());
-            currentCount = weekActivities?.length || 0;
-            shouldComplete = currentCount >= req.target;
-          }
-          break;
-        case 'automation_suggestion':
-          if (actionType === 'automation_suggestion') {
-            // Count suggestions this week
-            const weekStart = new Date();
-            weekStart.setDate(weekStart.getDate() - weekStart.getDay());
-            const { data: weekSuggestions } = await supabase
-              .from('automation_suggestions')
-              .select('id')
-              .eq('seller_id', sellerData.id)
-              .gte('created_at', weekStart.toISOString());
-            currentCount = weekSuggestions?.length || 0;
-            shouldComplete = currentCount >= req.target;
-          }
-          break;
-        case 'deal_entries':
-          if (actionType === 'deal_logged') {
-            // Count deal entries this week
-            const weekStart = new Date();
-            weekStart.setDate(weekStart.getDate() - weekStart.getDay());
-            const { data: weekDeals } = await supabase
-              .from('deal_tracking')
-              .select('id')
-              .eq('seller_id', sellerData.id)
-              .gte('created_at', weekStart.toISOString());
-            currentCount = weekDeals?.length || 0;
-            shouldComplete = currentCount >= req.target;
-          }
-          break;
-        case 'case_study':
-          if (actionType === 'case_study') {
-            // Count case studies this week
-            const weekStart = new Date();
-            weekStart.setDate(weekStart.getDate() - weekStart.getDay());
-            const { data: weekCaseStudies } = await supabase
-              .from('partner_case_studies')
-              .select('id')
-              .eq('seller_id', sellerData.id)
-              .gte('created_at', weekStart.toISOString());
-            currentCount = weekCaseStudies?.length || 0;
-            shouldComplete = currentCount >= req.target;
-          }
-          break;
-      }
-
-      if (shouldComplete) {
-        // Mark challenge as completed in activity_log (hardcoded challenge IDs are strings, not UUIDs)
-        const { error: progressError } = await supabase
-          .from('partner_activity_log')
-          .insert({
-            seller_id: sellerData.id,
-            event_type: 'challenge_completed',
-            xp_value: challenge.xp_reward,
-            description: `Completed Challenge: ${challenge.title}`,
-            metadata: {
-              challenge_id: challenge.id,
-              challenge_type: challenge.challenge_type,
-              challenge_title: challenge.title
-            }
-          });
-
-        if (!progressError) {
-          // Award XP for challenge completion (this counts towards rank progression)
-          await addXP(challenge.xp_reward, 'challenge_completed', `Completed Challenge: ${challenge.title}`, {
-            challenge_id: challenge.id,
-            challenge_type: challenge.challenge_type
-          });
-
-          // Update local state
-          setChallengeProgress(prev => {
-            const updated = new Map(prev);
-            updated.set(challenge.id, true);
-            return updated;
-          });
-
-          toast({
-            title: "Challenge Completed! 🎉",
-            description: `${challenge.title} - Earned ${challenge.xp_reward} XP!`,
-          });
-        }
-      }
-    }
-  };
 
   // Handle manual rank up
   const handleManualRankUp = async () => {
@@ -2593,13 +2390,13 @@ If you are curious, I can show you exactly how it works. It only takes a minute 
           toast({
             title: "Cannot advance rank",
             description: errorData.message,
-            variant: "destructive",
+            variant: "default",
           });
         } else {
           toast({
             title: "Error",
             description: error.message || "Failed to advance rank",
-            variant: "destructive",
+            variant: "default",
           });
         }
         return;
@@ -2725,16 +2522,31 @@ If you are curious, I can show you exactly how it works. It only takes a minute 
         }
         // Show more detailed error message with task count if available
         let errorMessage = data.message || "Requirements not met";
-        if (data.completed_tasks !== undefined && data.total_tasks !== undefined) {
-          errorMessage += ` (${data.completed_tasks}/${data.total_tasks} tasks completed)`;
+        let title = "Cannot advance rank";
+        
+        // Customize title and message based on error type
+        if (data.error === 'minimum_days_not_met') {
+          title = "Minimum time requirement";
+          if (data.days_needed !== undefined) {
+            const daysNeeded = data.days_needed;
+            errorMessage = `You need to spend ${daysNeeded} more day${daysNeeded === 1 ? '' : 's'} in ${data.current_rank} rank before advancing to ${data.next_rank}.`;
+          }
+        } else if (data.error === 'not_enough_xp') {
+          title = "XP requirement not met";
+          if (data.xp_needed !== undefined) {
+            errorMessage = `You need ${data.xp_needed} more XP to reach ${data.next_rank} rank.`;
+          }
+        } else if (data.error === 'tasks_not_completed') {
+          title = "Tasks not completed";
+          if (data.completed_tasks !== undefined && data.total_tasks !== undefined) {
+            errorMessage = `You need to complete all tasks for ${data.current_rank} rank. Completed: ${data.completed_tasks}/${data.total_tasks} tasks.`;
+          }
         }
-        if (data.missing_tasks && data.missing_tasks.length > 0) {
-          errorMessage += `. Missing: ${data.missing_tasks.join(', ')}`;
-        }
+        
         toast({
-          title: "Cannot advance rank",
+          title: title,
           description: errorMessage,
-          variant: data.error === 'not_enough_xp' ? 'default' : 'destructive',
+          variant: "default",
         });
       }
     } catch (error: any) {
@@ -2742,7 +2554,7 @@ If you are curious, I can show you exactly how it works. It only takes a minute 
       toast({
         title: "Error",
         description: error.message || "Failed to advance rank",
-        variant: "destructive",
+        variant: "default",
       });
     }
   };
@@ -3089,8 +2901,6 @@ If you are curious, I can show you exactly how it works. It only takes a minute 
       const updatedCompletedLessons = new Set([...completedLessons, selectedLesson.id]);
       setCompletedLessons(updatedCompletedLessons);
       
-      // Check weekly challenges
-      await checkWeeklyChallenges('quiz_completed');
       
       // Check if user ranked up
       if (xpResult?.rankChanged && xpResult.oldRank && xpResult.newRank) {
@@ -3896,8 +3706,6 @@ If you are curious, I can show you exactly how it works. It only takes a minute 
         }
       }
       
-      // Check weekly challenges
-      await checkWeeklyChallenges('deal_logged');
       
       // Refresh deal entries (addXP already refreshes seller data and progression data)
       // Only refresh deal entries here since addXP doesn't refresh them
@@ -3916,6 +3724,118 @@ If you are curious, I can show you exactly how it works. It only takes a minute 
     } finally {
       setSubmittingDeal(false);
     }
+  };
+
+  // Handle editing a deal entry
+  const handleEditDeal = (deal: DealTrackingEntry) => {
+    setEditingDeal(deal);
+    setEditDealDate(new Date(deal.date).toISOString().split('T')[0]);
+    setEditDealChannel(deal.channel);
+    setEditDealClientName(deal.client_name || "");
+    setEditDealStatus(deal.status);
+    setEditDealReflection(deal.reflection || "");
+  };
+
+  // Handle updating a deal entry
+  const handleUpdateDeal = async () => {
+    if (!editingDeal || !sellerData?.id) return;
+    if (!editDealDate || !editDealChannel) {
+      toast({
+        title: "Validation Error",
+        description: "Date and Channel are required.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setUpdatingDeal(true);
+    try {
+      const { error } = await supabase
+        .from("deal_tracking")
+        .update({
+          date: editDealDate,
+          channel: editDealChannel,
+          client_name: editDealClientName || null,
+          status: editDealStatus,
+          reflection: editDealReflection || null,
+        })
+        .eq("id", editingDeal.id)
+        .eq("seller_id", sellerData.id);
+
+      if (error) throw error;
+
+      // Refresh deal entries
+      const { data: dealEntriesData } = await supabase
+        .from("deal_tracking")
+        .select("*")
+        .eq("seller_id", sellerData.id)
+        .order("created_at", { ascending: false });
+      setDealEntries(dealEntriesData || []);
+
+      setEditingDeal(null);
+      resetEditDealForm();
+
+      toast({
+        title: "Deal Updated!",
+        description: "Your outreach entry has been updated successfully.",
+      });
+    } catch (error: any) {
+      console.error("Error updating deal:", error);
+      toast({
+        title: "Error updating deal",
+        description: error.message || "Failed to update outreach entry.",
+        variant: "destructive",
+      });
+    } finally {
+      setUpdatingDeal(false);
+    }
+  };
+
+  // Handle deleting a deal entry
+  const handleDeleteDeal = async (dealId: string) => {
+    if (!sellerData?.id) return;
+    
+    if (!confirm("Are you sure you want to delete this outreach entry?")) {
+      return;
+    }
+
+    try {
+      const { error } = await supabase
+        .from("deal_tracking")
+        .delete()
+        .eq("id", dealId)
+        .eq("seller_id", sellerData.id);
+
+      if (error) throw error;
+
+      // Refresh deal entries
+      const { data: dealEntriesData } = await supabase
+        .from("deal_tracking")
+        .select("*")
+        .eq("seller_id", sellerData.id)
+        .order("created_at", { ascending: false });
+      setDealEntries(dealEntriesData || []);
+
+      toast({
+        title: "Deal Deleted",
+        description: "Your outreach entry has been deleted.",
+      });
+    } catch (error: any) {
+      console.error("Error deleting deal:", error);
+      toast({
+        title: "Error deleting deal",
+        description: error.message || "Failed to delete outreach entry.",
+        variant: "destructive",
+      });
+    }
+  };
+
+  const resetEditDealForm = () => {
+    setEditDealDate("");
+    setEditDealChannel("");
+    setEditDealClientName("");
+    setEditDealStatus("no_response");
+    setEditDealReflection("");
   };
 
   // Handle submitting automation suggestion
@@ -3963,8 +3883,6 @@ If you are curious, I can show you exactly how it works. It only takes a minute 
         }
       }
 
-      // Check weekly challenges
-      await checkWeeklyChallenges('automation_suggestion');
 
       // Reset form
       setSuggestionTitle("");
@@ -4021,8 +3939,6 @@ If you are curious, I can show you exactly how it works. It only takes a minute 
         setCompletedLessons(prev => new Set([...prev, task7Lesson.id]));
       }
 
-      // Check weekly challenges
-      await checkWeeklyChallenges('client_added');
 
       // Reset form
       setNewDemoClientName("");
@@ -4160,6 +4076,71 @@ If you are curious, I can show you exactly how it works. It only takes a minute 
       });
     } finally {
       setSubmittingPitchReflection(false);
+    }
+  };
+
+  // Fetch XP trend data for the last 7 days
+  const fetchXpTrendData = async (sellerId: string) => {
+    try {
+      const today = new Date();
+      const sevenDaysAgo = new Date(today);
+      sevenDaysAgo.setDate(today.getDate() - 6); // Include today, so 6 days ago = 7 total days
+      
+      // Fetch activity log entries for the last 7 days
+      const { data: activityLog, error } = await supabase
+        .from("partner_activity_log")
+        .select("created_at, xp_value, event_type")
+        .eq("seller_id", sellerId)
+        .gte("created_at", sevenDaysAgo.toISOString())
+        .neq("event_type", "rank_up"); // Exclude rank_up events as they don't give XP
+      
+      if (error) {
+        console.error("Error fetching XP trend data:", error);
+        return;
+      }
+      
+      // Group XP by date
+      const xpByDate: Record<string, number> = {};
+      const labels: Record<string, string> = {};
+      
+      // Initialize last 7 days with 0 XP
+      for (let i = 6; i >= 0; i--) {
+        const date = new Date(today);
+        date.setDate(today.getDate() - i);
+        const dateKey = date.toISOString().split('T')[0];
+        xpByDate[dateKey] = 0;
+        
+        // Create labels
+        if (i === 0) {
+          labels[dateKey] = "Today";
+        } else if (i === 1) {
+          labels[dateKey] = "Yesterday";
+        } else {
+          labels[dateKey] = date.toLocaleDateString('en-US', { weekday: 'short' });
+        }
+      }
+      
+      // Sum XP by date (only count xp_value > 0)
+      activityLog?.forEach((entry) => {
+        const date = new Date(entry.created_at);
+        const dateKey = date.toISOString().split('T')[0];
+        if (xpByDate[dateKey] !== undefined && entry.xp_value > 0) {
+          xpByDate[dateKey] += entry.xp_value;
+        }
+      });
+      
+      // Convert to array format
+      const trendArray = Object.keys(xpByDate)
+        .sort()
+        .map((dateKey) => ({
+          date: dateKey,
+          xp: xpByDate[dateKey],
+          label: labels[dateKey] || dateKey
+        }));
+      
+      setXpTrendData(trendArray);
+    } catch (error) {
+      console.error("Error fetching XP trend data:", error);
     }
   };
 
@@ -4330,8 +4311,6 @@ If you are curious, I can show you exactly how it works. It only takes a minute 
         setCompletedLessons(prev => new Set([...prev, task14Lesson.id]));
       }
 
-      // Check weekly challenges
-      await checkWeeklyChallenges('case_study');
 
       // Reset form
       setCaseStudyClientName("");
@@ -4428,8 +4407,6 @@ If you are curious, I can show you exactly how it works. It only takes a minute 
         }
       }
 
-      // Check weekly challenges
-      await checkWeeklyChallenges('automation_assigned');
 
       // Don't call fetchProgressionData here - it will be called by addXP's fetchSellerData if task was completed
 
@@ -5193,23 +5170,91 @@ If you are curious, I can show you exactly how it works. It only takes a minute 
     const xpThresholdMet = (sellerData.current_xp || 0) >= nextRankThreshold;
     const canAdvance = allTasksCompleted && xpThresholdMet;
     
+    // Calculate daily XP indicators
+    const currentRankForCap = sellerData.current_rank as PartnerRank;
+    const dailyXpCap = getDailyXpCapForRank(currentRankForCap);
+    const dailyXpApplied = sellerData.daily_xp_applied || 0;
+    const overflowXp = sellerData.overflow_xp || 0;
+    const dailyXpRemaining = dailyXpCap !== null ? Math.max(0, dailyXpCap - dailyXpApplied) : null;
+    const progressRange = progress.next - progress.current;
+    const dailyCapPercentage = dailyXpCap !== null && progressRange > 0 ? (dailyXpCap / progressRange) * 100 : 0;
+    const dailyAppliedPercentage = progressRange > 0 ? (dailyXpApplied / progressRange) * 100 : 0;
+    
     return (
       <>
-        <Progress value={progress.percentage} className="h-2 mb-1" />
-        <div className="flex items-center justify-between mb-2">
-          <p className="text-xs text-muted-foreground">
-            {sellerData?.current_rank === 'Partner Plus' && nextRank === 'Partner Pro' 
-              ? 'Ready to upgrade to Partner Pro' 
-              : `${progress.current} / ${progress.next} XP to ${nextRank}`}
-          </p>
-          <Button
-            variant="ghost"
-            size="sm"
-            className="text-xs text-primary hover:text-primary/80"
-            onClick={() => setShowRanksDialog(true)}
-          >
-            View All Ranks
-          </Button>
+        {/* XP Progress Bar with Tomorrow's XP Marker */}
+        <div className="relative mb-1">
+          <Progress value={progress.percentage} className="h-2" />
+          {/* Tomorrow's XP Marker (orange line showing where XP will be after overflow is applied) */}
+          {overflowXp > 0 && dailyXpCap !== null && (
+            (() => {
+              const tomorrowXp = Math.min(overflowXp, dailyXpCap);
+              const tomorrowTotalXp = (sellerData.current_xp || 0) + tomorrowXp;
+              const tomorrowProgress = calculateProgressToNextRank(tomorrowTotalXp, sellerData.current_rank as PartnerRank);
+              const tomorrowPercentage = tomorrowProgress.percentage;
+              
+              // Only show marker if it's visible and ahead of current progress
+              if (tomorrowPercentage > progress.percentage && tomorrowPercentage <= 100) {
+                return (
+                  <div 
+                    className="absolute top-0 h-2 w-0.5 bg-accent border-r border-accent z-10 pointer-events-none"
+                    style={{ left: `${Math.min(tomorrowPercentage, 100)}%` }}
+                    title={`Tomorrow: +${tomorrowXp} XP (${overflowXp > dailyXpCap ? `${overflowXp} XP overflow` : 'from overflow'})`}
+                  />
+                );
+              }
+              return null;
+            })()
+          )}
+        </div>
+        
+        {/* XP Progress and Daily XP Stats */}
+        <div className="mb-2 p-2 bg-muted/30 rounded-lg border border-border/50">
+          <div className="flex items-center justify-between mb-1">
+            <p className="text-xs text-muted-foreground">
+              {sellerData?.current_rank === 'Partner Plus' && nextRank === 'Partner Pro' 
+                ? 'Ready to upgrade to Partner Pro' 
+                : `${progress.current} / ${progress.next} XP to ${nextRank}`}
+            </p>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="text-xs text-primary hover:text-primary/80"
+              onClick={() => setShowRanksDialog(true)}
+            >
+              View All Ranks
+            </Button>
+          </div>
+          
+          {/* Daily XP Info */}
+          <div className="flex items-center justify-between text-xs mt-1 pt-1 border-t border-border/30">
+            <div className="flex items-center gap-4">
+              <span className="text-muted-foreground">
+                Daily XP: <span className="font-semibold text-foreground">{dailyXpApplied}</span> {dailyXpCap !== null ? (
+                  <>/ <span className="text-muted-foreground">{dailyXpCap}</span></>
+                ) : (
+                  <span className="text-muted-foreground"> (No cap)</span>
+                )}
+              </span>
+              {overflowXp > 0 && dailyXpCap !== null && (
+                <span className="text-accent">
+                  Tomorrow: <span className="font-semibold">{Math.min(overflowXp, dailyXpCap)} XP</span> {overflowXp > dailyXpCap && (
+                    <span className="text-muted-foreground">({overflowXp} XP total overflow)</span>
+                  )}
+                </span>
+              )}
+            </div>
+            {dailyXpRemaining !== null && dailyXpRemaining > 0 && (
+              <span className="text-muted-foreground">
+                {dailyXpRemaining} XP remaining today
+              </span>
+            )}
+            {dailyXpCap !== null && dailyXpApplied >= dailyXpCap && overflowXp === 0 && (
+              <span className="text-accent font-semibold">
+                Daily cap reached
+              </span>
+            )}
+          </div>
         </div>
         
         {/* XP Requirement Check */}
@@ -5221,9 +5266,25 @@ If you are curious, I can show you exactly how it works. It only takes a minute 
                 <p className="text-xs font-semibold text-primary mb-1">
                   Not enough XP
                 </p>
-                <p className="text-xs text-muted-foreground">
+                <p className="text-xs text-muted-foreground mb-2">
                   You need {nextRankThreshold - (sellerData.current_xp || 0)} more XP to reach {nextRank} rank.
                 </p>
+                {dailyXpCap !== null && (dailyXpApplied >= dailyXpCap || overflowXp > 0) && (
+                  <div className="mt-2 pt-2 border-t border-primary/20">
+                    <p className="text-xs text-muted-foreground mb-1">
+                      Reached your daily XP cap? Get <strong className="text-primary">Partner Pro</strong> to double your daily XP cap and unlock premium features!
+                    </p>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="mt-1 text-xs border-primary/50 text-primary hover:bg-primary/10"
+                      onClick={() => setShowPartnerProDetails(true)}
+                    >
+                      <Trophy className="w-3 h-3 mr-1" />
+                      Learn More About Partner Pro
+                    </Button>
+                  </div>
+                )}
               </div>
             </div>
           </div>
@@ -6164,25 +6225,6 @@ If you are curious, I can show you exactly how it works. It only takes a minute 
                           )}
                         </div>
 
-                        {/* Weekly XP Progress */}
-                        <div className="p-4 bg-background rounded-lg border border-border">
-                          <div className="flex items-center justify-between mb-2">
-                            <span className="font-semibold text-sm">Weekly XP Progress</span>
-                            <Badge variant="outline">
-                              {sellerData?.weekly_xp || 0} / {sellerData?.current_rank === 'Partner Pro' ? '3000' : '2000'} XP
-                            </Badge>
-                          </div>
-                          <Progress 
-                            value={((sellerData?.weekly_xp || 0) / (sellerData?.current_rank === 'Partner Pro' ? 3000 : 2000)) * 100} 
-                            className="h-2 mt-2"
-                          />
-                          <p className="text-xs text-muted-foreground mt-1">
-                            {sellerData?.weekly_xp && sellerData.weekly_xp >= (sellerData.current_rank === 'Partner Pro' ? 3000 : 2000)
-                              ? 'Weekly cap reached! New XP available Monday.'
-                              : 'Complete tasks to earn more XP this week'}
-                          </p>
-                        </div>
-
                         {/* Daily Tasks */}
                         {sellerData?.current_rank && (
                           <div className="pt-2">
@@ -6233,7 +6275,6 @@ If you are curious, I can show you exactly how it works. It only takes a minute 
                                     });
                                     break;
                                   case 'check_xp':
-                                  case 'check_weekly_xp':
                                   case 'check_weekly_trend':
                                   case 'check_weekly_goals':
                                   case 'review_yesterday_xp':
@@ -6388,65 +6429,6 @@ If you are curious, I can show you exactly how it works. It only takes a minute 
                     </CardContent>
                   </Card>
 
-                  {/* Active Challenges */}
-                  {activeChallenges.length > 0 && (
-                    <Card className="bg-card border-border">
-                      <CardHeader>
-                        <div className="flex items-center justify-between">
-                          <div>
-                            <CardTitle className="text-base sm:text-lg text-primary">Weekly Challenges</CardTitle>
-                            <CardDescription className="text-xs sm:text-sm">
-                              Week {currentWeek} of 4 • Complete challenges to earn bonus XP
-                            </CardDescription>
-                          </div>
-                          <Badge variant="outline" className="text-primary border-primary">
-                            Week {currentWeek}
-                          </Badge>
-                        </div>
-                      </CardHeader>
-                      <CardContent>
-                        <div className="space-y-3">
-                          {activeChallenges.map((challenge) => {
-                            const isCompleted = challengeProgress.get(challenge.id) || false;
-                            return (
-                              <Card 
-                                key={challenge.id} 
-                                className={`bg-muted/20 border-border ${isCompleted ? 'border-primary/50' : ''}`}
-                              >
-                                <CardContent className="p-4">
-                                  <div className="flex items-start justify-between gap-3">
-                                    <div className="flex-1">
-                                      <div className="flex items-center gap-2 mb-1">
-                                        <Badge variant="outline" className="text-primary">
-                                          {challenge.challenge_type}
-                                        </Badge>
-                                        <span className="font-semibold text-sm">{challenge.title}</span>
-                                        {isCompleted && (
-                                          <Badge variant="default" className="bg-primary text-primary-foreground">
-                                            <CheckCircle className="w-3 h-3 mr-1" />
-                                            Completed
-                                          </Badge>
-                                        )}
-                                      </div>
-                                      <p className="text-xs text-muted-foreground mb-2">{challenge.description}</p>
-                                      <p className="text-xs font-medium text-primary">
-                                        Reward: +{challenge.xp_reward} XP
-                                      </p>
-                                    </div>
-                                    {isCompleted && (
-                                      <div className="shrink-0">
-                                        <CheckCircle className="w-6 h-6 text-primary" />
-                                      </div>
-                                    )}
-                                  </div>
-                                </CardContent>
-                              </Card>
-                            );
-                          })}
-                        </div>
-                      </CardContent>
-                    </Card>
-                  )}
 
                   {/* Badges Collection */}
                   {earnedBadges.length > 0 && (
@@ -6472,6 +6454,35 @@ If you are curious, I can show you exactly how it works. It only takes a minute 
                       </CardContent>
                     </Card>
                   )}
+
+                  {/* Vault Library Card */}
+                  <Card className="bg-gradient-to-r from-primary/5 to-primary/10 border-primary/20">
+                    <CardHeader>
+                      <CardTitle className="text-base sm:text-lg text-primary flex items-center gap-2">
+                        <BookOpen className="w-5 h-5" />
+                        Vault Library
+                      </CardTitle>
+                      <CardDescription className="text-xs sm:text-sm">
+                        Access extra learning modules, courses, and resources beyond your daily XP cap
+                      </CardDescription>
+                    </CardHeader>
+                    <CardContent>
+                      <div className="space-y-3">
+                        <p className="text-sm text-muted-foreground">
+                          Get more resources in the Discord channel <strong className="text-primary">#vault-library</strong>. Here you can find new resources and learning materials to add to your library!
+                        </p>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="border-primary/50 text-primary hover:bg-primary/10"
+                          onClick={() => navigate("/vault-library")}
+                        >
+                          <BookOpen className="w-4 h-4 mr-2" />
+                          Open Vault Library
+                        </Button>
+                      </div>
+                    </CardContent>
+                  </Card>
 
                   {/* Current Stage Lessons */}
                   <Card className="bg-card border-border">
@@ -8136,8 +8147,15 @@ If you are curious, I can show you exactly how it works. It only takes a minute 
                                   // Debug logging for rank advancement check (in progress section)
                                   // Removed excessive logging - only log when values actually change
                                   
+                                  // Calculate daily XP indicators for this section
+                                  const currentRankForCap = currentRank as PartnerRank;
+                                  const dailyXpCapForRank = getDailyXpCapForRank(currentRankForCap);
+                                  const dailyXpAppliedForRank = sellerData?.daily_xp_applied || 0;
+                                  const overflowXpForRank = sellerData?.overflow_xp || 0;
+                                  
                                   return (
                                     <div className="mt-6 pt-6 border-t border-border">
+                                      {/* Rank Progression Card */}
                                       <Card className={canAdvance ? "bg-gradient-to-r from-primary/10 to-primary/5 border-primary/20" : "bg-muted/20 border-border"}>
                                         <CardContent className="pt-6">
                                           <div className="flex items-start gap-3">
@@ -8156,6 +8174,22 @@ If you are curious, I can show you exactly how it works. It only takes a minute 
                                                       <strong className="text-primary">Not enough XP:</strong> You need {nextRankThreshold - (sellerData?.current_xp || 0)} more XP to reach {nextRank} rank.
                                                     </p>
                                                   </div>
+                                                  {(dailyXpAppliedForRank >= dailyXpCapForRank || overflowXpForRank > 0) && (
+                                                    <div className="ml-6 mt-2 pt-2 border-t border-primary/20">
+                                                      <p className="text-xs text-muted-foreground mb-2">
+                                                        Reached your daily XP cap? Explore the <strong className="text-primary">Vault Library</strong> for extra learning modules and courses to continue your growth!
+                                                      </p>
+                                                      <Button
+                                                        variant="outline"
+                                                        size="sm"
+                                                        className="text-xs border-primary/50 text-primary hover:bg-primary/10"
+                                                        onClick={() => navigate("/vault-library")}
+                                                      >
+                                                        <BookOpen className="w-3 h-3 mr-1" />
+                                                        Open Vault Library
+                                                      </Button>
+                                                    </div>
+                                                  )}
                                                 </div>
                                               )}
                                               
@@ -8465,6 +8499,118 @@ If you are curious, I can show you exactly how it works. It only takes a minute 
                       </CardContent>
                     </Card>
                   </div>
+
+                  {/* XP Trend Section */}
+                  <Card className="bg-card border-border mt-4 sm:mt-6">
+                    <CardHeader>
+                      <div className="flex items-center gap-2">
+                        <TrendingUp className="w-5 h-5 text-primary" />
+                        <CardTitle className="text-base sm:text-lg text-primary">XP Trend</CardTitle>
+                      </div>
+                      <CardDescription className="text-xs sm:text-sm">Your daily XP earned over the last 7 days</CardDescription>
+                    </CardHeader>
+                    <CardContent>
+                      {xpTrendData.length === 0 ? (
+                        <div className="text-center py-8 text-muted-foreground text-sm">
+                          No XP data available yet. Start earning XP to see your trend!
+                        </div>
+                      ) : (
+                        <div className="space-y-4">
+                          {/* XP Trend Chart (Simple Bar Chart) */}
+                          <div className="space-y-2">
+                            {xpTrendData.map((item, index) => {
+                              const maxXp = Math.max(...xpTrendData.map(d => d.xp), 1);
+                              const percentage = maxXp > 0 ? (item.xp / maxXp) * 100 : 0;
+                              const dailyCap = sellerData?.current_rank ? getDailyXpCapForRank(sellerData.current_rank as PartnerRank) : null;
+                              const capPercentage = dailyCap !== null && maxXp > 0 ? (dailyCap / maxXp) * 100 : 0;
+                              
+                              return (
+                                <div key={index} className="space-y-1">
+                                  <div className="flex items-center justify-between text-xs">
+                                    <span className="text-muted-foreground">{item.label}</span>
+                                    <span className="font-semibold text-foreground">{item.xp} XP</span>
+                                  </div>
+                                  <div className="relative h-6 bg-muted/30 rounded-full overflow-hidden">
+                                    {/* Daily Cap Marker (only show if cap exists) */}
+                                    {dailyCap !== null && capPercentage < 100 && (
+                                      <div 
+                                        className="absolute top-0 h-6 w-0.5 bg-accent/50 border-r border-accent z-10 pointer-events-none"
+                                        style={{ left: `${capPercentage}%` }}
+                                        title={`Daily Cap: ${dailyCap} XP`}
+                                      />
+                                    )}
+                                    {/* XP Bar */}
+                                    <div 
+                                      className="absolute top-0 left-0 h-6 bg-primary rounded-full transition-all duration-300"
+                                      style={{ width: `${Math.min(percentage, 100)}%` }}
+                                    />
+                                    {/* Overflow Indicator (only show if cap exists) */}
+                                    {dailyCap !== null && item.xp > dailyCap && (
+                                      <div 
+                                        className="absolute top-0 h-6 bg-accent/30 rounded-full"
+                                        style={{ 
+                                          left: `${Math.min(capPercentage, 100)}%`,
+                                          width: `${Math.min(Math.max((item.xp - dailyCap) / maxXp * 100, 0), 100 - Math.min(capPercentage, 100))}%`
+                                        }}
+                                        title={`Overflow: ${item.xp - dailyCap} XP`}
+                                      />
+                                    )}
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                          
+                          {/* Summary Stats */}
+                          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 pt-4 border-t border-border">
+                            <div className="text-center">
+                              <p className="text-xs text-muted-foreground mb-1">Today</p>
+                              <p className="text-lg font-bold text-foreground">
+                                {xpTrendData[xpTrendData.length - 1]?.xp || 0}
+                              </p>
+                            </div>
+                            <div className="text-center">
+                              <p className="text-xs text-muted-foreground mb-1">7-Day Avg</p>
+                              <p className="text-lg font-bold text-primary">
+                                {Math.round(xpTrendData.reduce((sum, item) => sum + item.xp, 0) / xpTrendData.length) || 0}
+                              </p>
+                            </div>
+                            <div className="text-center">
+                              <p className="text-xs text-muted-foreground mb-1">Daily Cap</p>
+                              <p className="text-lg font-bold text-accent">
+                                {(() => {
+                                  const cap = sellerData?.current_rank ? getDailyXpCapForRank(sellerData.current_rank as PartnerRank) : null;
+                                  return cap !== null ? cap : 'No cap';
+                                })()}
+                              </p>
+                            </div>
+                            <div className="text-center">
+                              <p className="text-xs text-muted-foreground mb-1">Overflow</p>
+                              <p className="text-lg font-bold text-accent">
+                                {(() => {
+                                  const cap = sellerData?.current_rank ? getDailyXpCapForRank(sellerData.current_rank as PartnerRank) : null;
+                                  if (cap === null || !sellerData?.overflow_xp) return 0;
+                                  const overflow = Math.min(sellerData.overflow_xp, cap);
+                                  return overflow;
+                                })()}
+                              </p>
+                              {(() => {
+                                const cap = sellerData?.current_rank ? getDailyXpCapForRank(sellerData.current_rank as PartnerRank) : null;
+                                if (cap !== null && sellerData?.overflow_xp && sellerData.overflow_xp > cap) {
+                                  return (
+                                    <p className="text-xs text-muted-foreground mt-0.5">
+                                      ({sellerData.overflow_xp} total)
+                                    </p>
+                                  );
+                                }
+                                return null;
+                              })()}
+                            </div>
+                          </div>
+                        </div>
+                      )}
+                    </CardContent>
+                  </Card>
 
                   {/* Quick Stats Summary */}
                   <Card className="bg-card border-border mt-4 sm:mt-6">
@@ -9732,10 +9878,23 @@ If you are curious, I can show you exactly how it works. It only takes a minute 
                 <TabsContent value="deal-tracking" className="space-y-4 sm:space-y-6">
                   <Card className="bg-card border-border">
                     <CardHeader>
-                      <CardTitle className="text-base sm:text-lg text-primary">Deal Tracking</CardTitle>
-                      <CardDescription className="text-xs sm:text-sm">
-                        Log your outreach attempts and track your sales pipeline
-                      </CardDescription>
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <CardTitle className="text-base sm:text-lg text-primary">Deal Tracking</CardTitle>
+                          <CardDescription className="text-xs sm:text-sm">
+                            Log your outreach attempts and track your sales pipeline
+                          </CardDescription>
+                        </div>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => navigate("/outreach-planner")}
+                          className="text-xs sm:text-sm"
+                        >
+                          <FileText className="w-4 h-4 mr-2" />
+                          Outreach Planner
+                        </Button>
+                      </div>
                     </CardHeader>
                     <CardContent className="space-y-4">
                       <Card className="bg-muted/50 border-border">
@@ -9844,6 +10003,24 @@ If you are curious, I can show you exactly how it works. It only takes a minute 
                                         <p className="text-sm mt-2 text-muted-foreground">{deal.reflection}</p>
                                       )}
                                     </div>
+                                    <div className="flex gap-2 shrink-0">
+                                      <Button
+                                        variant="ghost"
+                                        size="sm"
+                                        onClick={() => handleEditDeal(deal)}
+                                        className="h-8 w-8 p-0"
+                                      >
+                                        <Pencil className="w-4 h-4" />
+                                      </Button>
+                                      <Button
+                                        variant="ghost"
+                                        size="sm"
+                                        onClick={() => handleDeleteDeal(deal.id)}
+                                        className="h-8 w-8 p-0 text-destructive hover:text-destructive"
+                                      >
+                                        <X className="w-4 h-4" />
+                                      </Button>
+                                    </div>
                                   </div>
                                 </CardContent>
                               </Card>
@@ -9858,6 +10035,107 @@ If you are curious, I can show you exactly how it works. It only takes a minute 
                       )}
                     </CardContent>
                   </Card>
+
+                  {/* Edit Deal Dialog */}
+                  <Dialog open={editingDeal !== null} onOpenChange={(open) => {
+                    if (!open) {
+                      setEditingDeal(null);
+                      resetEditDealForm();
+                    }
+                  }}>
+                    <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+                      <DialogHeader>
+                        <DialogTitle>Edit Outreach Entry</DialogTitle>
+                        <DialogDescription>
+                          Update the details of this outreach entry
+                        </DialogDescription>
+                      </DialogHeader>
+                      {editingDeal && (
+                        <div className="space-y-4 mt-4">
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div className="space-y-2">
+                              <Label>Date *</Label>
+                              <Input
+                                type="date"
+                                value={editDealDate}
+                                onChange={(e) => setEditDealDate(e.target.value)}
+                              />
+                            </div>
+                            <div className="space-y-2">
+                              <Label>Channel *</Label>
+                              <Select value={editDealChannel} onValueChange={setEditDealChannel}>
+                                <SelectTrigger>
+                                  <SelectValue placeholder="Select channel" />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  <SelectItem value="email">Email</SelectItem>
+                                  <SelectItem value="dm">DM / Social Media</SelectItem>
+                                  <SelectItem value="call">Phone Call</SelectItem>
+                                  <SelectItem value="meeting">In-Person Meeting</SelectItem>
+                                  <SelectItem value="other">Other</SelectItem>
+                                </SelectContent>
+                              </Select>
+                            </div>
+                          </div>
+                          
+                          <div className="space-y-2">
+                            <Label>Client Name (Optional)</Label>
+                            <Input
+                              value={editDealClientName}
+                              onChange={(e) => setEditDealClientName(e.target.value)}
+                              placeholder="e.g., ABC Company"
+                            />
+                          </div>
+                          
+                          <div className="space-y-2">
+                            <Label>Status *</Label>
+                            <Select value={editDealStatus} onValueChange={setEditDealStatus}>
+                              <SelectTrigger>
+                                <SelectValue />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="no_response">No Response</SelectItem>
+                                <SelectItem value="follow_up">Follow Up Needed</SelectItem>
+                                <SelectItem value="success">Success / Interested</SelectItem>
+                                <SelectItem value="closed">Closed / Not Interested</SelectItem>
+                              </SelectContent>
+                            </Select>
+                          </div>
+                          
+                          <div className="space-y-2">
+                            <Label>Reflection / Notes</Label>
+                            <Textarea
+                              value={editDealReflection}
+                              onChange={(e) => setEditDealReflection(e.target.value)}
+                              placeholder="What did you learn? What worked well? What would you do differently?"
+                              rows={4}
+                            />
+                          </div>
+                          
+                          <div className="flex gap-2 pt-4">
+                            <Button
+                              variant="outline"
+                              onClick={() => {
+                                setEditingDeal(null);
+                                resetEditDealForm();
+                              }}
+                              className="flex-1"
+                              disabled={updatingDeal}
+                            >
+                              Cancel
+                            </Button>
+                            <Button
+                              onClick={handleUpdateDeal}
+                              disabled={updatingDeal || !editDealDate || !editDealChannel}
+                              className="flex-1"
+                            >
+                              {updatingDeal ? 'Updating...' : 'Update Entry'}
+                            </Button>
+                          </div>
+                        </div>
+                      )}
+                    </DialogContent>
+                  </Dialog>
                 </TabsContent>
 
                 <TabsContent value="support" className="space-y-4 sm:space-y-6">
@@ -11434,77 +11712,6 @@ If you are curious, I can show you exactly how it works. It only takes a minute 
               </Dialog>
             );
           })()}
-
-          {/* Automation Brief Dialog */}
-          <Dialog open={showAutomationBrief} onOpenChange={handleBriefDialogClose}>
-            <DialogContent className="max-w-4xl max-h-[90vh] flex flex-col">
-              <DialogHeader>
-                <DialogTitle>{selectedAutomationBrief?.name || "Automation Brief"}</DialogTitle>
-                <DialogDescription>
-                  Detailed information about this automation
-                </DialogDescription>
-              </DialogHeader>
-              <ScrollArea className="flex-1 pr-4">
-                <div className="space-y-6">
-                  {selectedAutomationBrief && (
-                    <>
-                      {selectedAutomationBrief.image_url && (
-                        <div className="w-full h-64 overflow-hidden rounded-lg">
-                          <img
-                            src={selectedAutomationBrief.image_url}
-                            alt={selectedAutomationBrief.name}
-                            className="w-full h-full object-cover"
-                          />
-                        </div>
-                      )}
-                      <div>
-                        <h3 className="text-lg font-semibold mb-2">Description</h3>
-                        <p className="text-sm text-muted-foreground">{selectedAutomationBrief.description}</p>
-                      </div>
-                      {selectedAutomationBrief.features && selectedAutomationBrief.features.length > 0 && (
-                        <div>
-                          <h3 className="text-lg font-semibold mb-2">Key Features</h3>
-                          <ul className="list-disc list-inside space-y-1 text-sm text-muted-foreground">
-                            {selectedAutomationBrief.features.map((feature: string, idx: number) => (
-                              <li key={idx}>{feature}</li>
-                            ))}
-                          </ul>
-                        </div>
-                      )}
-                      {selectedAutomationBrief.use_cases && selectedAutomationBrief.use_cases.length > 0 && (
-                        <div>
-                          <h3 className="text-lg font-semibold mb-2">Use Cases</h3>
-                          <ul className="list-disc list-inside space-y-1 text-sm text-muted-foreground">
-                            {selectedAutomationBrief.use_cases.map((useCase: string, idx: number) => (
-                              <li key={idx}>{useCase}</li>
-                            ))}
-                          </ul>
-                        </div>
-                      )}
-
-                      <div className="border-t border-border pt-4">
-                        <div className="grid grid-cols-2 gap-4 text-sm">
-                          <div>
-                            <span className="text-muted-foreground">Setup Price:</span>
-                            <span className="font-bold ml-2">${selectedAutomationBrief.setup_price}</span>
-                          </div>
-                          <div>
-                            <span className="text-muted-foreground">Monthly Price:</span>
-                            <span className="font-bold text-primary ml-2">${selectedAutomationBrief.monthly_price}/mo</span>
-                          </div>
-                        </div>
-                      </div>
-                    </>
-                  )}
-                </div>
-              </ScrollArea>
-              <div className="flex justify-end gap-2 pt-4 border-t">
-                <Button variant="outline" onClick={() => handleBriefDialogClose(false)}>
-                  Close
-                </Button>
-              </div>
-            </DialogContent>
-          </Dialog>
 
           {/* Automation Brief Dialog */}
           <Dialog open={showAutomationBrief} onOpenChange={handleBriefDialogClose}>

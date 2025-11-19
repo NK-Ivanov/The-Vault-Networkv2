@@ -266,18 +266,18 @@ STABLE
 AS $$
 BEGIN
   CASE _rank
-    -- Base ranks and their Plus variants share the same XP threshold
+    -- Updated XP thresholds per rank
     WHEN 'Recruit' THEN RETURN 0;
-    WHEN 'Recruit Plus' THEN RETURN 0;
+    WHEN 'Recruit Plus' THEN RETURN 200;
     WHEN 'Apprentice' THEN RETURN 1000;
-    WHEN 'Apprentice Plus' THEN RETURN 1000;
-    WHEN 'Agent' THEN RETURN 2500;
-    WHEN 'Agent Plus' THEN RETURN 2500;
-    WHEN 'Verified' THEN RETURN 4500;
-    WHEN 'Verified Plus' THEN RETURN 4500;
-    WHEN 'Partner' THEN RETURN 7000;
-    WHEN 'Partner Plus' THEN RETURN 7000;
-    WHEN 'Partner Pro' THEN RETURN 10000;
+    WHEN 'Apprentice Plus' THEN RETURN 1500;
+    WHEN 'Agent' THEN RETURN 3000;
+    WHEN 'Agent Plus' THEN RETURN 4000;
+    WHEN 'Verified' THEN RETURN 6000;
+    WHEN 'Verified Plus' THEN RETURN 8000;
+    WHEN 'Partner' THEN RETURN 10000;
+    WHEN 'Partner Plus' THEN RETURN 13000;
+    WHEN 'Partner Pro' THEN RETURN 999999; -- Paid only
     ELSE RETURN 0;
   END CASE;
 END;
