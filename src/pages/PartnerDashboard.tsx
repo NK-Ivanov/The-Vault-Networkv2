@@ -11,7 +11,10 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { DollarSign, Users, TrendingUp, Package, Copy, Check, CheckCircle, XCircle, MessageSquare, AlertCircle, HelpCircle, Send, RefreshCw, LayoutDashboard, Building2, Boxes, CreditCard, Ticket, Mail, Trophy, MessageCircle, Phone, Zap, Bookmark, BookmarkCheck, FileText, ArrowRight } from "lucide-react";
+import { DollarSign, Users, TrendingUp, Package, Copy, Check, CheckCircle, XCircle, MessageSquare, AlertCircle, HelpCircle, Send, RefreshCw, LayoutDashboard, Building2, Boxes, CreditCard, Ticket, Mail, Trophy, MessageCircle, Phone, Zap, Bookmark, BookmarkCheck, FileText, ArrowRight, Calculator, Trash2, StickyNote, MapPin } from "lucide-react";
+import EarningsCalculator from "@/components/EarningsCalculator";
+import ClientJourneyMapper from "@/components/ClientJourneyMapper";
+import SetupProcessExplanation from "@/components/SetupProcessExplanation";
 import { useToast } from "@/hooks/use-toast";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -571,10 +574,125 @@ const PartnerDashboard = () => {
   const [challengeProgress, setChallengeProgress] = useState<Map<string, boolean>>(new Map());
   const [currentWeek, setCurrentWeek] = useState<number>(1);
   
+  // Earnings Calculator state
+  const [showEarningsCalculator, setShowEarningsCalculator] = useState(false);
+  
+  // Automation Notes state
+  const [automationNotes, setAutomationNotes] = useState<Map<string, string>>(new Map());
+  const [showNoteDialog, setShowNoteDialog] = useState(false);
+  const [selectedAutomationForNote, setSelectedAutomationForNote] = useState<AutomationData | null>(null);
+  const [currentNoteContent, setCurrentNoteContent] = useState<string>("");
+  const [savingNote, setSavingNote] = useState(false);
+  const [loadingNotes, setLoadingNotes] = useState(false);
+  
+  // Client Journey Mapper state
+  const [showJourneyMapper, setShowJourneyMapper] = useState(false);
+  
+  // Setup Process Explanation state
+  const [showSetupExplanation, setShowSetupExplanation] = useState(false);
+  
+  // Bookmarked Automations Review tracking
+  const [reviewedBookmarkedAutomations, setReviewedBookmarkedAutomations] = useState<Set<string>>(new Set());
+  
   // Sales Scripts state
   const [salesScriptTemplate, setSalesScriptTemplate] = useState<string>("");
   const [customScript, setCustomScript] = useState<string>("");
   const [savingScript, setSavingScript] = useState(false);
+  const [partnerScripts, setPartnerScripts] = useState<any[]>([]);
+  const [editingScriptId, setEditingScriptId] = useState<string | null>(null);
+  const [scriptName, setScriptName] = useState<string>("");
+  const [scriptAutomationTag, setScriptAutomationTag] = useState<string>("none");
+  const [loadingScripts, setLoadingScripts] = useState(false);
+  
+  // Script templates from requirements
+  const scriptTemplates = {
+    conversational: `Hey! Quick question, are you currently doing anything to [solve the problem your automation fixes]?
+
+The reason I'm asking is because I've been helping businesses automate that process so they save time and get better results without hiring extra staff.
+
+It is a simple automation that runs in the background and handles everything for you. Most businesses see improvements within the first week.
+
+If you want, I can show you what it looks like and see if it would fit your workflow.`,
+    email: `Subject: Improve Your [Business Process] With Automation
+
+Hi [Name],
+
+I hope you're well.
+
+I wanted to reach out because many businesses today are looking for ways to streamline operations, remove manual tasks, and improve efficiency. One of the tools we provide does exactly that. It automates your [specific business process], saving time and increasing consistency.
+
+With this automation, businesses typically see benefits such as:
+
+• Reduced manual work
+• Fewer errors
+• Faster response times
+• Better customer experience
+
+If you are open to it, I would be happy to walk you through how it works and see whether it is a good fit for your current setup.
+
+Kind regards,
+
+[Your Name]`,
+    pitch: `1. Identify the Real Problem
+
+"Right now, a lot of businesses struggle with [core problem]. It costs time, creates inconsistency, and often leads to missed opportunities."
+
+2. Explain the Impact
+
+"When this process is not handled efficiently, it usually slows down growth, increases workload, or creates stress for the team."
+
+3. Introduce the Automation as the Solution
+
+"The automation I provide handles this entire workflow for you, consistently and accurately, without needing manual input. It is designed to support your existing process, not replace it."
+
+4. Show Tangible Benefits
+
+"It helps you:
+
+• Save time
+• Improve reliability
+• Reduce human error
+• Increase customer satisfaction
+• Operate more efficiently overall"
+
+5. Low-Pressure Call to Action
+
+"If you would like, I can show you a simple breakdown of how the automation works and what results other businesses are seeing. There is no pressure. It is simply an overview so you can decide if it is right for you."`,
+    soft_outreach: `Hey! Hope you are doing well.
+
+Quick one, how are you currently handling your [specific manual task]?
+
+I have been helping a lot of business owners automate that part of their workflow so it runs on autopilot and saves hours every week.
+
+It is a simple setup, nothing overwhelming, but it makes a huge difference very quickly.
+
+If you want, I can show you how it works and you can decide if it is something you would use.`,
+    follow_up: `Hi [Name],
+
+Just following up in case my last message got buried.
+
+The automation I mentioned can completely streamline your [business process] by removing all the manual steps that slow things down.
+
+Most businesses that try it see improvements almost immediately, including faster turnaround times, fewer mistakes, and less workload on the team.
+
+If you are open to it, I would be happy to walk you through a quick example so you can see how it might fit into your workflow.
+
+Let me know what works best for you.`,
+    short_value: `A lot of businesses are still doing [manual task] the slow way, and it takes up time every single day.
+
+The automation I build replaces that entire process with a clean, hands-off workflow that runs by itself.
+
+No extra staff, no complicated software, no maintenance.
+
+You get:
+
+• More time
+• More consistency
+• Fewer mistakes
+• Faster results
+
+If you are curious, I can show you exactly how it works. It only takes a minute to walk through.`
+  };
   
   // Deal Tracking state
   const [dealEntries, setDealEntries] = useState<DealTrackingEntry[]>([]);
@@ -1187,10 +1305,19 @@ const PartnerDashboard = () => {
         setNewReferralCode(seller.referral_code);
       }
       
-      // Set custom script if exists
+      // Set custom script if exists (legacy support)
       if (seller.custom_sales_script) {
         setCustomScript(seller.custom_sales_script);
       }
+      
+      // Fetch partner scripts from new table
+      fetchPartnerScripts(seller.id);
+      
+      // Fetch automation notes
+      fetchAutomationNotes(seller.id);
+      
+      // Fetch reviewed bookmarked automations
+      fetchReviewedBookmarkedAutomations(seller.id);
       
       // Fetch progression data when seller data is loaded
       await fetchProgressionData(seller.id, seller.current_rank as PartnerRank);
@@ -3063,7 +3190,34 @@ const PartnerDashboard = () => {
     setShowAutomationBrief(open);
   };
 
-  // Handle saving sales script
+  // Fetch partner scripts from database
+  const fetchPartnerScripts = async (sellerId: string) => {
+    setLoadingScripts(true);
+    try {
+      const { data, error } = await supabase
+        .from("partner_sales_scripts")
+        .select(`
+          *,
+          automation:automations(id, name)
+        `)
+        .eq("seller_id", sellerId)
+        .order("created_at", { ascending: false });
+
+      if (error) throw error;
+      setPartnerScripts(data || []);
+    } catch (error: any) {
+      console.error("Error fetching scripts:", error);
+      toast({
+        title: "Error",
+        description: "Failed to load scripts. Please try again.",
+        variant: "destructive",
+      });
+    } finally {
+      setLoadingScripts(false);
+    }
+  };
+
+  // Handle saving sales script (new version with multiple scripts)
   const handleSaveSalesScript = async () => {
     if (!sellerData?.id || !customScript.trim()) {
       toast({
@@ -3074,44 +3228,90 @@ const PartnerDashboard = () => {
       return;
     }
 
+    if (!scriptName.trim()) {
+      toast({
+        title: "Script name required",
+        description: "Please give your script a name",
+        variant: "destructive",
+      });
+      return;
+    }
+
     setSavingScript(true);
     try {
-      const { error } = await supabase
-        .from("sellers")
-        .update({ custom_sales_script: customScript.trim() })
-        .eq("id", sellerData.id);
+      const scriptData: any = {
+        seller_id: sellerData.id,
+        script_name: scriptName.trim(),
+        script_content: customScript.trim(),
+        template_used: salesScriptTemplate || null,
+        automation_tag: (scriptAutomationTag && scriptAutomationTag !== 'none') ? scriptAutomationTag : null,
+      };
+
+      let error;
+      if (editingScriptId) {
+        // Update existing script
+        const { error: updateError } = await supabase
+          .from("partner_sales_scripts")
+          .update({
+            script_name: scriptData.script_name,
+            script_content: scriptData.script_content,
+            template_used: scriptData.template_used,
+            automation_tag: (scriptAutomationTag && scriptAutomationTag !== 'none') ? scriptAutomationTag : null,
+            updated_at: new Date().toISOString(),
+          })
+          .eq("id", editingScriptId);
+        error = updateError;
+      } else {
+        // Insert new script
+        const { error: insertError } = await supabase
+          .from("partner_sales_scripts")
+          .insert([scriptData]);
+        error = insertError;
+      }
 
       if (error) throw error;
 
       toast({
-        title: "Script Saved!",
-        description: "Your sales script has been saved successfully.",
+        title: editingScriptId ? "Script Updated!" : "Script Saved!",
+        description: editingScriptId 
+          ? "Your sales script has been updated successfully."
+          : "Your sales script has been saved successfully.",
       });
 
-      // Award XP only if script was actually saved for the first time
-      // Check if task was already completed before marking as done
-      const task5Lesson = lessons.find(l => l.title === 'Create Your Sales Script');
-      if (task5Lesson && !completedLessons.has(task5Lesson.id)) {
-        // Double-check activity log to ensure it wasn't already completed
-        try {
-          const { data: existingCompletion } = await supabase
-            .from("partner_activity_log")
-            .select("id")
-            .eq("seller_id", sellerData.id)
-            .eq("event_type", "task_completed")
-            .eq("metadata->>lesson_id", task5Lesson.id)
-            .maybeSingle();
+      // Refresh scripts list
+      await fetchPartnerScripts(sellerData.id);
 
-          if (!existingCompletion) {
-            await addXP(task5Lesson.xp_reward, 'task_completed', `Completed: ${task5Lesson.title}`, { lesson_id: task5Lesson.id });
-            setCompletedLessons(prev => new Set([...prev, task5Lesson.id]));
-            toast({
-              title: "Task Completed!",
-              description: `You earned ${task5Lesson.xp_reward} XP for creating your sales script!`,
-            });
+      // Reset form
+      setEditingScriptId(null);
+      setScriptName("");
+      setCustomScript("");
+      setSalesScriptTemplate("");
+      setScriptAutomationTag("none");
+
+      // Award XP for task 2: Create Your Personal Sales Script Variation (750 XP)
+      if (!editingScriptId) {
+        const taskLesson = lessons.find(l => l.title === 'Create Your Personal Sales Script Variation' && l.rank_required === 'Partner');
+        if (taskLesson && !completedLessons.has(taskLesson.id)) {
+          try {
+            const { data: existingCompletion } = await supabase
+              .from("partner_activity_log")
+              .select("id")
+              .eq("seller_id", sellerData.id)
+              .eq("event_type", "task_completed")
+              .eq("metadata->>lesson_id", taskLesson.id)
+              .maybeSingle();
+
+            if (!existingCompletion) {
+              await addXP(taskLesson.xp_reward, 'task_completed', `Completed: ${taskLesson.title}`, { lesson_id: taskLesson.id });
+              setCompletedLessons(prev => new Set([...prev, taskLesson.id]));
+              toast({
+                title: "Task Completed! 🎉",
+                description: `You earned ${taskLesson.xp_reward} XP for creating your sales script variation!`,
+              });
+            }
+          } catch (error) {
+            console.error("Error awarding XP for sales script:", error);
           }
-        } catch (error) {
-          console.error("Error awarding XP for sales script:", error);
         }
       }
     } catch (error: any) {
@@ -3123,6 +3323,263 @@ const PartnerDashboard = () => {
     } finally {
       setSavingScript(false);
     }
+  };
+
+  // Handle editing a script
+  const handleEditScript = (script: any) => {
+    setEditingScriptId(script.id);
+    setScriptName(script.script_name);
+    setCustomScript(script.script_content);
+    setSalesScriptTemplate(script.template_used || "");
+    setScriptAutomationTag(script.automation_tag || "none");
+  };
+
+  // Handle deleting a script
+  const handleDeleteScript = async (scriptId: string) => {
+    if (!confirm("Are you sure you want to delete this script?")) return;
+
+    try {
+      const { error } = await supabase
+        .from("partner_sales_scripts")
+        .delete()
+        .eq("id", scriptId);
+
+      if (error) throw error;
+
+      toast({
+        title: "Script Deleted",
+        description: "Your script has been deleted successfully.",
+      });
+
+      await fetchPartnerScripts(sellerData?.id || "");
+    } catch (error: any) {
+      toast({
+        title: "Error deleting script",
+        description: error.message,
+        variant: "destructive",
+      });
+    }
+  };
+
+  // Handle template selection - auto-paste template
+  const handleTemplateSelect = (templateKey: string) => {
+    setSalesScriptTemplate(templateKey);
+    if (templateKey && scriptTemplates[templateKey as keyof typeof scriptTemplates]) {
+      setCustomScript(scriptTemplates[templateKey as keyof typeof scriptTemplates]);
+    }
+  };
+
+  // Fetch automation notes from database
+  const fetchAutomationNotes = async (sellerId: string) => {
+    setLoadingNotes(true);
+    try {
+      const { data, error } = await supabase
+        .from("partner_automation_notes")
+        .select("automation_id, note_content")
+        .eq("seller_id", sellerId);
+
+      if (error) throw error;
+      
+      const notesMap = new Map<string, string>();
+      (data || []).forEach((note: any) => {
+        notesMap.set(note.automation_id, note.note_content);
+      });
+      setAutomationNotes(notesMap);
+    } catch (error: any) {
+      console.error("Error fetching automation notes:", error);
+    } finally {
+      setLoadingNotes(false);
+    }
+  };
+
+  // Handle opening note dialog
+  const handleOpenNoteDialog = (automation: AutomationData) => {
+    setSelectedAutomationForNote(automation);
+    setCurrentNoteContent(automationNotes.get(automation.id) || "");
+    setShowNoteDialog(true);
+  };
+
+  // Handle saving automation note
+  const handleSaveAutomationNote = async () => {
+    if (!sellerData?.id || !selectedAutomationForNote) return;
+
+    setSavingNote(true);
+    try {
+      const noteContent = currentNoteContent.trim();
+      
+      // Check if note exists
+      const existingNote = automationNotes.get(selectedAutomationForNote.id);
+      
+      if (noteContent) {
+        // Upsert note
+        const { error } = await supabase
+          .from("partner_automation_notes")
+          .upsert({
+            seller_id: sellerData.id,
+            automation_id: selectedAutomationForNote.id,
+            note_content: noteContent,
+            updated_at: new Date().toISOString(),
+          }, {
+            onConflict: 'seller_id,automation_id'
+          });
+
+        if (error) throw error;
+
+        // Update local state
+        const newNotes = new Map(automationNotes);
+        newNotes.set(selectedAutomationForNote.id, noteContent);
+        setAutomationNotes(newNotes);
+
+        toast({
+          title: existingNote ? "Note Updated!" : "Note Saved!",
+          description: existingNote 
+            ? "Your automation note has been updated."
+            : "Your automation note has been saved.",
+        });
+
+        // Check for task completion: Record a 30-Second Value Explanation (600 XP)
+        // Task requires notes on 3 automations explaining how each saves time and money
+        const notesWithContent = Array.from(newNotes.values()).filter(note => note.trim().length > 0);
+        if (notesWithContent.length >= 3) {
+          const taskLesson = lessons.find(l => l.title === 'Record a 30-Second Value Explanation (Text Only)' && l.rank_required === 'Partner');
+          if (taskLesson && !completedLessons.has(taskLesson.id)) {
+            try {
+              const { data: existingCompletion } = await supabase
+                .from("partner_activity_log")
+                .select("id")
+                .eq("seller_id", sellerData.id)
+                .eq("event_type", "task_completed")
+                .eq("metadata->>lesson_id", taskLesson.id)
+                .maybeSingle();
+
+              if (!existingCompletion) {
+                await addXP(taskLesson.xp_reward, 'task_completed', `Completed: ${taskLesson.title}`, { lesson_id: taskLesson.id });
+                setCompletedLessons(prev => new Set([...prev, taskLesson.id]));
+                toast({
+                  title: "Task Completed! 🎉",
+                  description: `You earned ${taskLesson.xp_reward} XP for writing value explanations for 3 automations!`,
+                });
+              }
+            } catch (error) {
+              console.error("Error awarding XP for automation notes:", error);
+            }
+          }
+        }
+      } else {
+        // Delete note if content is empty
+        const { error } = await supabase
+          .from("partner_automation_notes")
+          .delete()
+          .eq("seller_id", sellerData.id)
+          .eq("automation_id", selectedAutomationForNote.id);
+
+        if (error) throw error;
+
+        const newNotes = new Map(automationNotes);
+        newNotes.delete(selectedAutomationForNote.id);
+        setAutomationNotes(newNotes);
+
+        toast({
+          title: "Note Deleted",
+          description: "Your automation note has been deleted.",
+        });
+      }
+
+      setShowNoteDialog(false);
+    } catch (error: any) {
+      toast({
+        title: "Error saving note",
+        description: error.message,
+        variant: "destructive",
+      });
+    } finally {
+      setSavingNote(false);
+    }
+  };
+
+  // Fetch reviewed bookmarked automations
+  const fetchReviewedBookmarkedAutomations = async (sellerId: string) => {
+    try {
+      const { data, error } = await supabase
+        .from("partner_bookmarked_automation_views")
+        .select("automation_id")
+        .eq("seller_id", sellerId);
+
+      if (error) throw error;
+      
+      const reviewedIds = new Set<string>(
+        (data || []).map((r: any) => r.automation_id).filter((id: any) => id)
+      );
+      setReviewedBookmarkedAutomations(reviewedIds);
+    } catch (error: any) {
+      console.error("Error fetching reviewed bookmarked automations:", error);
+    }
+  };
+
+  // Track when user views a bookmarked automation
+  const trackBookmarkedAutomationView = async (automationId: string) => {
+    if (!sellerData?.id || !bookmarkedAutomations.has(automationId)) return;
+
+    try {
+      // Check if already tracked
+      const { data: existing } = await supabase
+        .from("partner_bookmarked_automation_views")
+        .select("id")
+        .eq("seller_id", sellerData.id)
+        .eq("automation_id", automationId)
+        .maybeSingle();
+
+      if (!existing) {
+        // Track view
+        await supabase
+          .from("partner_bookmarked_automation_views")
+          .insert([{
+            seller_id: sellerData.id,
+            automation_id: automationId,
+          }]);
+
+        // Update local state
+        const newReviewed = new Set(reviewedBookmarkedAutomations);
+        newReviewed.add(automationId);
+        setReviewedBookmarkedAutomations(newReviewed);
+
+        // Check for task completion: Review All Bookmarked Automations (550 XP)
+        // Task requires opening and reading all bookmarked automations
+        if (newReviewed.size >= bookmarkedAutomations.size && bookmarkedAutomations.size > 0) {
+          const taskLesson = lessons.find(l => l.title === 'Review All Bookmarked Automations' && l.rank_required === 'Partner');
+          if (taskLesson && !completedLessons.has(taskLesson.id)) {
+            try {
+              const { data: existingCompletion } = await supabase
+                .from("partner_activity_log")
+                .select("id")
+                .eq("seller_id", sellerData.id)
+                .eq("event_type", "task_completed")
+                .eq("metadata->>lesson_id", taskLesson.id)
+                .maybeSingle();
+
+              if (!existingCompletion) {
+                await addXP(taskLesson.xp_reward, 'task_completed', `Completed: ${taskLesson.title}`, { lesson_id: taskLesson.id });
+                setCompletedLessons(prev => new Set([...prev, taskLesson.id]));
+                toast({
+                  title: "Task Completed! 🎉",
+                  description: `You earned ${taskLesson.xp_reward} XP for reviewing all bookmarked automations!`,
+                });
+              }
+            } catch (error) {
+              console.error("Error awarding XP for bookmarked automations review:", error);
+            }
+          }
+        }
+      }
+    } catch (error: any) {
+      console.error("Error tracking bookmarked automation view:", error);
+    }
+  };
+
+  // Override navigate to automation detail to track bookmarked automation views
+  const handleViewAutomationPage = async (automationId: string) => {
+    await trackBookmarkedAutomationView(automationId);
+    navigate(`/automation/${automationId}`);
   };
 
   // Handle submitting deal entry
@@ -7161,6 +7618,36 @@ const PartnerDashboard = () => {
                         </CardContent>
                       </Card>
 
+                      {/* Partner Tools - Client Journey & Setup Explanation */}
+                      {(sellerData?.current_rank === 'Partner' || sellerData?.current_rank === 'Partner Plus' || sellerData?.current_rank === 'Partner Pro') && (
+                        <Card className="bg-card border-border">
+                          <CardHeader>
+                            <CardTitle className="text-base sm:text-lg text-primary">Partner Tools</CardTitle>
+                            <CardDescription className="text-xs sm:text-sm">
+                              Tools to help you prepare for client conversations
+                            </CardDescription>
+                          </CardHeader>
+                          <CardContent className="space-y-3">
+                            <Button
+                              variant="outline"
+                              className="w-full justify-start"
+                              onClick={() => setShowJourneyMapper(true)}
+                            >
+                              <MapPin className="w-4 h-4 mr-2" />
+                              Map Client Journey (Click to Activation)
+                            </Button>
+                            <Button
+                              variant="outline"
+                              className="w-full justify-start"
+                              onClick={() => setShowSetupExplanation(true)}
+                            >
+                              <FileText className="w-4 h-4 mr-2" />
+                              Write Setup Process Explanation
+                            </Button>
+                          </CardContent>
+                        </Card>
+                      )}
+
                       {/* Referral Code Management */}
                       <Card className="bg-card border-border">
                         <CardContent className="pt-6">
@@ -7453,6 +7940,104 @@ const PartnerDashboard = () => {
                       )}
                     </CardContent>
                   </Card>
+
+                  {/* Client Journey Mapper Dialog */}
+                  {sellerData?.id && (
+                    <ClientJourneyMapper
+                      open={showJourneyMapper}
+                      onOpenChange={setShowJourneyMapper}
+                      sellerId={sellerData.id}
+                      onComplete={async () => {
+                        if (!sellerData?.id) return;
+                        
+                        try {
+                          const taskLesson = lessons.find(l => l.title === 'Map a Client Journey From Click to Activation' && l.rank_required === 'Partner');
+                          if (taskLesson && !completedLessons.has(taskLesson.id)) {
+                            const { data: existingCompletion } = await supabase
+                              .from("partner_activity_log")
+                              .select("id")
+                              .eq("seller_id", sellerData.id)
+                              .eq("event_type", "task_completed")
+                              .eq("metadata->>lesson_id", taskLesson.id)
+                              .maybeSingle();
+                            
+                            if (!existingCompletion) {
+                              await addXP(taskLesson.xp_reward, 'task_completed', `Completed: ${taskLesson.title}`, { 
+                                lesson_id: taskLesson.id 
+                              });
+                              
+                              const allLessons = getLessonsForRank(sellerData.current_rank || 'Recruit');
+                              const lesson = allLessons.find(l => l.id === taskLesson.id);
+                              if (lesson) {
+                                setCompletedLessons(prev => new Set([...prev, taskLesson.id]));
+                              }
+                              
+                              toast({
+                                title: "Task Completed! 🎉",
+                                description: `You earned ${taskLesson.xp_reward} XP for mapping the client journey!`,
+                              });
+                            }
+                          }
+                        } catch (error: any) {
+                          console.error("Error completing journey mapper task:", error);
+                          toast({
+                            title: "Error",
+                            description: error.message || "Failed to complete task. Please try again.",
+                            variant: "destructive",
+                          });
+                        }
+                      }}
+                    />
+                  )}
+
+                  {/* Setup Process Explanation Dialog */}
+                  {sellerData?.id && (
+                    <SetupProcessExplanation
+                      open={showSetupExplanation}
+                      onOpenChange={setShowSetupExplanation}
+                      sellerId={sellerData.id}
+                      onComplete={async () => {
+                        if (!sellerData?.id) return;
+                        
+                        try {
+                          const taskLesson = lessons.find(l => l.title === 'Write Your Own Setup Process Explanation' && l.rank_required === 'Partner');
+                          if (taskLesson && !completedLessons.has(taskLesson.id)) {
+                            const { data: existingCompletion } = await supabase
+                              .from("partner_activity_log")
+                              .select("id")
+                              .eq("seller_id", sellerData.id)
+                              .eq("event_type", "task_completed")
+                              .eq("metadata->>lesson_id", taskLesson.id)
+                              .maybeSingle();
+                            
+                            if (!existingCompletion) {
+                              await addXP(taskLesson.xp_reward, 'task_completed', `Completed: ${taskLesson.title}`, { 
+                                lesson_id: taskLesson.id 
+                              });
+                              
+                              const allLessons = getLessonsForRank(sellerData.current_rank || 'Recruit');
+                              const lesson = allLessons.find(l => l.id === taskLesson.id);
+                              if (lesson) {
+                                setCompletedLessons(prev => new Set([...prev, taskLesson.id]));
+                              }
+                              
+                              toast({
+                                title: "Task Completed! 🎉",
+                                description: `You earned ${taskLesson.xp_reward} XP for writing your setup process explanation!`,
+                              });
+                            }
+                          }
+                        } catch (error: any) {
+                          console.error("Error completing setup explanation task:", error);
+                          toast({
+                            title: "Error",
+                            description: error.message || "Failed to complete task. Please try again.",
+                            variant: "destructive",
+                          });
+                        }
+                      }}
+                    />
+                  )}
                 </TabsContent>
 
                 <TabsContent value="clients" className="space-y-4 sm:space-y-6">
@@ -7689,6 +8274,15 @@ const PartnerDashboard = () => {
                                       )}
                                     </Button>
                                     <Button
+                                      variant={automationNotes.has(automation.id) ? "secondary" : "outline"}
+                                      size="sm"
+                                      onClick={() => handleOpenNoteDialog(automation)}
+                                      title="Add personal notes about this automation"
+                                    >
+                                      <StickyNote className={`w-4 h-4 ${automationNotes.has(automation.id) ? 'mr-2' : 'mr-2'}`} />
+                                      {automationNotes.has(automation.id) ? 'Edit Note' : 'Add Note'}
+                                    </Button>
+                                    <Button
                                       variant="outline"
                                       size="sm"
                                       onClick={() => handleViewBrief(automation)}
@@ -7699,7 +8293,7 @@ const PartnerDashboard = () => {
                                     <Button
                                       variant="default"
                                       size="sm"
-                                      onClick={() => navigate(`/automation/${automation.id}`)}
+                                      onClick={() => handleViewAutomationPage(automation.id)}
                                     >
                                       <FileText className="w-4 h-4 mr-2" />
                                       View Page
@@ -7840,6 +8434,54 @@ const PartnerDashboard = () => {
                         </div>
                       </CardContent>
                     </Card>
+                  )}
+
+                  {/* Automation Notes Dialog */}
+                  {selectedAutomationForNote && (
+                    <Dialog open={showNoteDialog} onOpenChange={setShowNoteDialog}>
+                      <DialogContent className="max-w-2xl">
+                        <DialogHeader>
+                          <DialogTitle className="flex items-center gap-2">
+                            <StickyNote className="w-5 h-5 text-primary" />
+                            {automationNotes.has(selectedAutomationForNote.id) ? 'Edit' : 'Add'} Note: {selectedAutomationForNote.name}
+                          </DialogTitle>
+                          <DialogDescription>
+                            Write your personal notes about how this automation saves time and money. This helps you prepare for speaking with clients.
+                          </DialogDescription>
+                        </DialogHeader>
+                        <div className="space-y-4 py-4">
+                          <div className="space-y-2">
+                            <Label>Your Value Explanation Note *</Label>
+                            <Textarea
+                              value={currentNoteContent}
+                              onChange={(e) => setCurrentNoteContent(e.target.value)}
+                              placeholder="Explain how this automation saves time and money for businesses..."
+                              rows={8}
+                              className="font-mono text-sm"
+                            />
+                            <p className="text-xs text-muted-foreground">
+                              Tip: Focus on explaining how this automation saves time and money. This helps you prepare for client conversations.
+                              {automationNotes.size >= 2 && (
+                                <span className="block mt-2 text-primary font-medium">
+                                  ✓ You've added notes to {automationNotes.size} automation{automationNotes.size !== 1 ? 's' : ''}. Add notes to 3 automations to complete the task!
+                                </span>
+                              )}
+                            </p>
+                          </div>
+                        </div>
+                        <div className="flex justify-end gap-2 pt-4 border-t">
+                          <Button variant="outline" onClick={() => setShowNoteDialog(false)}>
+                            Cancel
+                          </Button>
+                          <Button
+                            onClick={handleSaveAutomationNote}
+                            disabled={savingNote}
+                          >
+                            {savingNote ? 'Saving...' : 'Save Note'}
+                          </Button>
+                        </div>
+                      </DialogContent>
+                    </Dialog>
                   )}
 
                   {/* Locked Automations Section */}
@@ -8043,10 +8685,23 @@ const PartnerDashboard = () => {
                   {transactions.length > 0 ? (
                     <Card className="bg-card border-border">
                       <CardHeader>
-                        <CardTitle className="text-base sm:text-lg text-primary">Transaction History & Earnings</CardTitle>
-                        <CardDescription className="text-xs sm:text-sm">
-                          View your sales and commission breakdown. Each transaction shows how the payment was split.
-                        </CardDescription>
+                        <div className="flex items-start justify-between">
+                          <div className="flex-1">
+                            <CardTitle className="text-base sm:text-lg text-primary">Transaction History & Earnings</CardTitle>
+                            <CardDescription className="text-xs sm:text-sm">
+                              View your sales and commission breakdown. Each transaction shows how the payment was split.
+                            </CardDescription>
+                          </div>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => setShowEarningsCalculator(true)}
+                            className="ml-4"
+                          >
+                            <Calculator className="w-4 h-4 mr-2" />
+                            Earnings Calculator
+                          </Button>
+                        </div>
                       </CardHeader>
                       <CardContent>
                         {/* Mobile Card Layout */}
@@ -8167,82 +8822,251 @@ const PartnerDashboard = () => {
                       <CardContent className="py-12">
                         <div className="text-center text-muted-foreground">
                           <CreditCard className="w-12 h-12 mx-auto mb-4 opacity-50" />
-                          <p>No transactions yet. Start assigning automations to clients!</p>
+                          <p className="mb-4">No transactions yet. Start assigning automations to clients!</p>
+                          <Button
+                            variant="outline"
+                            onClick={() => setShowEarningsCalculator(true)}
+                          >
+                            <Calculator className="w-4 h-4 mr-2" />
+                            Open Earnings Calculator
+                          </Button>
                         </div>
                       </CardContent>
                     </Card>
+                  )}
+                  
+                  {/* Earnings Calculator Dialog */}
+                  {sellerData?.id && (
+                    <EarningsCalculator
+                      open={showEarningsCalculator}
+                      onOpenChange={setShowEarningsCalculator}
+                      sellerId={sellerData.id}
+                      currentCommissionRate={sellerData.commission_rate || RANK_INFO[sellerData.current_rank || 'Recruit'].commissionRate}
+                      onComplete={async (taskType) => {
+                        if (!sellerData?.id) return;
+                        
+                        try {
+                          let lessonTitle = '';
+                          let lessonId = '';
+                          let xpReward = 0;
+                          
+                          if (taskType === 'task1') {
+                            lessonTitle = 'Review Setup vs Monthly Pricing for 3 Automations';
+                            lessonId = 'stage-5-partner-12';
+                            xpReward = 600;
+                          } else if (taskType === 'task4') {
+                            lessonTitle = 'Earnings Projection Exercise';
+                            lessonId = 'stage-5-partner-15';
+                            xpReward = 500;
+                          }
+                          
+                          // Check if already completed
+                          const { data: existingCompletion } = await supabase
+                            .from("partner_activity_log")
+                            .select("id")
+                            .eq("seller_id", sellerData.id)
+                            .eq("event_type", "task_completed")
+                            .eq("metadata->>lesson_id", lessonId)
+                            .maybeSingle();
+                          
+                          if (!existingCompletion) {
+                            await addXP(xpReward, 'task_completed', `Completed: ${lessonTitle}`, { 
+                              lesson_id: lessonId 
+                            });
+                            
+                            const allLessons = getLessonsForRank(sellerData.current_rank || 'Recruit');
+                            const lesson = allLessons.find(l => l.id === lessonId);
+                            if (lesson) {
+                              setCompletedLessons(prev => new Set([...prev, lessonId]));
+                            }
+                            
+                            toast({
+                              title: "Task Completed! 🎉",
+                              description: `You earned ${xpReward} XP for ${lessonTitle}!`,
+                            });
+                          }
+                        } catch (error: any) {
+                          console.error("Error completing calculator task:", error);
+                          toast({
+                            title: "Error",
+                            description: error.message || "Failed to complete task. Please try again.",
+                            variant: "destructive",
+                          });
+                        }
+                      }}
+                    />
                   )}
                 </TabsContent>
 
                 {/* Sales Scripts Tab */}
                 <TabsContent value="sales-scripts" className="space-y-4 sm:space-y-6">
+                  {/* Saved Scripts List */}
+                  {partnerScripts.length > 0 && (
+                    <Card className="bg-card border-border">
+                      <CardHeader>
+                        <CardTitle className="text-base sm:text-lg text-primary">Your Saved Scripts</CardTitle>
+                        <CardDescription className="text-xs sm:text-sm">
+                          View and edit your saved sales scripts
+                        </CardDescription>
+                      </CardHeader>
+                      <CardContent>
+                        <div className="space-y-3">
+                          {partnerScripts.map((script) => (
+                            <Card key={script.id} className="border-border">
+                              <CardContent className="pt-4">
+                                <div className="flex items-start justify-between gap-4">
+                                  <div className="flex-1 space-y-2">
+                                    <div className="flex items-center gap-2">
+                                      <h4 className="font-semibold">{script.script_name}</h4>
+                                      {script.template_used && (
+                                        <Badge variant="outline" className="text-xs">
+                                          {script.template_used === 'conversational' ? 'Conversational DM' :
+                                           script.template_used === 'email' ? 'Email' :
+                                           script.template_used === 'pitch' ? 'Pitch' :
+                                           script.template_used === 'soft_outreach' ? 'Soft Outreach' :
+                                           script.template_used === 'follow_up' ? 'Follow-Up' :
+                                           script.template_used === 'short_value' ? 'Short Value' : script.template_used}
+                                        </Badge>
+                                      )}
+                                      {script.automation && (
+                                        <Badge variant="secondary" className="text-xs">
+                                          {script.automation.name}
+                                        </Badge>
+                                      )}
+                                    </div>
+                                    <p className="text-sm text-muted-foreground line-clamp-2">
+                                      {script.script_content}
+                                    </p>
+                                    <p className="text-xs text-muted-foreground">
+                                      Created {formatDistanceToNow(new Date(script.created_at), { addSuffix: true })}
+                                    </p>
+                                  </div>
+                                  <div className="flex gap-2">
+                                    <Button
+                                      variant="outline"
+                                      size="sm"
+                                      onClick={() => handleEditScript(script)}
+                                    >
+                                      <FileText className="w-4 h-4 mr-1" />
+                                      Edit
+                                    </Button>
+                                    <Button
+                                      variant="ghost"
+                                      size="sm"
+                                      onClick={() => handleDeleteScript(script.id)}
+                                    >
+                                      <Trash2 className="w-4 h-4" />
+                                    </Button>
+                                  </div>
+                                </div>
+                              </CardContent>
+                            </Card>
+                          ))}
+                        </div>
+                      </CardContent>
+                    </Card>
+                  )}
+
+                  {/* Create/Edit Script Form */}
                   <Card className="bg-card border-border">
                     <CardHeader>
-                      <CardTitle className="text-base sm:text-lg text-primary">Your Sales Scripts</CardTitle>
+                      <CardTitle className="text-base sm:text-lg text-primary">
+                        {editingScriptId ? 'Edit Sales Script' : 'Create New Sales Script'}
+                      </CardTitle>
                       <CardDescription className="text-xs sm:text-sm">
-                        Create and customize your sales scripts for different outreach scenarios
+                        {editingScriptId 
+                          ? 'Update your sales script below'
+                          : 'Create and customize your sales scripts for different outreach scenarios'}
                       </CardDescription>
                     </CardHeader>
                     <CardContent className="space-y-4">
-                      <div className="space-y-3">
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                         <div className="space-y-2">
-                          <Label>Choose Template</Label>
-                          <Select value={salesScriptTemplate} onValueChange={setSalesScriptTemplate}>
-                            <SelectTrigger>
-                              <SelectValue placeholder="Select a template to get started" />
+                          <Label htmlFor="script-name">Script Name *</Label>
+                          <Input
+                            id="script-name"
+                            value={scriptName}
+                            onChange={(e) => setScriptName(e.target.value)}
+                            placeholder="e.g., Email Outreach for Invoice Reminder"
+                          />
+                        </div>
+                        <div className="space-y-2">
+                          <Label htmlFor="automation-tag">Automation Tag (Optional)</Label>
+                          <Select value={scriptAutomationTag} onValueChange={setScriptAutomationTag}>
+                            <SelectTrigger id="automation-tag">
+                              <SelectValue placeholder="Tag this script to an automation" />
                             </SelectTrigger>
                             <SelectContent>
-                              <SelectItem value="conversational">Conversational DM Script</SelectItem>
-                              <SelectItem value="email">Professional Email Template</SelectItem>
-                              <SelectItem value="pitch">Consultative Pitch Outline</SelectItem>
+                              <SelectItem value="none">No Tag</SelectItem>
+                              {availableAutomations.map((auto) => (
+                                <SelectItem key={auto.id} value={auto.id}>
+                                  {auto.name}
+                                </SelectItem>
+                              ))}
                             </SelectContent>
                           </Select>
                         </div>
-                        
-                        {salesScriptTemplate && (
-                          <Card className="bg-muted/50 border-border">
-                            <CardContent className="p-4">
-                              <p className="text-sm font-semibold mb-2">Template Preview:</p>
-                              <div className="text-sm text-muted-foreground whitespace-pre-wrap">
-                                {salesScriptTemplate === 'conversational' && 'Hi [Name]! I noticed your business could benefit from automation. Would you be open to a quick chat about how we can help you save time and reduce costs?'}
-                                {salesScriptTemplate === 'email' && 'Subject: Automate Your Business Operations\n\nDear [Name],\n\nI help businesses like yours automate repetitive tasks and reduce costs. Our proven automation solutions can help you:\n\n• Save 10+ hours per week\n• Reduce operational costs\n• Scale without hiring\n\nWould you be interested in a 15-minute call to see if automation could benefit your business?\n\nBest regards,\n[Your Name]'}
-                                {salesScriptTemplate === 'pitch' && '1. Identify Pain Point\n   "What tasks take up most of your team\'s time?"\n\n2. Present Solution\n   "We have an automation that can handle [specific task]"\n\n3. Show ROI\n   "This typically saves businesses [X hours/$Y per month]"\n\n4. Next Steps\n   "Would you like to see how this works for your business?"'}
-                              </div>
-                            </CardContent>
-                          </Card>
-                        )}
-                        
-                        <div className="space-y-2">
-                          <Label>Your Custom Script *</Label>
-                          <Textarea
-                            value={customScript}
-                            onChange={(e) => setCustomScript(e.target.value)}
-                            placeholder="Customize your script here. You can use the template above as a starting point or write your own..."
-                            rows={12}
-                            className="font-mono text-sm"
-                          />
-                          <p className="text-xs text-muted-foreground">
-                            Tip: Personalize your script with placeholders like [Name], [Business], [Pain Point] that you can replace for each client.
-                          </p>
-                        </div>
-                        
+                      </div>
+
+                      <div className="space-y-2">
+                        <Label>Choose Template (Auto-pastes template into editor)</Label>
+                        <Select value={salesScriptTemplate} onValueChange={handleTemplateSelect}>
+                          <SelectTrigger>
+                            <SelectValue placeholder="Select a template to get started" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="conversational">✅ 1. Conversational DM Script (Short, Simple, Effective)</SelectItem>
+                            <SelectItem value="email">✅ 2. Professional Email Template (Polished + Credible)</SelectItem>
+                            <SelectItem value="pitch">✅ 3. Consultative Pitch Outline (Strategic Format)</SelectItem>
+                            <SelectItem value="soft_outreach">✅ 4. Soft Outreach Message (Friendly + Non-Salesy)</SelectItem>
+                            <SelectItem value="follow_up">✅ 5. Follow-Up Message (Polite, Helpful, Value-First)</SelectItem>
+                            <SelectItem value="short_value">✅ 6. Short Value Pitch (Fast, Clear, Straight to the Point)</SelectItem>
+                          </SelectContent>
+                        </Select>
+                        <p className="text-xs text-muted-foreground">
+                          Selecting a template will automatically paste it into the editor below. You can then customize it and save as a new script.
+                        </p>
+                      </div>
+                      
+                      <div className="space-y-2">
+                        <Label>Your Script Content *</Label>
+                        <Textarea
+                          value={customScript}
+                          onChange={(e) => setCustomScript(e.target.value)}
+                          placeholder="Select a template above or write your own script here..."
+                          rows={12}
+                          className="font-mono text-sm"
+                        />
+                        <p className="text-xs text-muted-foreground">
+                          Tip: Personalize your script with placeholders like [Name], [Business], [Pain Point] that you can replace for each client.
+                        </p>
+                      </div>
+                      
+                      <div className="flex gap-2">
                         <Button
                           onClick={handleSaveSalesScript}
-                          disabled={savingScript || !customScript.trim()}
-                          className="w-full"
+                          disabled={savingScript || !customScript.trim() || !scriptName.trim()}
+                          className="flex-1"
                         >
-                          {savingScript ? 'Saving...' : customScript ? 'Update Script' : 'Save Script'}
+                          {savingScript 
+                            ? 'Saving...' 
+                            : editingScriptId 
+                              ? 'Update Script' 
+                              : 'Save as New Script'}
                         </Button>
-                        
-                        {customScript && (
-                          <Card className="bg-primary/5 border-primary/20">
-                            <CardContent className="p-4">
-                              <p className="text-sm font-semibold text-primary mb-2">Your Saved Script:</p>
-                              <div className="text-sm whitespace-pre-wrap bg-background p-3 rounded border border-border">
-                                {customScript}
-                              </div>
-                            </CardContent>
-                          </Card>
+                        {editingScriptId && (
+                          <Button
+                            variant="outline"
+                            onClick={() => {
+                              setEditingScriptId(null);
+                              setScriptName("");
+                              setCustomScript("");
+                              setSalesScriptTemplate("");
+                              setScriptAutomationTag("none");
+                            }}
+                          >
+                            Cancel
+                          </Button>
                         )}
                       </div>
                     </CardContent>
