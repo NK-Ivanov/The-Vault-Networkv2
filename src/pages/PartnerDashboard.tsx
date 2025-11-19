@@ -15,7 +15,7 @@ import { DollarSign, Users, TrendingUp, Package, Copy, Check, CheckCircle, XCirc
 import EarningsCalculator from "@/components/EarningsCalculator";
 import ClientJourneyMapper from "@/components/ClientJourneyMapper";
 import SetupProcessExplanation from "@/components/SetupProcessExplanation";
-import TemplateLibrary from "@/components/TemplateLibrary";
+import DailyTasks from "@/components/DailyTasks";
 import { useToast } from "@/hooks/use-toast";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -25,6 +25,7 @@ import { Label } from "@/components/ui/label";
 import { isTabUnlocked, getTabUnlockRequirement, calculateProgressToNextRank, getNextRank, getRankInfo, RANK_INFO, getTasksForRank, type PartnerRank } from "@/lib/partner-progression";
 import { getWeeklyChallenges, getCurrentWeek, type WeeklyChallenge } from "@/lib/weekly-challenges";
 import { getLessonsForRank, type PartnerLesson as HardcodedLesson, isCountableTask, getLessonById } from "@/lib/partner-lessons";
+import { getTodaysDailyTasks } from "@/lib/daily-tasks";
 import { BookOpen, Target, Lock } from "lucide-react";
 import { Progress } from "@/components/ui/progress";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
@@ -548,6 +549,8 @@ const PartnerDashboard = () => {
   const [lessons, setLessons] = useState<PartnerLesson[]>([]);
   const [quizResults, setQuizResults] = useState<QuizResult[]>([]);
   const [completedLessons, setCompletedLessons] = useState<Set<string>>(new Set());
+  const [completedDailyTasks, setCompletedDailyTasks] = useState<Set<string>>(new Set());
+  const [activeDailyTask, setActiveDailyTask] = useState<{ taskId: string; action?: string } | null>(null);
   const [selectedLesson, setSelectedLesson] = useState<PartnerLesson | null>(null);
   const [showQuizDialog, setShowQuizDialog] = useState(false);
   const [showPartnerProDetails, setShowPartnerProDetails] = useState(false);
@@ -925,6 +928,142 @@ If you are curious, I can show you exactly how it works. It only takes a minute 
       overviewTaskCompletedRef.current = false;
     }
   }, [activeTab, sellerData?.id, lessons.length]); // Removed completedLessons from deps
+
+  // Daily Task Verification - Check if active daily tasks are completed
+  useEffect(() => {
+    if (!activeDailyTask || completedDailyTasks.has(activeDailyTask.taskId)) return;
+    if (!sellerData?.id) return;
+
+    const todayTasks = getTodaysDailyTasks(sellerData.current_rank as PartnerRank);
+    const task = todayTasks.find(t => t.id === activeDailyTask.taskId);
+    if (!task) return;
+
+    let isCompleted = false;
+
+    // Verify task completion based on action
+    switch (activeDailyTask.action) {
+      case 'open_automations':
+        isCompleted = activeTab === 'automations';
+        break;
+      case 'open_support':
+        isCompleted = activeTab === 'support';
+        break;
+      case 'view_referral_link':
+      case 'open_referral_code':
+      case 'preview_referral_options':
+      case 'check_xp':
+      case 'check_weekly_xp':
+      case 'check_weekly_trend':
+      case 'check_weekly_goals':
+      case 'review_yesterday_xp':
+      case 'note_xp_growth':
+      case 'check_leaderboard':
+      case 'compare_rank':
+      case 'check_rank_movement':
+      case 'review_top_partners':
+      case 'study_top_seller':
+      case 'set_daily_goal':
+        isCompleted = activeTab === 'overview';
+        break;
+      case 'view_automation':
+        // Verified in handleViewAutomationPage when automation is actually viewed
+        isCompleted = false;
+        break;
+      case 'manage_bookmark':
+      case 'review_bookmark':
+        // Verified in handleToggleBookmark when bookmark is actually toggled
+        isCompleted = false;
+        break;
+      case 'read_brief':
+      case 'read_demo_brief':
+      case 'read_faq':
+        // Verified in handleBriefDialogClose when brief is actually read
+        isCompleted = false;
+        break;
+      case 'read_support_message':
+      case 'review_tickets':
+        // Check if support tab is open and user has opened a ticket
+        // Only complete if they actually opened a ticket (selectedTicket is set)
+        isCompleted = activeTab === 'support' && selectedTicket !== null;
+        break;
+      case 'filter_automations':
+      case 'compare_pricing':
+      case 'compare_for_demo':
+      case 'compare_selling_options':
+      case 'view_pricing':
+      case 'review_requirements':
+        // These need manual completion after user interacts with filters/comparisons
+        // For now, mark as completed if they're on automations tab
+        isCompleted = activeTab === 'automations';
+        break;
+      case 'open_suggestions':
+      case 'read_suggestion':
+      case 'review_suggestion':
+        // Check if user is on getting-started tab (where suggestions are)
+        isCompleted = activeTab === 'getting-started';
+        break;
+      case 'edit_script':
+      case 'rewrite_script':
+      case 'improve_script':
+      case 'review_template':
+      case 'practice_pitch':
+        // Check if user is on sales-scripts tab
+        isCompleted = activeTab === 'sales-scripts';
+        break;
+      case 'review_deals':
+      case 'reread_deal':
+        // Check if user is on deal-tracking tab
+        isCompleted = activeTab === 'deal-tracking';
+        break;
+      case 'review_demo_client':
+      case 'review_setup_stage':
+      case 'review_demo_automation':
+        // Check if user is on clients tab
+        isCompleted = activeTab === 'clients';
+        break;
+      case 'review_earnings':
+      case 'review_monthly_potential':
+      case 'forecast_earnings':
+        // Check if user is on earnings tab
+        isCompleted = activeTab === 'earnings';
+        break;
+      default:
+        isCompleted = false;
+        break;
+    }
+
+    // If task is completed, award XP and mark as done
+    if (isCompleted) {
+      const completeTask = async () => {
+        try {
+          setCompletedDailyTasks(prev => new Set([...prev, activeDailyTask.taskId]));
+          setActiveDailyTask(null);
+          
+          await addXP(
+            task.xpReward,
+            'daily_task_completed',
+            `Completed daily task: ${task.title}`,
+            { task_id: activeDailyTask.taskId, task_title: task.title }
+          );
+          
+          toast({
+            title: "Daily Task Completed!",
+            description: `You earned ${task.xpReward} XP for completing "${task.title}"`,
+          });
+        } catch (error: any) {
+          console.error("Error completing daily task:", error);
+          toast({
+            title: "Error",
+            description: error.message || "Failed to complete daily task. Please try again.",
+            variant: "destructive",
+          });
+        }
+      };
+
+      completeTask();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeDailyTask, activeTab, selectedTicket, sellerData?.id, sellerData?.current_rank, completedDailyTasks]);
 
   const fetchSellerData = async () => {
     try {
@@ -3070,6 +3209,32 @@ If you are curious, I can show you exactly how it works. It only takes a minute 
             console.error("Error completing bookmark 2 task:", error);
           }
         }
+
+        // Check for daily task completion (manage_bookmark, review_bookmark)
+        if (activeDailyTask && (activeDailyTask.action === 'manage_bookmark' || activeDailyTask.action === 'review_bookmark')) {
+          if (!completedDailyTasks.has(activeDailyTask.taskId)) {
+            const todayTasks = getTodaysDailyTasks(sellerData.current_rank as PartnerRank);
+            const dailyTask = todayTasks.find(t => t.id === activeDailyTask.taskId);
+            if (dailyTask) {
+              try {
+                setCompletedDailyTasks(prev => new Set([...prev, activeDailyTask.taskId]));
+                setActiveDailyTask(null);
+                await addXP(
+                  dailyTask.xpReward,
+                  'daily_task_completed',
+                  `Completed daily task: ${dailyTask.title}`,
+                  { task_id: activeDailyTask.taskId, task_title: dailyTask.title }
+                );
+                toast({
+                  title: "Daily Task Completed!",
+                  description: `You earned ${dailyTask.xpReward} XP for completing "${dailyTask.title}"`,
+                });
+              } catch (error: any) {
+                console.error("Error completing daily bookmark task:", error);
+              }
+            }
+          }
+        }
       }
     } catch (error: any) {
       toast({
@@ -3139,6 +3304,32 @@ If you are curious, I can show you exactly how it works. It only takes a minute 
                 description: `You earned ${briefLesson.xp_reward} XP for reading a full automation brief!`,
               });
               // Don't call fetchProgressionData here - it will be called by addXP's fetchSellerData
+              
+              // Check for daily task completion (read_brief, read_demo_brief, read_faq)
+              if (activeDailyTask && (activeDailyTask.action === 'read_brief' || activeDailyTask.action === 'read_demo_brief' || activeDailyTask.action === 'read_faq')) {
+                if (!completedDailyTasks.has(activeDailyTask.taskId)) {
+                  const todayTasks = getTodaysDailyTasks(sellerData?.current_rank as PartnerRank);
+                  const dailyTask = todayTasks.find(t => t.id === activeDailyTask.taskId);
+                  if (dailyTask && sellerData?.id) {
+                    try {
+                      setCompletedDailyTasks(prev => new Set([...prev, activeDailyTask.taskId]));
+                      setActiveDailyTask(null);
+                      await addXP(
+                        dailyTask.xpReward,
+                        'daily_task_completed',
+                        `Completed daily task: ${dailyTask.title}`,
+                        { task_id: activeDailyTask.taskId, task_title: dailyTask.title }
+                      );
+                      toast({
+                        title: "Daily Task Completed!",
+                        description: `You also earned ${dailyTask.xpReward} XP for completing "${dailyTask.title}"`,
+                      });
+                    } catch (error: any) {
+                      console.error("Error completing daily read brief task:", error);
+                    }
+                  }
+                }
+              }
             } catch (error: any) {
               console.error("Error completing brief task:", error);
               toast({
@@ -3580,6 +3771,38 @@ If you are curious, I can show you exactly how it works. It only takes a minute 
   // Override navigate to automation detail to track bookmarked automation views
   const handleViewAutomationPage = async (automationId: string) => {
     await trackBookmarkedAutomationView(automationId);
+    
+    // Track automation view for daily task
+    const updated = new Set(viewedAutomations);
+    updated.add(automationId);
+    setViewedAutomations(updated);
+    
+    // Check for daily task completion (view_automation)
+    if (activeDailyTask && activeDailyTask.action === 'view_automation') {
+      if (!completedDailyTasks.has(activeDailyTask.taskId)) {
+        const todayTasks = getTodaysDailyTasks(sellerData?.current_rank as PartnerRank);
+        const dailyTask = todayTasks.find(t => t.id === activeDailyTask.taskId);
+        if (dailyTask && sellerData?.id) {
+          try {
+            setCompletedDailyTasks(prev => new Set([...prev, activeDailyTask.taskId]));
+            setActiveDailyTask(null);
+            await addXP(
+              dailyTask.xpReward,
+              'daily_task_completed',
+              `Completed daily task: ${dailyTask.title}`,
+              { task_id: activeDailyTask.taskId, task_title: dailyTask.title }
+            );
+            toast({
+              title: "Daily Task Completed!",
+              description: `You earned ${dailyTask.xpReward} XP for completing "${dailyTask.title}"`,
+            });
+          } catch (error: any) {
+            console.error("Error completing daily view automation task:", error);
+          }
+        }
+      }
+    }
+    
     navigate(`/automation/${automationId}`);
   };
 
@@ -5917,7 +6140,8 @@ If you are curious, I can show you exactly how it works. It only takes a minute 
                       </CardDescription>
                     </CardHeader>
                     <CardContent>
-                      <div className="space-y-3">
+                      <div className="space-y-4">
+                        {/* Login Streak */}
                         <div className="p-4 bg-background rounded-lg border border-border">
                           <div className="flex items-center justify-between mb-2">
                             <span className="font-semibold text-sm">Login Streak</span>
@@ -5939,6 +6163,8 @@ If you are curious, I can show you exactly how it works. It only takes a minute 
                             </p>
                           )}
                         </div>
+
+                        {/* Weekly XP Progress */}
                         <div className="p-4 bg-background rounded-lg border border-border">
                           <div className="flex items-center justify-between mb-2">
                             <span className="font-semibold text-sm">Weekly XP Progress</span>
@@ -5956,6 +6182,208 @@ If you are curious, I can show you exactly how it works. It only takes a minute 
                               : 'Complete tasks to earn more XP this week'}
                           </p>
                         </div>
+
+                        {/* Daily Tasks */}
+                        {sellerData?.current_rank && (
+                          <div className="pt-2">
+                            <h3 className="text-sm font-semibold mb-3">Today's Daily Tasks</h3>
+                            <DailyTasks
+                              rank={sellerData.current_rank as PartnerRank}
+                              completedTasks={completedDailyTasks}
+                              onTaskStart={(taskId: string, action?: string) => {
+                                if (completedDailyTasks.has(taskId)) return;
+                                
+                                const todayTasks = getTodaysDailyTasks(sellerData.current_rank as PartnerRank);
+                                const task = todayTasks.find(t => t.id === taskId);
+                                if (!task) return;
+
+                                // Set active task for verification
+                                setActiveDailyTask({ taskId, action });
+
+                                // Navigate to relevant tab/action based on task action
+                                switch (action) {
+                                  case 'open_automations':
+                                    setActiveTab('automations');
+                                    toast({
+                                      title: "Task Started",
+                                      description: "Navigate to the Automations tab to complete this task.",
+                                    });
+                                    break;
+                                  case 'view_automation':
+                                    setActiveTab('automations');
+                                    toast({
+                                      title: "Task Started",
+                                      description: "Click on any automation card to view its details.",
+                                    });
+                                    break;
+                                  case 'open_support':
+                                    setActiveTab('support');
+                                    toast({
+                                      title: "Task Started",
+                                      description: "Open the Support tab to complete this task.",
+                                    });
+                                    break;
+                                  case 'view_referral_link':
+                                  case 'open_referral_code':
+                                  case 'preview_referral_options':
+                                    setActiveTab('overview');
+                                    toast({
+                                      title: "Task Started",
+                                      description: "View your referral link section in the Overview tab.",
+                                    });
+                                    break;
+                                  case 'check_xp':
+                                  case 'check_weekly_xp':
+                                  case 'check_weekly_trend':
+                                  case 'check_weekly_goals':
+                                  case 'review_yesterday_xp':
+                                  case 'note_xp_growth':
+                                    setActiveTab('overview');
+                                    toast({
+                                      title: "Task Started",
+                                      description: "Check your XP progress in the Overview tab.",
+                                    });
+                                    break;
+                                  case 'manage_bookmark':
+                                  case 'review_bookmark':
+                                    setActiveTab('automations');
+                                    toast({
+                                      title: "Task Started",
+                                      description: "Bookmark or manage bookmarks in the Automations tab.",
+                                    });
+                                    break;
+                                  case 'read_brief':
+                                  case 'read_demo_brief':
+                                  case 'read_faq':
+                                    setActiveTab('automations');
+                                    toast({
+                                      title: "Task Started",
+                                      description: "Read an automation brief or FAQ section.",
+                                    });
+                                    break;
+                                  case 'read_support_message':
+                                  case 'review_tickets':
+                                    setActiveTab('support');
+                                    toast({
+                                      title: "Task Started",
+                                      description: "Open a support ticket to read messages.",
+                                    });
+                                    break;
+                                  case 'filter_automations':
+                                  case 'compare_pricing':
+                                  case 'compare_for_demo':
+                                  case 'compare_selling_options':
+                                    setActiveTab('automations');
+                                    toast({
+                                      title: "Task Started",
+                                      description: "Use filters or compare automations in the Automations tab.",
+                                    });
+                                    break;
+                                  case 'open_suggestions':
+                                  case 'read_suggestion':
+                                  case 'review_suggestion':
+                                    setActiveTab('getting-started');
+                                    toast({
+                                      title: "Task Started",
+                                      description: "Navigate to Automation Suggestions to complete this task.",
+                                    });
+                                    break;
+                                  case 'check_leaderboard':
+                                  case 'compare_rank':
+                                  case 'check_rank_movement':
+                                  case 'review_top_partners':
+                                  case 'study_top_seller':
+                                    setActiveTab('overview');
+                                    toast({
+                                      title: "Task Started",
+                                      description: "Check the leaderboard in the Overview tab.",
+                                    });
+                                    break;
+                                  case 'view_pricing':
+                                  case 'review_requirements':
+                                    setActiveTab('automations');
+                                    toast({
+                                      title: "Task Started",
+                                      description: "View pricing or requirements in the Automations tab.",
+                                    });
+                                    break;
+                                  case 'edit_script':
+                                  case 'rewrite_script':
+                                  case 'improve_script':
+                                  case 'review_template':
+                                  case 'practice_pitch':
+                                    setActiveTab('sales-scripts');
+                                    toast({
+                                      title: "Task Started",
+                                      description: "Edit or review your sales scripts.",
+                                    });
+                                    break;
+                                  case 'review_deals':
+                                  case 'reread_deal':
+                                    setActiveTab('deal-tracking');
+                                    toast({
+                                      title: "Task Started",
+                                      description: "Review your deal tracking entries.",
+                                    });
+                                    break;
+                                  case 'preview_automation':
+                                  case 'choose_pitch_automation':
+                                    setActiveTab('automations');
+                                    toast({
+                                      title: "Task Started",
+                                      description: "Preview or choose an automation to pitch.",
+                                    });
+                                    break;
+                                  case 'review_demo_client':
+                                  case 'review_setup_stage':
+                                    setActiveTab('clients');
+                                    toast({
+                                      title: "Task Started",
+                                      description: "Open a demo client to review details.",
+                                    });
+                                    break;
+                                  case 'review_demo_automation':
+                                    setActiveTab('clients');
+                                    toast({
+                                      title: "Task Started",
+                                      description: "Review automations assigned to your demo client.",
+                                    });
+                                    break;
+                                  case 'review_earnings':
+                                  case 'review_monthly_potential':
+                                  case 'forecast_earnings':
+                                    setActiveTab('earnings');
+                                    toast({
+                                      title: "Task Started",
+                                      description: "Review your earnings in the Earnings tab.",
+                                    });
+                                    break;
+                                  case 'review_premium_automation':
+                                  case 'review_analytics':
+                                    setActiveTab('automations');
+                                    toast({
+                                      title: "Task Started",
+                                      description: "Review premium automations or analytics.",
+                                    });
+                                    break;
+                                  case 'set_daily_goal':
+                                    setActiveTab('overview');
+                                    toast({
+                                      title: "Task Started",
+                                      description: "Set a daily goal in the Overview tab.",
+                                    });
+                                    break;
+                                  default:
+                                    toast({
+                                      title: "Task Started",
+                                      description: `Complete the task: ${task.title}`,
+                                    });
+                                    break;
+                                }
+                              }}
+                            />
+                          </div>
+                        )}
                       </div>
                     </CardContent>
                   </Card>
@@ -6044,21 +6472,6 @@ If you are curious, I can show you exactly how it works. It only takes a minute 
                       </CardContent>
                     </Card>
                   )}
-
-                  {/* n8n Template Library */}
-                  <Card className="bg-card border-border">
-                    <CardHeader>
-                      <CardTitle className="text-base sm:text-lg text-primary">
-                        n8n Template Library
-                      </CardTitle>
-                      <CardDescription className="text-xs sm:text-sm">
-                        Browse and download ready-to-use n8n workflow templates from our Foundation Pack
-                      </CardDescription>
-                    </CardHeader>
-                    <CardContent>
-                      <TemplateLibrary />
-                    </CardContent>
-                  </Card>
 
                   {/* Current Stage Lessons */}
                   <Card className="bg-card border-border">

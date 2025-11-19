@@ -2165,6 +2165,26 @@ Ready to test your knowledge? Complete the quiz to earn your XP!`,
     quiz_answers: [0, 1, 0, 3, 0, 0, 3, 3],
     xp_reward: 600,
     order_index: 19
+  },
+  {
+    id: 'stage-4-verified-plus-20',
+    stage: 4,
+    rank_required: 'Verified Plus',
+    lesson_type: 'task',
+    title: 'Log In on 5 Consecutive Days',
+    content: `Build consistency and demonstrate commitment through daily engagement.
+
+**Task:** Log in to your Partner Dashboard on 5 consecutive days. Your login streak is already being tracked from previous ranks.
+
+**How It Works:**
+- Your current login streak is tracked automatically
+- The task completes when you reach 5 consecutive days
+- If you miss a day, your streak resets and you'll need to start over
+- The streak continues from your current consecutive days count
+
+**Why:** Consistent daily engagement shows commitment and helps you stay on top of opportunities, build productive habits, and demonstrate reliability to clients.`,
+    xp_reward: 500,
+    order_index: 20
   }
 ];
 
@@ -2678,7 +2698,27 @@ This helps you prepare for answering real client questions about the setup proce
     order_index: 18
   },
   {
-    id: generateId(5, 'Verified', 19),
+    id: 'stage-5-partner-19',
+    stage: 5,
+    rank_required: 'Partner',
+    lesson_type: 'task',
+    title: 'Log In on 7 Consecutive Days',
+    content: `Build strong consistency and demonstrate high-level commitment through daily engagement.
+
+**Task:** Log in to your Partner Dashboard on 7 consecutive days. Your login streak is already being tracked from previous ranks.
+
+**How It Works:**
+- Your current login streak is tracked automatically
+- The task completes when you reach 7 consecutive days
+- If you miss a day, your streak resets and you'll need to start over
+- The streak continues from your current consecutive days count
+
+**Why:** Consistent daily engagement at this level shows strong commitment, helps you stay on top of opportunities, builds productive habits, and demonstrates reliability and professionalism to clients. This level of consistency is essential for Partner rank success.`,
+    xp_reward: 600,
+    order_index: 19
+  },
+  {
+    id: generateId(5, 'Verified', 20),
     stage: 5,
     rank_required: 'Partner Plus',
     lesson_type: 'task',
