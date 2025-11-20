@@ -1,0 +1,175 @@
+{
+  "title": "Automation Essentials: Understanding Data Flow",
+  "category": "Automation Basics",
+  "xp_reward": 250,
+  "slides": [
+    {
+      "id": "slide-1",
+      "title": "Introduction to Automation",
+      "elements": [
+        {
+          "type": "heading",
+          "level": 1,
+          "content": "Welcome to Automation Essentials"
+        },
+        {
+          "type": "paragraph",
+          "content": "Automation is the key to scaling your business without scaling your workload. In this module, we'll explore how data flows through automated systems and why it matters."
+        },
+        {
+          "type": "image",
+          "src": "https://vaultnet.work/images/automation-flow.png",
+          "alt": "Diagram showing data flow in automation"
+        },
+        {
+          "type": "alert",
+          "variant": "info",
+          "content": "💡 Tip: Understanding data flow will help you explain automation to clients more effectively."
+        }
+      ]
+    },
+    {
+      "id": "slide-2",
+      "title": "What is Data Flow?",
+      "elements": [
+        {
+          "type": "heading",
+          "level": 2,
+          "content": "The Basics of Data Flow"
+        },
+        {
+          "type": "paragraph",
+          "content": "Data flow refers to how information moves through your automation system. Think of it like a river:"
+        },
+        {
+          "type": "list",
+          "items": [
+            "Data enters at the source (like an email or form)",
+            "It gets processed and transformed",
+            "Actions are triggered based on the data",
+            "Results are stored or sent to destinations"
+          ]
+        },
+        {
+          "type": "quote",
+          "content": "Good automation is invisible. Great automation is invisible AND intelligent."
+        }
+      ]
+    },
+    {
+      "id": "slide-3",
+      "title": "Common Data Flow Patterns",
+      "elements": [
+        {
+          "type": "heading",
+          "level": 2,
+          "content": "Three Main Patterns"
+        },
+        {
+          "type": "paragraph",
+          "content": "Most automations follow one of these patterns:"
+        },
+        {
+          "type": "separator"
+        },
+        {
+          "type": "heading",
+          "level": 3,
+          "content": "1. Linear Flow"
+        },
+        {
+          "type": "paragraph",
+          "content": "Data flows from A to B to C in a straight line. Simple and reliable."
+        },
+        {
+          "type": "code",
+          "language": "javascript",
+          "content": "Trigger → Process → Action → Result"
+        },
+        {
+          "type": "separator"
+        },
+        {
+          "type": "heading",
+          "level": 3,
+          "content": "2. Conditional Flow"
+        },
+        {
+          "type": "paragraph",
+          "content": "Data takes different paths based on conditions. More flexible but requires careful planning."
+        },
+        {
+          "type": "badge",
+          "variant": "default",
+          "text": "Most Common Pattern"
+        }
+      ]
+    },
+    {
+      "id": "slide-4",
+      "title": "Best Practices",
+      "elements": [
+        {
+          "type": "heading",
+          "level": 2,
+          "content": "Building Reliable Automations"
+        },
+        {
+          "type": "list",
+          "items": [
+            "Always validate data at entry points",
+            "Include error handling for unexpected data",
+            "Log important steps for debugging",
+            "Test with real-world scenarios"
+          ]
+        },
+        {
+          "type": "alert",
+          "variant": "warning",
+          "content": "⚠️ Never skip error handling! One bad data point can break your entire automation."
+        },
+        {
+          "type": "button",
+          "text": "Learn More About Error Handling",
+          "url": "https://docs.vaultnetwork.com/error-handling"
+        }
+      ]
+    }
+  ],
+  "quiz": [
+    {
+      "question": "What is data flow?",
+      "answers": [
+        "The speed at which data moves",
+        "How information moves through an automation system",
+        "The storage location of data",
+        "The encryption method used for data"
+      ],
+      "correct": 1,
+      "explanation": "Data flow refers to how information moves through your automation system from source to destination."
+    },
+    {
+      "question": "Which pattern is most common in automations?",
+      "answers": [
+        "Linear Flow",
+        "Conditional Flow",
+        "Circular Flow",
+        "Random Flow"
+      ],
+      "correct": 1,
+      "explanation": "Conditional flow is the most common pattern as it allows automations to handle different scenarios intelligently."
+    },
+    {
+      "question": "Why is error handling important?",
+      "answers": [
+        "It makes the automation faster",
+        "It prevents one bad data point from breaking the entire automation",
+        "It reduces storage costs",
+        "It's not actually important"
+      ],
+      "correct": 1,
+      "explanation": "Error handling ensures that unexpected data or issues don't crash your entire automation system."
+    }
+  ]
+}
+

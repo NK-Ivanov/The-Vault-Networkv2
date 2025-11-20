@@ -205,7 +205,7 @@ BEGIN
     CASE new_rank_val
       WHEN 'Recruit' THEN next_rank_xp_threshold := 0;
         WHEN 'Recruit Plus' THEN next_rank_xp_threshold := 200;
-        WHEN 'Apprentice' THEN next_rank_xp_threshold := 1000;
+      WHEN 'Apprentice' THEN next_rank_xp_threshold := 1000;
         WHEN 'Apprentice Plus' THEN next_rank_xp_threshold := 1500;
         WHEN 'Agent' THEN next_rank_xp_threshold := 3000;
         WHEN 'Agent Plus' THEN next_rank_xp_threshold := 4000;

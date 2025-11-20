@@ -1,15 +1,5 @@
--- Migration: Update Minimum Days Per Rank (Not Per Tier)
--- Changes from tracking days in tier to tracking days in rank
-
--- Add rank_entered_at column to track when user entered current rank
-ALTER TABLE public.sellers 
-ADD COLUMN IF NOT EXISTS rank_entered_at TIMESTAMPTZ;
-
--- Set rank_entered_at for existing users based on their current rank
--- Use tier_entered_at as fallback, or NOW() if neither exists
-UPDATE public.sellers
-SET rank_entered_at = COALESCE(rank_entered_at, tier_entered_at, NOW())
-WHERE rank_entered_at IS NULL;
+-- Migration: Update Minimum Days Per Rank (Final Version)
+-- Updates minimum days required per rank to match new requirements
 
 -- Function to get minimum days required in a rank before advancing
 CREATE OR REPLACE FUNCTION public.get_min_days_in_rank(_rank TEXT)
@@ -34,7 +24,7 @@ BEGIN
 END;
 $$;
 
--- Update manual_rank_up to check minimum days in rank (not tier)
+-- Update manual_rank_up function to properly check minimum days (skip check if min_days = 0)
 CREATE OR REPLACE FUNCTION public.manual_rank_up(_seller_id UUID)
 RETURNS JSONB
 LANGUAGE plpgsql
@@ -134,23 +124,28 @@ BEGIN
   END IF;
   
   min_days_val := public.get_min_days_in_rank(current_rank_val);
-  days_in_rank := EXTRACT(EPOCH FROM (NOW() - rank_entered_at_val))::INTEGER / 86400; -- Convert to days
   
-  IF days_in_rank < min_days_val THEN
-    RETURN jsonb_build_object(
-      'success', false,
-      'error', 'minimum_days_not_met',
-      'message', format('You need to spend at least %s day%s in %s rank before advancing to %s', 
-        min_days_val, 
-        CASE WHEN min_days_val = 1 THEN '' ELSE 's' END,
-        current_rank_val,
-        new_rank_val),
-      'current_rank', current_rank_val,
-      'next_rank', new_rank_val,
-      'days_in_rank', days_in_rank,
-      'required_days', min_days_val,
-      'days_needed', min_days_val - days_in_rank
-    );
+  -- Only check minimum days if min_days_val > 0
+  -- If min_days_val is 0, skip the check entirely
+  IF min_days_val > 0 THEN
+    days_in_rank := EXTRACT(EPOCH FROM (NOW() - rank_entered_at_val))::INTEGER / 86400; -- Convert to days
+    
+    IF days_in_rank < min_days_val THEN
+      RETURN jsonb_build_object(
+        'success', false,
+        'error', 'minimum_days_not_met',
+        'message', format('You need to spend at least %s day%s in %s rank before advancing to %s', 
+          min_days_val, 
+          CASE WHEN min_days_val = 1 THEN '' ELSE 's' END,
+          current_rank_val,
+          new_rank_val),
+        'current_rank', current_rank_val,
+        'next_rank', new_rank_val,
+        'days_in_rank', days_in_rank,
+        'required_days', min_days_val,
+        'days_needed', min_days_val - days_in_rank
+      );
+    END IF;
   END IF;
   
   -- Check 3: Required Tasks
@@ -167,7 +162,7 @@ BEGIN
     
     FOREACH task_id IN ARRAY required_tasks
     LOOP
-      -- Only check countable tasks (tasks, quizzes, courses with quizzes)
+      -- Only check countable tasks (tasks/quizzes, not courses without quizzes)
       IF public.is_countable_task(task_id) THEN
         _countable_total := _countable_total + 1;
         is_completed := public.is_lesson_completed(_seller_id, task_id);

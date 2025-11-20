@@ -1112,6 +1112,11 @@ If you are curious, I can show you exactly how it works. It only takes a minute 
 
       setSellerData(seller);
       
+      // Fetch today's completed daily tasks
+      if (seller.id) {
+        await fetchCompletedDailyTasks(seller.id);
+      }
+      
       // Fetch XP trend data for the last 7 days
       if (seller.id) {
         await fetchXpTrendData(seller.id);
@@ -1722,6 +1727,41 @@ If you are curious, I can show you exactly how it works. It only takes a minute 
     const interval = setInterval(updateCountdown, 1000);
     return () => clearInterval(interval);
   }, []);
+
+  // Fetch today's completed daily tasks from database
+  const fetchCompletedDailyTasks = async (sellerId: string) => {
+    try {
+      const now = new Date();
+      const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+      const todayEnd = new Date(todayStart);
+      todayEnd.setDate(todayEnd.getDate() + 1);
+      
+      // Fetch all daily task completions for today
+      const { data: dailyTaskCompletions, error } = await supabase
+        .from("partner_activity_log")
+        .select("metadata")
+        .eq("seller_id", sellerId)
+        .eq("event_type", "daily_task_completed")
+        .gte("created_at", todayStart.toISOString())
+        .lt("created_at", todayEnd.toISOString());
+      
+      if (error) {
+        console.warn("Error fetching completed daily tasks:", error);
+        return;
+      }
+      
+      // Extract task IDs from metadata
+      const completedTaskIds = new Set<string>(
+        (dailyTaskCompletions || [])
+          .map((log: any) => log.metadata?.task_id)
+          .filter((id: any) => id) // Filter out null/undefined
+      );
+      
+      setCompletedDailyTasks(completedTaskIds);
+    } catch (error) {
+      console.error("Error fetching completed daily tasks:", error);
+    }
+  };
 
   const fetchProgressionData = async (sellerId: string, sellerRank?: PartnerRank) => {
     // Prevent multiple simultaneous calls
@@ -2529,18 +2569,24 @@ If you are curious, I can show you exactly how it works. It only takes a minute 
           title = "Minimum time requirement";
           if (data.days_needed !== undefined) {
             const daysNeeded = data.days_needed;
-            errorMessage = `You need to spend ${daysNeeded} more day${daysNeeded === 1 ? '' : 's'} in ${data.current_rank} rank before advancing to ${data.next_rank}.`;
+            const currentRank = data.current_rank || sellerData?.current_rank || 'your current';
+            const nextRank = data.next_rank || 'the next';
+            errorMessage = `You need to spend ${daysNeeded} more day${daysNeeded === 1 ? '' : 's'} in ${currentRank} rank before advancing to ${nextRank}.`;
+          } else {
+            errorMessage = data.message || "You need to spend more time in your current rank before advancing.";
           }
         } else if (data.error === 'not_enough_xp') {
           title = "XP requirement not met";
           if (data.xp_needed !== undefined) {
-            errorMessage = `You need ${data.xp_needed} more XP to reach ${data.next_rank} rank.`;
+            const nextRank = data.next_rank || 'the next';
+            errorMessage = `You need ${data.xp_needed} more XP to reach ${nextRank} rank.`;
           }
         } else if (data.error === 'tasks_not_completed') {
           title = "Tasks not completed";
-          if (data.completed_tasks !== undefined && data.total_tasks !== undefined) {
-            errorMessage = `You need to complete all tasks for ${data.current_rank} rank. Completed: ${data.completed_tasks}/${data.total_tasks} tasks.`;
-          }
+        if (data.completed_tasks !== undefined && data.total_tasks !== undefined) {
+            const currentRank = data.current_rank || sellerData?.current_rank || 'your current';
+            errorMessage = `You need to complete all tasks for ${currentRank} rank. Completed: ${data.completed_tasks}/${data.total_tasks} tasks.`;
+        }
         }
         
         toast({
@@ -3294,25 +3340,25 @@ If you are curious, I can show you exactly how it works. It only takes a minute 
       if (!editingScriptId) {
         const taskLesson = lessons.find(l => l.title === 'Create Your Personal Sales Script Variation' && l.rank_required === 'Partner');
         if (taskLesson && !completedLessons.has(taskLesson.id)) {
-          try {
-            const { data: existingCompletion } = await supabase
-              .from("partner_activity_log")
-              .select("id")
-              .eq("seller_id", sellerData.id)
-              .eq("event_type", "task_completed")
+        try {
+          const { data: existingCompletion } = await supabase
+            .from("partner_activity_log")
+            .select("id")
+            .eq("seller_id", sellerData.id)
+            .eq("event_type", "task_completed")
               .eq("metadata->>lesson_id", taskLesson.id)
-              .maybeSingle();
+            .maybeSingle();
 
-            if (!existingCompletion) {
+          if (!existingCompletion) {
               await addXP(taskLesson.xp_reward, 'task_completed', `Completed: ${taskLesson.title}`, { lesson_id: taskLesson.id });
               setCompletedLessons(prev => new Set([...prev, taskLesson.id]));
-              toast({
+            toast({
                 title: "Task Completed! 🎉",
                 description: `You earned ${taskLesson.xp_reward} XP for creating your sales script variation!`,
-              });
-            }
-          } catch (error) {
-            console.error("Error awarding XP for sales script:", error);
+            });
+          }
+        } catch (error) {
+          console.error("Error awarding XP for sales script:", error);
           }
         }
       }
@@ -5211,19 +5257,19 @@ If you are curious, I can show you exactly how it works. It only takes a minute 
         {/* XP Progress and Daily XP Stats */}
         <div className="mb-2 p-2 bg-muted/30 rounded-lg border border-border/50">
           <div className="flex items-center justify-between mb-1">
-            <p className="text-xs text-muted-foreground">
-              {sellerData?.current_rank === 'Partner Plus' && nextRank === 'Partner Pro' 
-                ? 'Ready to upgrade to Partner Pro' 
-                : `${progress.current} / ${progress.next} XP to ${nextRank}`}
-            </p>
-            <Button
-              variant="ghost"
-              size="sm"
-              className="text-xs text-primary hover:text-primary/80"
-              onClick={() => setShowRanksDialog(true)}
-            >
-              View All Ranks
-            </Button>
+          <p className="text-xs text-muted-foreground">
+            {sellerData?.current_rank === 'Partner Plus' && nextRank === 'Partner Pro' 
+              ? 'Ready to upgrade to Partner Pro' 
+              : `${progress.current} / ${progress.next} XP to ${nextRank}`}
+          </p>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="text-xs text-primary hover:text-primary/80"
+            onClick={() => setShowRanksDialog(true)}
+          >
+            View All Ranks
+          </Button>
           </div>
           
           {/* Daily XP Info */}
@@ -5382,10 +5428,18 @@ If you are curious, I can show you exactly how it works. It only takes a minute 
                     <div className="flex-1">
                       <p className="text-sm font-medium text-foreground mb-1">Discord</p>
                       <p className="text-sm text-muted-foreground mb-2">
-                        Join our Discord server and create a ticket in the <span className="font-mono text-primary">{CONTACT_INFO.discordChannel}</span> channel
+                        Join our Discord server and create a support ticket to get verified.
                       </p>
+                      <Button
+                        variant="outline"
+                        onClick={() => window.open("https://discord.gg/SsBuvNycTP", "_blank")}
+                        className="mb-2 bg-[#5865F2] hover:bg-[#4752C4] text-white border-[#5865F2]"
+                      >
+                        <MessageCircle className="w-4 h-4 mr-2" />
+                        Join Discord Server
+                      </Button>
                       <p className="text-xs text-muted-foreground bg-muted/50 p-2 rounded border border-border">
-                        <strong>In your ticket, include:</strong> "I just applied to be a partner - {sellerData?.business_name || 'Your Name'}" or "Partner application verification - {user?.email || 'Your Email'}"
+                        <strong>In your support ticket, include:</strong> "I just applied to be a partner - {sellerData?.business_name || 'Your Name'}" or "Partner application verification - {user?.email || 'Your Email'}"
                       </p>
                     </div>
                   </div>
@@ -6423,11 +6477,11 @@ If you are curious, I can show you exactly how it works. It only takes a minute 
                                 }
                               }}
                             />
-                          </div>
-                        )}
-                      </div>
-                    </CardContent>
-                  </Card>
+                                      </div>
+                                    )}
+                                  </div>
+                                </CardContent>
+                              </Card>
 
 
                   {/* Badges Collection */}
@@ -9488,10 +9542,10 @@ If you are curious, I can show you exactly how it works. It only takes a minute 
                       <CardHeader>
                         <div className="flex items-start justify-between">
                           <div className="flex-1">
-                            <CardTitle className="text-base sm:text-lg text-primary">Transaction History & Earnings</CardTitle>
-                            <CardDescription className="text-xs sm:text-sm">
-                              View your sales and commission breakdown. Each transaction shows how the payment was split.
-                            </CardDescription>
+                        <CardTitle className="text-base sm:text-lg text-primary">Transaction History & Earnings</CardTitle>
+                        <CardDescription className="text-xs sm:text-sm">
+                          View your sales and commission breakdown. Each transaction shows how the payment was split.
+                        </CardDescription>
                           </div>
                           <Button
                             variant="outline"
@@ -9703,15 +9757,15 @@ If you are curious, I can show you exactly how it works. It only takes a minute 
                 <TabsContent value="sales-scripts" className="space-y-4 sm:space-y-6">
                   {/* Saved Scripts List */}
                   {partnerScripts.length > 0 && (
-                    <Card className="bg-card border-border">
-                      <CardHeader>
+                  <Card className="bg-card border-border">
+                    <CardHeader>
                         <CardTitle className="text-base sm:text-lg text-primary">Your Saved Scripts</CardTitle>
-                        <CardDescription className="text-xs sm:text-sm">
+                      <CardDescription className="text-xs sm:text-sm">
                           View and edit your saved sales scripts
-                        </CardDescription>
-                      </CardHeader>
+                      </CardDescription>
+                    </CardHeader>
                       <CardContent>
-                        <div className="space-y-3">
+                      <div className="space-y-3">
                           {partnerScripts.map((script) => (
                             <Card key={script.id} className="border-border">
                               <CardContent className="pt-4">
@@ -9812,37 +9866,37 @@ If you are curious, I can show you exactly how it works. It only takes a minute 
                       <div className="space-y-2">
                         <Label>Choose Template (Auto-pastes template into editor)</Label>
                         <Select value={salesScriptTemplate} onValueChange={handleTemplateSelect}>
-                          <SelectTrigger>
-                            <SelectValue placeholder="Select a template to get started" />
-                          </SelectTrigger>
-                          <SelectContent>
+                            <SelectTrigger>
+                              <SelectValue placeholder="Select a template to get started" />
+                            </SelectTrigger>
+                            <SelectContent>
                             <SelectItem value="conversational">Conversational DM Script (Short, Simple, Effective)</SelectItem>
                             <SelectItem value="email">Professional Email Template (Polished + Credible)</SelectItem>
                             <SelectItem value="pitch">Consultative Pitch Outline (Strategic Format)</SelectItem>
                             <SelectItem value="soft_outreach">Soft Outreach Message (Friendly + Non-Salesy)</SelectItem>
                             <SelectItem value="follow_up">Follow-Up Message (Polite, Helpful, Value-First)</SelectItem>
                             <SelectItem value="short_value">Short Value Pitch (Fast, Clear, Straight to the Point)</SelectItem>
-                          </SelectContent>
-                        </Select>
+                            </SelectContent>
+                          </Select>
                         <p className="text-xs text-muted-foreground">
                           Selecting a template will automatically paste it into the editor below. You can then customize it and save as a new script.
                         </p>
-                      </div>
-                      
-                      <div className="space-y-2">
+                        </div>
+                        
+                        <div className="space-y-2">
                         <Label>Your Script Content *</Label>
-                        <Textarea
-                          value={customScript}
-                          onChange={(e) => setCustomScript(e.target.value)}
+                          <Textarea
+                            value={customScript}
+                            onChange={(e) => setCustomScript(e.target.value)}
                           placeholder="Select a template above or write your own script here..."
-                          rows={12}
-                          className="font-mono text-sm"
-                        />
-                        <p className="text-xs text-muted-foreground">
-                          Tip: Personalize your script with placeholders like [Name], [Business], [Pain Point] that you can replace for each client.
-                        </p>
-                      </div>
-                      
+                            rows={12}
+                            className="font-mono text-sm"
+                          />
+                          <p className="text-xs text-muted-foreground">
+                            Tip: Personalize your script with placeholders like [Name], [Business], [Pain Point] that you can replace for each client.
+                          </p>
+                        </div>
+                        
                       <div className="flex gap-2">
                         <Button
                           onClick={handleSaveSalesScript}
@@ -9880,10 +9934,10 @@ If you are curious, I can show you exactly how it works. It only takes a minute 
                     <CardHeader>
                       <div className="flex items-center justify-between">
                         <div>
-                          <CardTitle className="text-base sm:text-lg text-primary">Deal Tracking</CardTitle>
-                          <CardDescription className="text-xs sm:text-sm">
-                            Log your outreach attempts and track your sales pipeline
-                          </CardDescription>
+                      <CardTitle className="text-base sm:text-lg text-primary">Deal Tracking</CardTitle>
+                      <CardDescription className="text-xs sm:text-sm">
+                        Log your outreach attempts and track your sales pipeline
+                      </CardDescription>
                         </div>
                         <Button
                           variant="outline"

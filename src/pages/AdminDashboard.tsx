@@ -287,6 +287,18 @@ const AdminDashboard = () => {
   const [creatingQuizToken, setCreatingQuizToken] = useState(false);
   const [deletingQuizToken, setDeletingQuizToken] = useState<string | null>(null);
   
+  // Vault Library Modules state
+  const [vaultModules, setVaultModules] = useState<any[]>([]);
+  const [loadingVaultModules, setLoadingVaultModules] = useState(false);
+  const [newVaultModule, setNewVaultModule] = useState({
+    min_rank: "Recruit Plus",
+    module_data: "",
+  });
+  const [editingVaultModule, setEditingVaultModule] = useState<any | null>(null);
+  const [creatingVaultModule, setCreatingVaultModule] = useState(false);
+  const [publishingVaultModule, setPublishingVaultModule] = useState<string | null>(null);
+  const [deletingVaultModule, setDeletingVaultModule] = useState<string | null>(null);
+  
   // Vault Network client management state
   const [vaultNetworkSellerId, setVaultNetworkSellerId] = useState<string | null>(null);
   const [vaultNetworkClients, setVaultNetworkClients] = useState<ClientData[]>([]);
@@ -404,6 +416,7 @@ const AdminDashboard = () => {
       fetchAnalyticsData();
       fetchModuleTokens();
       fetchQuizzes();
+      fetchVaultModules();
       fetchQuizTokens();
     } catch (error: any) {
       toast({
@@ -915,6 +928,267 @@ const AdminDashboard = () => {
       });
     } finally {
       setUploadingImage(false);
+    }
+  };
+
+  // Fetch Vault Library Modules
+  const fetchVaultModules = async () => {
+    setLoadingVaultModules(true);
+    try {
+      const { data, error } = await supabase
+        .from("vault_library_modules")
+        .select("*")
+        .order("created_at", { ascending: false });
+
+      if (error) throw error;
+      setVaultModules(data || []);
+    } catch (error: any) {
+      console.error("Error fetching vault modules:", error);
+      toast({
+        title: "Error",
+        description: "Failed to load vault modules",
+        variant: "destructive",
+      });
+    } finally {
+      setLoadingVaultModules(false);
+    }
+  };
+
+  // Send Discord webhook notification
+  const sendDiscordWebhook = async (module: any) => {
+    try {
+      const webhookUrl = "https://discord.com/api/webhooks/1440844889846841466/QdlQk2k2_BcJxVQ70FxCpvnEh475y6z2_nlFG8oq3GUtE2ik_jt3iEtPdjEOCf_YtKw3";
+      
+      // Create shareable link for partners to add module to their library
+      const moduleLink = `${window.location.origin}/vault-library?module=${module.id}`;
+      
+      const embed = {
+        title: "📚 New Vault Library Module Published!",
+        description: `**${module.title}**\n\n${module.category}\n\n[**Add to Your Library →**](${moduleLink})`,
+        color: 0x00ff00, // Green
+        fields: [
+          {
+            name: "XP Reward",
+            value: `${module.xp_reward} XP`,
+            inline: true,
+          },
+          {
+            name: "Minimum Rank",
+            value: module.min_rank,
+            inline: true,
+          },
+          {
+            name: "Link",
+            value: `[Click here to add to your library](${moduleLink})`,
+            inline: false,
+          },
+        ],
+        timestamp: new Date().toISOString(),
+      };
+
+      await fetch(webhookUrl, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          embeds: [embed],
+        }),
+      });
+    } catch (error) {
+      console.error("Error sending Discord webhook:", error);
+      // Don't throw - webhook failure shouldn't block publishing
+    }
+  };
+
+  // Create Vault Module
+  const handleCreateVaultModule = async () => {
+    if (!newVaultModule.module_data || !newVaultModule.min_rank) {
+      toast({
+        title: "Missing Fields",
+        description: "Please provide module JSON and select a minimum rank",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setCreatingVaultModule(true);
+    try {
+      let moduleData;
+      try {
+        moduleData = typeof newVaultModule.module_data === 'string' 
+          ? JSON.parse(newVaultModule.module_data)
+          : newVaultModule.module_data;
+      } catch (error) {
+        throw new Error("Invalid JSON format. Please check your module data.");
+      }
+
+      // Extract title, category, and xp_reward from JSON
+      if (!moduleData.title || !moduleData.category || !moduleData.xp_reward) {
+        throw new Error("JSON must include 'title', 'category', and 'xp_reward' fields");
+      }
+
+      const { data, error } = await supabase
+        .from("vault_library_modules")
+        .insert({
+          title: moduleData.title,
+          category: moduleData.category,
+          xp_reward: parseInt(moduleData.xp_reward),
+          min_rank: newVaultModule.min_rank,
+          module_data: moduleData,
+          created_by: user?.id,
+        })
+        .select()
+        .single();
+
+      if (error) throw error;
+
+      toast({
+        title: "Module Created!",
+        description: `${moduleData.title} has been created successfully`,
+      });
+
+      // Reset form
+      setNewVaultModule({
+        min_rank: "Recruit Plus",
+        module_data: "",
+      });
+
+      // Refresh modules
+      await fetchVaultModules();
+    } catch (error: any) {
+      console.error("Error creating vault module:", error);
+      toast({
+        title: "Error",
+        description: error.message || "Failed to create module",
+        variant: "destructive",
+      });
+    } finally {
+      setCreatingVaultModule(false);
+    }
+  };
+
+  // Update Vault Module
+  const handleUpdateVaultModule = async () => {
+    if (!editingVaultModule) return;
+
+    setCreatingVaultModule(true);
+    try {
+      let moduleData;
+      try {
+        moduleData = typeof editingVaultModule.module_data === 'string'
+          ? JSON.parse(editingVaultModule.module_data)
+          : editingVaultModule.module_data;
+      } catch (error) {
+        throw new Error("Invalid JSON format. Please check your module data.");
+      }
+
+      // Extract title, category, and xp_reward from JSON
+      if (!moduleData.title || !moduleData.category || !moduleData.xp_reward) {
+        throw new Error("JSON must include 'title', 'category', and 'xp_reward' fields");
+      }
+
+      const { error } = await supabase
+        .from("vault_library_modules")
+        .update({
+          title: moduleData.title,
+          category: moduleData.category,
+          xp_reward: parseInt(moduleData.xp_reward),
+          min_rank: editingVaultModule.min_rank,
+          module_data: moduleData,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", editingVaultModule.id);
+
+      if (error) throw error;
+
+      toast({
+        title: "Module Updated!",
+        description: `${moduleData.title} has been updated successfully`,
+      });
+
+      setEditingVaultModule(null);
+      await fetchVaultModules();
+    } catch (error: any) {
+      console.error("Error updating vault module:", error);
+      toast({
+        title: "Error",
+        description: error.message || "Failed to update module",
+        variant: "destructive",
+      });
+    } finally {
+      setCreatingVaultModule(false);
+    }
+  };
+
+  // Publish Vault Module
+  const handlePublishVaultModule = async (moduleId: string) => {
+    setPublishingVaultModule(moduleId);
+    try {
+      const { data, error } = await supabase
+        .from("vault_library_modules")
+        .update({
+          is_published: true,
+          published_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", moduleId)
+        .select()
+        .single();
+
+      if (error) throw error;
+
+      // Send Discord webhook
+      await sendDiscordWebhook(data);
+
+      toast({
+        title: "Module Published!",
+        description: `${data.title} has been published and announced on Discord`,
+      });
+
+      await fetchVaultModules();
+    } catch (error: any) {
+      console.error("Error publishing vault module:", error);
+      toast({
+        title: "Error",
+        description: error.message || "Failed to publish module",
+        variant: "destructive",
+      });
+    } finally {
+      setPublishingVaultModule(null);
+    }
+  };
+
+  // Delete Vault Module
+  const handleDeleteVaultModule = async (moduleId: string) => {
+    if (!confirm("Are you sure you want to delete this module? This action cannot be undone.")) {
+      return;
+    }
+
+    setDeletingVaultModule(moduleId);
+    try {
+      const { error } = await supabase
+        .from("vault_library_modules")
+        .delete()
+        .eq("id", moduleId);
+
+      if (error) throw error;
+
+      toast({
+        title: "Module Deleted",
+        description: "The module has been deleted successfully",
+      });
+
+      await fetchVaultModules();
+    } catch (error: any) {
+      console.error("Error deleting vault module:", error);
+      toast({
+        title: "Error",
+        description: error.message || "Failed to delete module",
+        variant: "destructive",
+      });
+    } finally {
+      setDeletingVaultModule(null);
     }
   };
 
@@ -3364,6 +3638,10 @@ const AdminDashboard = () => {
                   <TabsTrigger value="quizzes" className="flex items-center justify-center gap-2 data-[state=active]:bg-background">
                     <HelpCircle className="w-4 h-4" />
                     <span className="hidden sm:inline">Quizzes</span>
+                  </TabsTrigger>
+                  <TabsTrigger value="vault-modules" className="flex items-center justify-center gap-2 data-[state=active]:bg-background">
+                    <BookOpen className="w-4 h-4" />
+                    <span className="hidden sm:inline">Vault Modules</span>
                   </TabsTrigger>
                 </TabsList>
 
@@ -6035,6 +6313,229 @@ const AdminDashboard = () => {
                                     <Badge variant={quiz.is_active ? "default" : "secondary"}>
                                       {quiz.is_active ? "Active" : "Inactive"}
                                     </Badge>
+                                  </div>
+                                </CardContent>
+                              </Card>
+                            ))}
+                          </div>
+                        )}
+                      </CardContent>
+                    </Card>
+                  </div>
+                </TabsContent>
+
+                <TabsContent value="vault-modules">
+                  <div className="space-y-6">
+                    {/* Create New Vault Module */}
+                    <Card>
+                      <CardHeader>
+                        <CardTitle className="flex items-center gap-2">
+                          <Plus className="w-5 h-5" />
+                          {editingVaultModule ? "Edit Vault Module" : "Create New Vault Module"}
+                        </CardTitle>
+                        <CardDescription>
+                          Create modules for the Vault Library with JSON content, quizzes, and rank requirements
+                        </CardDescription>
+                      </CardHeader>
+                      <CardContent className="space-y-4">
+                        <div className="space-y-2">
+                          <Label htmlFor="vault-module-rank">Minimum Rank to View *</Label>
+                          <Select
+                            value={editingVaultModule ? editingVaultModule.min_rank : newVaultModule.min_rank}
+                            onValueChange={(value) => {
+                              if (editingVaultModule) {
+                                setEditingVaultModule({ ...editingVaultModule, min_rank: value });
+                              } else {
+                                setNewVaultModule({ ...newVaultModule, min_rank: value });
+                              }
+                            }}
+                          >
+                            <SelectTrigger id="vault-module-rank">
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="Recruit">Recruit</SelectItem>
+                              <SelectItem value="Recruit Plus">Recruit Plus</SelectItem>
+                              <SelectItem value="Apprentice">Apprentice</SelectItem>
+                              <SelectItem value="Apprentice Plus">Apprentice Plus</SelectItem>
+                              <SelectItem value="Agent">Agent</SelectItem>
+                              <SelectItem value="Agent Plus">Agent Plus</SelectItem>
+                              <SelectItem value="Verified">Verified</SelectItem>
+                              <SelectItem value="Verified Plus">Verified Plus</SelectItem>
+                              <SelectItem value="Partner">Partner</SelectItem>
+                              <SelectItem value="Partner Plus">Partner Plus</SelectItem>
+                              <SelectItem value="Partner Pro">Partner Pro</SelectItem>
+                            </SelectContent>
+                          </Select>
+                          <p className="text-xs text-muted-foreground">
+                            Select the minimum rank required to view this module
+                          </p>
+                        </div>
+                        <div className="space-y-2">
+                          <Label htmlFor="vault-module-json">Module JSON *</Label>
+                          <Textarea
+                            id="vault-module-json"
+                            placeholder='{"title": "...", "category": "...", "xp_reward": 250, "sections": [...], "quiz": [...]}'
+                            value={editingVaultModule ? JSON.stringify(editingVaultModule.module_data, null, 2) : newVaultModule.module_data}
+                            onChange={(e) => {
+                              if (editingVaultModule) {
+                                try {
+                                  setEditingVaultModule({ ...editingVaultModule, module_data: JSON.parse(e.target.value) });
+                                } catch {
+                                  // Invalid JSON, store as string for now
+                                }
+                              } else {
+                                setNewVaultModule({ ...newVaultModule, module_data: e.target.value });
+                              }
+                            }}
+                            rows={15}
+                            className="font-mono text-sm"
+                          />
+                          <p className="text-xs text-muted-foreground">
+                            Paste the complete module JSON including <strong>title</strong>, <strong>category</strong>, <strong>xp_reward</strong>, <strong>slides</strong>, and <strong>quiz</strong>. 
+                            Title, category, and XP reward will be extracted from the JSON.
+                            <br />
+                            <strong>New Format:</strong> Use <code className="text-xs">slides</code> array with custom elements (heading, paragraph, list, image, code, quote, alert, button, badge, separator).
+                            <br />
+                            <strong>Old Format:</strong> Still supported - uses <code className="text-xs">sections</code> array with title and content strings.
+                            <br />
+                            See <code className="text-xs">VAULT_MODULE_FORMAT_EXAMPLE.json</code> and <code className="text-xs">VAULT_MODULE_CUSTOM_ELEMENTS_GUIDE.md</code> for examples and documentation.
+                          </p>
+                        </div>
+                        <div className="flex gap-2">
+                          <Button
+                            onClick={editingVaultModule ? handleUpdateVaultModule : handleCreateVaultModule}
+                            disabled={creatingVaultModule}
+                            className="flex-1 bg-primary hover:bg-primary/90 text-primary-foreground"
+                          >
+                            {creatingVaultModule ? (
+                              <>
+                                <Activity className="w-4 h-4 mr-2 animate-spin" />
+                                {editingVaultModule ? "Updating..." : "Creating..."}
+                              </>
+                            ) : (
+                              <>
+                                <Plus className="w-4 h-4 mr-2" />
+                                {editingVaultModule ? "Update Module" : "Create Module"}
+                              </>
+                            )}
+                          </Button>
+                          {editingVaultModule && (
+                            <Button
+                              variant="outline"
+                              onClick={() => setEditingVaultModule(null)}
+                            >
+                              Cancel
+                            </Button>
+                          )}
+                        </div>
+                      </CardContent>
+                    </Card>
+
+                    {/* Existing Vault Modules */}
+                    <Card>
+                      <CardHeader>
+                        <CardTitle className="flex items-center gap-2">
+                          <BookOpen className="w-5 h-5" />
+                          All Vault Modules
+                        </CardTitle>
+                        <CardDescription>
+                          View and manage all Vault Library modules
+                        </CardDescription>
+                      </CardHeader>
+                      <CardContent>
+                        {loadingVaultModules ? (
+                          <div className="text-center py-8">
+                            <Activity className="w-6 h-6 animate-spin text-primary mx-auto mb-2" />
+                            <p className="text-muted-foreground">Loading modules...</p>
+                          </div>
+                        ) : vaultModules.length === 0 ? (
+                          <div className="text-center py-8">
+                            <BookOpen className="w-12 h-12 text-muted-foreground mx-auto mb-4 opacity-50" />
+                            <p className="text-muted-foreground">No modules created yet</p>
+                            <p className="text-sm text-muted-foreground mt-2">
+                              Create your first module above
+                            </p>
+                          </div>
+                        ) : (
+                          <div className="space-y-3">
+                            {vaultModules.map((module) => (
+                              <Card key={module.id} className={!module.is_published ? "opacity-60" : ""}>
+                                <CardContent className="pt-6">
+                                  <div className="flex items-start justify-between">
+                                    <div className="flex-1">
+                                      <div className="flex items-center gap-2 mb-2">
+                                        <h4 className="font-semibold text-lg">{module.title}</h4>
+                                        {module.is_published && (
+                                          <Badge variant="default" className="bg-green-500/20 text-green-500 border-green-500/30">
+                                            Published
+                                          </Badge>
+                                        )}
+                                      </div>
+                                      <p className="text-sm text-muted-foreground mb-2">
+                                        {module.category}
+                                      </p>
+                                      <div className="flex items-center gap-4 text-xs text-muted-foreground">
+                                        <span>XP: {module.xp_reward}</span>
+                                        <span>•</span>
+                                        <span>Min Rank: {module.min_rank}</span>
+                                        {module.published_at && (
+                                          <>
+                                            <span>•</span>
+                                            <span>Published: {new Date(module.published_at).toLocaleDateString()}</span>
+                                          </>
+                                        )}
+                                      </div>
+                                    </div>
+                                    <div className="flex gap-2">
+                                      {!module.is_published && (
+                                        <Button
+                                          variant="default"
+                                          size="sm"
+                                          onClick={() => handlePublishVaultModule(module.id)}
+                                          disabled={publishingVaultModule === module.id}
+                                          className="bg-primary hover:bg-primary/90 text-primary-foreground"
+                                        >
+                                          {publishingVaultModule === module.id ? (
+                                            <>
+                                              <Activity className="w-4 h-4 mr-2 animate-spin" />
+                                              Publishing...
+                                            </>
+                                          ) : (
+                                            <>
+                                              <Send className="w-4 h-4 mr-2" />
+                                              Publish
+                                            </>
+                                          )}
+                                        </Button>
+                                      )}
+                                      <Button
+                                        variant="outline"
+                                        size="sm"
+                                        onClick={() => setEditingVaultModule(module)}
+                                      >
+                                        <Edit className="w-4 h-4 mr-2" />
+                                        Edit
+                                      </Button>
+                                      <Button
+                                        variant="destructive"
+                                        size="sm"
+                                        onClick={() => handleDeleteVaultModule(module.id)}
+                                        disabled={deletingVaultModule === module.id}
+                                      >
+                                        {deletingVaultModule === module.id ? (
+                                          <>
+                                            <Activity className="w-4 h-4 mr-2 animate-spin" />
+                                            Deleting...
+                                          </>
+                                        ) : (
+                                          <>
+                                            <Trash2 className="w-4 h-4 mr-2" />
+                                            Delete
+                                          </>
+                                        )}
+                                      </Button>
+                                    </div>
                                   </div>
                                 </CardContent>
                               </Card>
